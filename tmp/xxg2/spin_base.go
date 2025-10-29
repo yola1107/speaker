@@ -72,61 +72,66 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 	}, nil
 }
 
-// initSpinSymbol 生成符号网格（从RealData中随机生成）
+// initSpinSymbol 初始化滚轴符号（使用配置中的 RealData，参考 mahjong）
 func (s *betOrderService) initSpinSymbol() [_rowCount * _colCount]int64 {
-	// 选择使用的配置（基础/免费）
-	rollCfg := &s.gameConfig.RollCfg.Base
+	// 判断是基础游戏还是免费游戏
+	var rollCfg *rollConfig
 	if s.isFree {
 		rollCfg = &s.gameConfig.RollCfg.Free
+	} else {
+		rollCfg = &s.gameConfig.RollCfg.Base
 	}
 
-	// 根据权重随机选择RealData索引
-	realIndex := s.selectRealDataByWeight(rollCfg)
-	realData := s.gameConfig.RealData[realIndex]
-
-	// 为每列生成符号
-	var symbols [_rowCount * _colCount]int64
-	for col := 0; col < int(_colCount); col++ {
-		s.generateColumnSymbols(realData[col], col, &symbols)
-	}
-
-	return symbols
-}
-
-// selectRealDataByWeight 根据权重选择RealData索引
-func (s *betOrderService) selectRealDataByWeight(rollCfg *rollConfig) int {
+	// 根据权重随机选择 RealData 索引
 	totalWeight := int64(0)
 	for _, w := range rollCfg.Weight {
 		totalWeight += w
 	}
 
 	r := rand.Int64N(totalWeight)
+	realIndex := 0
 	for i, w := range rollCfg.Weight {
 		if r < w {
-			return int(rollCfg.UseKey[i])
+			realIndex = int(rollCfg.UseKey[i])
+			break
 		}
 		r -= w
 	}
 
-	panic("failed to select real data index")
-}
-
-// generateColumnSymbols 生成单列的符号
-func (s *betOrderService) generateColumnSymbols(columnData []int64, col int, symbols *[_rowCount * _colCount]int64) {
-	realLineLen := len(columnData)
-	if realLineLen < int(_rowCount) {
-		panic("real data column too short")
+	// 检查索引范围
+	if realIndex >= len(s.gameConfig.RealData) {
+		panic("real data index out of range")
 	}
 
-	// 随机选择起始位置
-	startIndex := rand.IntN(realLineLen)
+	realData := s.gameConfig.RealData[realIndex]
+	var symbols [_rowCount * _colCount]int64
 
-	// 填充该列的符号
-	for row := 0; row < int(_rowCount); row++ {
-		index := (startIndex + row) % realLineLen
-		idx := row*int(_colCount) + col
-		symbols[idx] = columnData[index]
+	// 从每列的 RealData 中随机选择起始位置，生成符号
+	for col := 0; col < int(_colCount); col++ {
+		columnData := realData[col]
+		realLineLen := len(columnData)
+
+		if realLineLen < int(_rowCount) {
+			panic("real data column too short")
+		}
+
+		// 随机选择起始位置
+		startIndex := rand.IntN(realLineLen)
+
+		//// TODO del test
+		//if true {
+		//	startIndex = 0
+		//}
+
+		// 填充该列的符号（按行列索引）
+		for row := 0; row < int(_rowCount); row++ {
+			index := (startIndex + row) % realLineLen
+			idx := row*int(_colCount) + col
+			symbols[idx] = columnData[index]
+		}
 	}
+
+	return symbols
 }
 
 // 更新基础游戏步骤结果
