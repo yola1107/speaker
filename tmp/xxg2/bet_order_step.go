@@ -1,0 +1,425 @@
+package xxg2
+
+import (
+	"strconv"
+	"time"
+
+	"egame-grpc/gamelogic"
+	"egame-grpc/global"
+	"egame-grpc/model/game"
+
+	"egame-grpc/utils/json"
+	"egame-grpc/utils/snow"
+
+	"github.com/shopspring/decimal"
+	"go.uber.org/zap"
+)
+
+// 初始化
+func (s *betOrderService) initialize() error {
+	s.client.ClientOfFreeGame.ResetFreeClean()
+
+	// RTP 测试时跳过订单号生成
+	if !s.forRtpBench {
+		s.orderSN = strconv.FormatInt(snow.GenarotorID(s.member.ID), 10)
+	}
+
+	// 判断是首次还是后续 step
+	if s.isRoundFirstStep {
+		if err := s.initFirstStepForSpin(); err != nil {
+			return err
+		}
+	} else {
+		s.initStepForNextStep()
+	}
+
+	return nil
+}
+
+// 初始化首次 step
+func (s *betOrderService) initFirstStepForSpin() error {
+	// 非测试模式下验证下注金额和余额
+	if !s.forRtpBench {
+		if !s.updateBetAmount() {
+			return InvalidRequestParams
+		}
+		if !s.checkBalance() {
+			return InsufficientBalance
+		}
+	}
+
+	// 重置客户端状态
+	s.resetClientState()
+
+	// 设置下注金额和唯一标识
+	s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
+	s.amount = s.betAmount
+	s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
+
+	return nil
+}
+
+// resetClientState 重置客户端状态
+func (s *betOrderService) resetClientState() {
+	s.client.SetLastMaxFreeNum(0)
+	s.client.ClientOfFreeGame.Reset()
+	s.client.ClientOfFreeGame.ResetGeneralWinTotal()
+	s.client.ClientOfFreeGame.ResetRoundBonus()
+	s.client.ClientOfFreeGame.ResetRoundBonusStaging()
+}
+
+// 初始化后续 step
+func (s *betOrderService) initStepForNextStep() {
+	// 恢复下注配置
+	if !s.forRtpBench {
+		s.req.BaseMoney = s.lastOrder.BaseAmount
+		s.req.Multiple = s.lastOrder.Multiple
+	} else {
+		s.req.BaseMoney = 1
+		s.req.Multiple = 1
+	}
+
+	s.betAmount = decimal.NewFromFloat(s.client.ClientOfFreeGame.GetBetAmount())
+	s.amount = decimal.Zero
+
+	if s.forRtpBench {
+		return
+	}
+
+	// 设置父订单号和免费订单号
+	if s.isFree {
+		// 免费模式：设置免费订单号
+		switch {
+		case s.lastOrder.FreeOrderSn != "":
+			s.freeOrderSN = s.lastOrder.FreeOrderSn
+		case s.lastOrder.ParentOrderSn != "":
+			s.freeOrderSN = s.lastOrder.ParentOrderSn
+		default:
+			s.freeOrderSN = s.lastOrder.OrderSn
+		}
+	} else {
+		// 基础模式：设置父订单号
+		if s.lastOrder.ParentOrderSn != "" {
+			s.parentOrderSN = s.lastOrder.ParentOrderSn
+		} else {
+			s.parentOrderSN = s.lastOrder.OrderSn
+		}
+	}
+}
+
+// 更新订单
+func (s *betOrderService) updateGameOrder() bool {
+	gameOrder := game.GameOrder{
+		MerchantID:        s.merchant.ID,
+		Merchant:          s.merchant.Merchant,
+		MemberID:          s.member.ID,
+		Member:            s.member.MemberName,
+		GameID:            s.game.ID,
+		GameName:          s.game.GameName,
+		BaseMultiple:      _baseMultiplier,
+		Multiple:          s.req.Multiple,
+		LineMultiple:      s.lineMultiplier,
+		BonusHeadMultiple: 1,
+		BonusMultiple:     s.stepMultiplier,
+		BaseAmount:        s.req.BaseMoney,
+		Amount:            s.amount.Round(2).InexactFloat64(),
+		ValidAmount:       s.amount.Round(2).InexactFloat64(),
+		BonusAmount:       s.bonusAmount.Round(2).InexactFloat64(),
+		CurBalance:        s.getCurrentBalance(),
+		OrderSn:           s.orderSN,
+		ParentOrderSn:     s.parentOrderSN,
+		FreeOrderSn:       s.freeOrderSN,
+		State:             1,
+		BonusTimes:        0,
+		HuNum:             s.treasureCount,
+		FreeNum:           s.stepMap.FreeNum,
+		FreeTimes:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
+	}
+	if s.isFree {
+		gameOrder.IsFree = 1
+	}
+	s.gameOrder = &gameOrder
+	return s.fillInGameOrderDetails()
+}
+
+// 结算step
+func (s *betOrderService) settleStep() bool {
+	s.gameOrder.CreatedAt = time.Now().Unix()
+
+	saveParam := &gamelogic.SaveTransferParam{
+		Client:      s.client,
+		GameOrder:   s.gameOrder,
+		MerchantOne: s.merchant,
+		MemberOne:   s.member,
+		Ip:          s.req.Ip,
+	}
+
+	res := gamelogic.SaveTransfer(saveParam)
+	if res.Err != nil {
+		return false
+	}
+	return true
+}
+
+// 加载step数据
+func (s *betOrderService) loadStepData() {
+	var symbolGrid int64Grid
+	for row := int64(0); row < _rowCount; row++ {
+		for col := int64(0); col < _colCount; col++ {
+			symbolGrid[row][col] = s.stepMap.Map[row*_colCount+col]
+		}
+	}
+	s.symbolGrid = &symbolGrid
+}
+
+// 查找中奖信息（Ways玩法：从左到右连续匹配）
+func (s *betOrderService) findWinInfos() {
+	var infos []*winInfo
+
+	// 遍历符号 1 到 10（不包括 treasure=11）
+	for symbol := _blank + 1; symbol < _treasure; symbol++ {
+		var info *winInfo
+		var ok bool
+
+		// 百搭符号(Wild)使用独立判断逻辑
+		if symbol == _wild {
+			info, ok = s.findWildWinInfo(_wild)
+		} else {
+			info, ok = s.findSymbolWinInfo(symbol)
+		}
+
+		if ok {
+			infos = append(infos, info)
+		}
+	}
+
+	s.winInfos = infos
+}
+
+// 处理中奖信息（计算倍率和构建中奖网格）
+func (s *betOrderService) processWinInfos() {
+	var winResults []*winResult
+	var winGrid int64Grid
+	totalLineMultiplier := int64(0)
+
+	// 遍历所有中奖信息
+	for _, info := range s.winInfos {
+		// 1. 从PayTable获取基础倍率（根据符号和匹配列数）
+		baseMultiplier := s.getSymbolMultiplier(info.Symbol, info.SymbolCount)
+
+		// 2. 计算总倍率 = 基础倍率 × Ways倍数
+		totalMultiplier := baseMultiplier * info.LineCount
+
+		// 3. 构建中奖位置网格（标记哪些位置中奖）
+		winPositions := s.buildWinPositions(info, &winGrid)
+
+		// 4. 构建中奖结果
+		winResults = append(winResults, &winResult{
+			Symbol:             info.Symbol,
+			SymbolCount:        info.SymbolCount,
+			LineCount:          info.LineCount,
+			BaseLineMultiplier: baseMultiplier,
+			TotalMultiplier:    totalMultiplier,
+			WinPositions:       winPositions,
+		})
+
+		// 5. 累加总倍率
+		totalLineMultiplier += totalMultiplier
+	}
+
+	// 保存结果
+	s.lineMultiplier = totalLineMultiplier
+	s.stepMultiplier = totalLineMultiplier
+	s.winResults = winResults
+	s.winGrid = &winGrid
+}
+
+// buildWinPositions 构建中奖位置网格
+func (s *betOrderService) buildWinPositions(info *winInfo, winGrid *int64Grid) int64Grid {
+	var winPositions int64Grid
+
+	for _, pos := range info.Positions {
+		currSymbol := s.symbolGrid[pos.Row][pos.Col]
+		if currSymbol == info.Symbol || currSymbol == _wild {
+			winPositions[pos.Row][pos.Col] = 1
+			winGrid[pos.Row][pos.Col] = currSymbol
+		}
+	}
+
+	return winPositions
+}
+
+// 获取当前余额
+func (s *betOrderService) getCurrentBalance() float64 {
+	return decimal.NewFromFloat(s.member.Balance).
+		Sub(s.amount).
+		Add(s.bonusAmount).
+		Round(2).
+		InexactFloat64()
+}
+
+// 填充订单细节
+func (s *betOrderService) fillInGameOrderDetails() bool {
+	// 序列化符号网格
+	if betRawDetail, err := json.CJSON.MarshalToString(s.symbolGrid); err != nil {
+		global.GVA_LOG.Error("fillInGameOrderDetails: marshal symbolGrid", zap.Error(err))
+		return false
+	} else {
+		s.gameOrder.BetRawDetail = betRawDetail
+	}
+
+	// 序列化中奖网格
+	if winRawDetail, err := json.CJSON.MarshalToString(s.winGrid); err != nil {
+		global.GVA_LOG.Error("fillInGameOrderDetails: marshal winGrid", zap.Error(err))
+		return false
+	} else {
+		s.gameOrder.BonusRawDetail = winRawDetail
+	}
+
+	// 转换为字符串格式
+	s.gameOrder.BetDetail = s.symbolGridToString()
+	s.gameOrder.BonusDetail = s.winGridToString()
+
+	// 序列化中奖详情
+	if winDetails, err := json.CJSON.MarshalToString(s.getWinDetailsMap()); err != nil {
+		global.GVA_LOG.Error("fillInGameOrderDetails: marshal winDetails", zap.Error(err))
+		return false
+	} else {
+		s.gameOrder.WinDetails = winDetails
+	}
+
+	return true
+}
+
+// 获取符号中奖信息（Ways玩法）
+// 规则：从左到右连续匹配，至少3列，百搭可替代
+func (s *betOrderService) findSymbolWinInfo(symbol int64) (*winInfo, bool) {
+	lineCount := int64(1) // Ways倍数初始值
+	var positions []*position
+	hasRealSymbol := false // 是否有真实符号（非百搭）
+
+	// 从左到右遍历每一列
+	for col := int64(0); col < _colCount; col++ {
+		count := int64(0)
+
+		// 统计该列中匹配的符号数量（符号本身 或 百搭）
+		for row := int64(0); row < _rowCount; row++ {
+			currSymbol := s.symbolGrid[row][col]
+
+			// 匹配条件：当前符号 == 目标符号 OR 当前符号 == 百搭
+			if currSymbol == symbol || currSymbol == _wild {
+				count++
+				if currSymbol == symbol {
+					hasRealSymbol = true // 标记有真实符号
+				}
+				positions = append(positions, &position{Row: row, Col: col})
+			}
+		}
+
+		// 该列无匹配符号 → 中断
+		if count == 0 {
+			// 检查是否满足中奖条件（至少3列 且 有真实符号）
+			if col >= _minMatchCount && hasRealSymbol {
+				return &winInfo{
+					Symbol:      symbol,
+					SymbolCount: col,
+					LineCount:   lineCount,
+					Positions:   positions,
+				}, true
+			}
+			return nil, false
+		}
+
+		// Ways倍数累乘：每列的匹配数量
+		lineCount *= count
+
+		// 到达最后一列 → 全屏中奖
+		if col == _colCount-1 && hasRealSymbol {
+			return &winInfo{
+				Symbol:      symbol,
+				SymbolCount: _colCount,
+				LineCount:   lineCount,
+				Positions:   positions,
+			}, true
+		}
+	}
+
+	return nil, false
+}
+
+// 获取百搭符号中奖信息（纯百搭连线）
+// 规则：只统计纯百搭符号，不与其他符号混合
+func (s *betOrderService) findWildWinInfo(symbol int64) (*winInfo, bool) {
+	lineCount := int64(1) // Ways倍数初始值
+	var positions []*position
+
+	// 从左到右遍历每一列
+	for col := int64(0); col < _colCount; col++ {
+		count := int64(0)
+
+		// 统计该列中百搭符号数量
+		for row := int64(0); row < _rowCount; row++ {
+			if s.symbolGrid[row][col] == _wild {
+				count++
+				positions = append(positions, &position{Row: row, Col: col})
+			}
+		}
+
+		// 该列无百搭符号 → 中断
+		if count == 0 {
+			// 检查是否满足中奖条件（至少3列）
+			if col >= _minMatchCount {
+				return &winInfo{Symbol: symbol, SymbolCount: col, LineCount: lineCount, Positions: positions}, true
+			}
+			return nil, false
+		}
+
+		// Ways倍数累乘
+		lineCount *= count
+
+		// 到达最后一列 → 全屏百搭
+		if col == _colCount-1 {
+			return &winInfo{Symbol: symbol, SymbolCount: _colCount, LineCount: lineCount, Positions: positions}, true
+		}
+	}
+
+	return nil, false
+}
+
+// 获取中奖详情
+func (s *betOrderService) getWinDetailsMap() map[string]any {
+	return map[string]any{
+		"orderSN":            s.gameOrder.OrderSn,
+		"symbolGrid":         s.symbolGrid,
+		"treasureCount":      s.treasureCount,
+		"winGrid":            s.winGrid,
+		"winResults":         s.winResults,
+		"baseBet":            s.req.BaseMoney,
+		"multiplier":         s.req.Multiple,
+		"betAmount":          s.betAmount.Round(2).InexactFloat64(),
+		"bonusAmount":        s.bonusAmount.Round(2).InexactFloat64(),
+		"spinBonusAmount":    s.client.ClientOfFreeGame.GetGeneralWinTotal(),
+		"freeBonusAmount":    s.client.ClientOfFreeGame.GetFreeTotalMoney(),
+		"roundBonus":         s.client.ClientOfFreeGame.RoundBonus,
+		"isFree":             s.isFree,
+		"newFreeCount":       s.newFreeCount,
+		"totalFreeCount":     s.client.GetLastMaxFreeNum(),
+		"remainingFreeCount": s.client.ClientOfFreeGame.GetFreeNum(),
+		"lineMultiplier":     s.lineMultiplier,
+		"stepMultiplier":     s.stepMultiplier,
+	}
+}
+
+// getSymbolMultiplier 读取符号的倍率（参考 mahjong 的 getSymbolBaseMultiplier）
+func (s *betOrderService) getSymbolMultiplier(symbol int64, symbolCount int64) int64 {
+	if len(s.gameConfig.PayTable) < int(symbol) {
+		return 0
+	}
+	table := s.gameConfig.PayTable[symbol-1]
+	// symbolCount 是匹配的列数，需要转换为索引（3列对应索引0）
+	index := int(symbolCount - _minMatchCount)
+	if index < 0 || index >= len(table) {
+		return 0
+	}
+	return table[index]
+}
