@@ -17,58 +17,50 @@ import (
 )
 
 const (
-	totalRuntime     = 1000000 // RTP 测试总局数
-	progressInterval = 100000  // 进度输出间隔
+	totalRuntime     = 1000000
+	progressInterval = 100000
 )
 
-// init 初始化测试日志环境
 func init() {
 	config := zap.NewDevelopmentConfig()
 	config.Level = zap.NewAtomicLevelAt(zapcore.WarnLevel)
-	config.OutputPaths = []string{"stdout"}
-	config.ErrorOutputPaths = []string{"stderr"}
-
-	logger, err := config.Build()
-	if err != nil {
-		panic(fmt.Sprintf("Failed to create logger: %v", err))
-	}
+	logger, _ := config.Build()
 	global.GVA_LOG = logger
 }
 
-// modeStats 模式统计数据（基础或免费）
 type modeStats struct {
-	rounds      int64 // 游戏局数
-	totalWin    int64 // 总奖金
-	winRounds   int64 // 中奖局数
-	currentWin  int64 // 当前回合累计奖金（临时）
-	freeCount   int64 // 免费游戏触发次数（基础模式统计）
-	extraRounds int64 // 免费游戏中额外增加的局数（免费模式统计）
-	// 新增：详细统计字段
-	freeTotalInitial   int64 // 基础触发时获得的总免费次数
-	freeTreasure3Count int64 // 3个夺宝触发次数
-	freeTreasure4Count int64 // 4个夺宝触发次数
-	freeTreasure5Count int64 // 5个夺宝触发次数
-	freeTreasureInFree int64 // 免费游戏中出现夺宝次数
-	// 免费游戏中蝙蝠统计
-	totalAccumulatedNewBat int64     // 所有免费游戏累计新增的蝙蝠总数
-	maxBatInSingleFree     int64     // 单次免费游戏中的最大蝙蝠数量
-	batDistribution        [10]int64 // 免费游戏结束时蝙蝠数量分布（索引0-9代表0-9个蝙蝠）
-	// 基础模式统计
-	baseTreasure1Count int64 // 基础模式1个夺宝次数（转Wind）
-	baseTreasure2Count int64 // 基础模式2个夺宝次数（转Wind）
-	baseWindConvCount  int64 // 基础模式Wind转换总次数
-	// 免费模式详细统计
-	freeWithBonusCount int64 // 免费游戏中有奖金的spin次数
-	freeNoBonusCount   int64 // 免费游戏中没有奖金的spin次数
+	rounds     int64 // 游戏局数
+	totalWin   int64 // 总奖金
+	winRounds  int64 // 中奖局数
+	currentWin int64 // 当前回合累计奖金（临时）
+
+	// 基础模式
+	freeCount        int64 // 免费游戏触发次数
+	freeTotalInitial int64 // 基础触发获得的总免费次数
+	freeTreasure3    int64 // 3个夺宝触发次数
+	freeTreasure4    int64 // 4个夺宝触发次数
+	freeTreasure5    int64 // 5个夺宝触发次数
+	baseTreasure1    int64 // 基础模式1个夺宝次数
+	baseTreasure2    int64 // 基础模式2个夺宝次数
+	baseWindConv     int64 // 基础模式Wind转换总次数
+
+	// 免费模式
+	extraRounds     int64     // 免费中额外增加的局数
+	treasureInFree  int64     // 免费中出现夺宝次数
+	totalNewBat     int64     // 累计新增蝙蝠总数
+	maxBatInFree    int64     // 单次免费最大蝙蝠数量
+	batDistribution [10]int64 // 免费结束时蝙蝠数量分布
+	freeWithBonus   int64     // 有奖金的spin次数
+	freeNoBonus     int64     // 无奖金的spin次数
 }
 
-// TestRtp RTP 测试入口
+// TestRtp RTP测试
 //
 // 游戏规则：
-//   - 5轴4行 way game，中奖不消除
-//   - 收集 3+ 个夺宝符号触发免费游戏（10次起，每多1个+2次）
-//   - 基础模式：蝙蝠咬人后消失
-//   - 免费模式：蝙蝠持续移动直到免费游戏结束
+//   - 4行5列Ways玩法，中奖不消除
+//   - 3+个夺宝触发免费游戏（10次起，每多1个+2次）
+//   - 基础模式：1-2个夺宝随机转换Wind符号
+//   - 免费模式：蝙蝠8方向持续移动直到免费结束
 func TestRtp(t *testing.T) {
 	// 统计数据初始化
 	var (
@@ -81,103 +73,94 @@ func TestRtp(t *testing.T) {
 
 	// ===== 主循环：模拟玩家持续游戏 =====
 	for {
-		// 1. 初始化游戏配置并更新场景状态（参考 mahjong）
+		// 1. 初始化配置并更新场景状态
 		betService.initGameConfigs()
 		updateSceneStage(betService)
 
-		// 2. 执行一次 Spin（旋转）
+		// 2. 执行一次Spin
 		res, err := betService.baseSpin()
 		if err != nil {
 			panic(err)
 		}
 
-		// 调试：检测免费游戏是否异常长
+		// 检测免费异常（防止无限循环）
 		if betService.isFreeRound() {
-			freeNum := betService.client.ClientOfFreeGame.GetFreeNum()
-			if freeNum > 10000 { // 提高阈值，因为所有夺宝都增加免费次数
-				fmt.Printf("\n警告：免费次数异常！当前剩余：%d\n", freeNum)
-				fmt.Printf("蝙蝠数量：%d\n", len(betService.scene.BatPositions))
-				fmt.Printf("夺宝数量：%d\n", betService.treasureCount)
-				panic("免费游戏次数异常")
+			if freeNum := betService.client.ClientOfFreeGame.GetFreeNum(); freeNum > 10000 {
+				panic(fmt.Sprintf("免费次数异常：%d", freeNum))
 			}
 		}
 
-		// 3. 统计本次 Spin 结果
-		isFree := betService.isFreeRound()
-
-		if isFree {
-			// 免费模式：每个 spin = 1 局游戏
+		// 3. 统计Spin结果
+		if betService.isFreeRound() {
+			// 免费模式：每个spin = 1局游戏
 			freeStats.rounds++
 			freeStats.totalWin += res.stepMultiplier
 			freeStats.currentWin += res.stepMultiplier
 
-			// 中奖判断（立即统计）
+			// 中奖判断
 			if res.stepMultiplier > 0 {
 				freeStats.winRounds++
-				freeStats.freeWithBonusCount++ // 有奖金
+				freeStats.freeWithBonus++
 			} else {
-				freeStats.freeNoBonusCount++ // 没有奖金
+				freeStats.freeNoBonus++
 			}
 
-			// 统计免费游戏中新增的局数
+			// 统计新增免费次数（免费中出现夺宝）
 			if betService.newFreeCount > 0 {
 				freeStats.extraRounds += betService.newFreeCount
-				freeStats.freeTreasureInFree++ // 免费中出现夺宝的次数
+				freeStats.treasureInFree++
 			}
 
 			// 统计免费游戏中累计新增的蝙蝠数量
-			currentTotalBat := betService.scene.InitialBatCount + betService.scene.AccumulatedNewBat
-			if currentTotalBat > freeStats.maxBatInSingleFree {
-				freeStats.maxBatInSingleFree = currentTotalBat
+			totalBat := betService.scene.InitialBatCount + betService.scene.AccumulatedNewBat
+			if totalBat > freeStats.maxBatInFree {
+				freeStats.maxBatInFree = totalBat
 			}
 		} else {
 			// 基础模式：累计当前回合奖金
 			baseStats.totalWin += res.stepMultiplier
 			baseStats.currentWin += res.stepMultiplier
 
-			// 统计基础模式Wind转换（1-2个夺宝触发）
+			// 统计Wind转换（1-2个夺宝）
 			if res.treasureCount == 1 {
-				baseStats.baseTreasure1Count++
+				baseStats.baseTreasure1++
+				baseStats.baseWindConv++
 			} else if res.treasureCount == 2 {
-				baseStats.baseTreasure2Count++
-			}
-			if res.treasureCount >= 1 && res.treasureCount <= 2 {
-				baseStats.baseWindConvCount += res.treasureCount
+				baseStats.baseTreasure2++
+				baseStats.baseWindConv += 2
 			}
 
-			// 统计免费游戏触发次数（3+ 个夺宝符号）
+			// 统计免费游戏触发（3+个夺宝）
 			if betService.newFreeCount > 0 {
 				baseStats.freeCount++
-				baseStats.freeTotalInitial += betService.newFreeCount // 累计触发时获得的免费次数
-
-				// 统计不同夺宝数量的触发次数
+				baseStats.freeTotalInitial += betService.newFreeCount
 				switch res.treasureCount {
 				case 3:
-					baseStats.freeTreasure3Count++
+					baseStats.freeTreasure3++
 				case 4:
-					baseStats.freeTreasure4Count++
+					baseStats.freeTreasure4++
 				case 5:
-					baseStats.freeTreasure5Count++
+					baseStats.freeTreasure5++
 				}
 			}
 		}
 
-		// 4. Round 结束处理（使用 SpinOver 标志，参考 mahjong）
+		// 4. Round结束处理
 		if res.SpinOver {
-			// 如果是免费游戏结束，统计蝙蝠数据（使用返回结果中保存的数据）
+			// 免费游戏结束：统计蝙蝠数据
 			if res.IsFreeGameEnding {
 				totalBats := res.InitialBatCount + res.AccumulatedNewBat
-				if totalBats >= 0 && totalBats < 10 {
+				if totalBats < 10 {
 					freeStats.batDistribution[totalBats]++
 				}
-				freeStats.totalAccumulatedNewBat += res.AccumulatedNewBat
+				freeStats.totalNewBat += res.AccumulatedNewBat
 			}
 
-			// 基础模式局数统计（1 round = 1 局游戏）
+			// 基础模式局数统计（1 round = 1局游戏）
 			baseStats.rounds++
 			baseTotalBet += _baseMultiplier
 
-			// 基础模式中奖判断（整个 round 有奖金即算中奖）
+			// 基础模式中奖判断（整个round有奖金即算中奖）
 			if baseStats.currentWin > 0 {
 				baseStats.winRounds++
 			}
@@ -212,10 +195,10 @@ func TestRtp(t *testing.T) {
 //   - NextStage 表示下一阶段（用于状态切换）
 //   - IsFreeRound 与 Stage 保持同步
 func updateSceneStage(s *betOrderService) {
-	// 默认为基础模式
-	s.scene.Stage = _spinTypeBase
 	if s.scene.IsFreeRound {
 		s.scene.Stage = _spinTypeFree
+	} else {
+		s.scene.Stage = _spinTypeBase
 	}
 
 	// 处理阶段切换（base ↔ free）
@@ -228,17 +211,15 @@ func updateSceneStage(s *betOrderService) {
 	s.scene.IsFreeRound = (s.scene.Stage == _spinTypeFree)
 }
 
-// printProgress 实时输出 RTP 进度
+// printProgress 实时输出RTP进度
 func printProgress(rounds, totalBet, baseWin, freeWin int64) {
 	baseRTP := float64(baseWin) * 100.0 / float64(totalBet)
 	freeRTP := float64(freeWin) * 100.0 / float64(totalBet)
 	totalRTP := float64(baseWin+freeWin) * 100.0 / float64(totalBet)
-
 	fmt.Printf("\r进度: %d局 | 基础RTP: %.2f%% | 免费RTP: %.2f%% | 总RTP: %.2f%%",
 		rounds, baseRTP, freeRTP, totalRTP)
 }
 
-// printFinalStats 打印最终统计汇总
 func printFinalStats(base, free modeStats, totalBet int64) {
 	fmt.Println()
 	fmt.Println("==========================================")
@@ -249,19 +230,19 @@ func printFinalStats(base, free modeStats, totalBet int64) {
 
 	// 基础模式Wind转换统计
 	fmt.Println("【基础模式Wind转换详情】")
-	fmt.Printf("  - 1个夺宝: %d 次\n", base.baseTreasure1Count)
-	fmt.Printf("  - 2个夺宝: %d 次\n", base.baseTreasure2Count)
-	fmt.Printf("  - Wind转换总次数: %d\n", base.baseWindConvCount)
+	fmt.Printf("  - 1个夺宝: %d 次\n", base.baseTreasure1)
+	fmt.Printf("  - 2个夺宝: %d 次\n", base.baseTreasure2)
+	fmt.Printf("  - Wind转换总次数: %d\n", base.baseWindConv)
 	if base.rounds > 0 {
-		fmt.Printf("  - Wind转换触发率: %.2f%%\n", float64(base.baseTreasure1Count+base.baseTreasure2Count)*100.0/float64(base.rounds))
+		fmt.Printf("  - Wind转换触发率: %.2f%%\n", float64(base.baseTreasure1+base.baseTreasure2)*100.0/float64(base.rounds))
 	}
 	fmt.Println()
 
 	// 免费游戏触发详细统计
 	fmt.Println("【免费游戏触发详情】")
-	fmt.Printf("  - 3个夺宝: %d 次 (预期获得 %d 免费次数)\n", base.freeTreasure3Count, base.freeTreasure3Count*10)
-	fmt.Printf("  - 4个夺宝: %d 次 (预期获得 %d 免费次数)\n", base.freeTreasure4Count, base.freeTreasure4Count*12)
-	fmt.Printf("  - 5个夺宝: %d 次 (预期获得 %d 免费次数)\n", base.freeTreasure5Count, base.freeTreasure5Count*14)
+	fmt.Printf("  - 3个夺宝: %d 次 (预期获得 %d 免费次数)\n", base.freeTreasure3, base.freeTreasure3*10)
+	fmt.Printf("  - 4个夺宝: %d 次 (预期获得 %d 免费次数)\n", base.freeTreasure4, base.freeTreasure4*12)
+	fmt.Printf("  - 5个夺宝: %d 次 (预期获得 %d 免费次数)\n", base.freeTreasure5, base.freeTreasure5*14)
 	fmt.Printf("基础触发获得总免费次数: %d\n", base.freeTotalInitial)
 	fmt.Println()
 
@@ -270,30 +251,29 @@ func printFinalStats(base, free modeStats, totalBet int64) {
 
 	// 免费模式详细统计
 	fmt.Println("【免费模式详细信息】")
-	fmt.Printf("有奖金spin次数: %d (%.2f%%)\n", free.freeWithBonusCount, float64(free.freeWithBonusCount)*100.0/float64(free.rounds))
-	fmt.Printf("没有奖金spin次数: %d (%.2f%%)\n", free.freeNoBonusCount, float64(free.freeNoBonusCount)*100.0/float64(free.rounds))
+	fmt.Printf("有奖金spin次数: %d (%.2f%%)\n", free.freeWithBonus, float64(free.freeWithBonus)*100.0/float64(free.rounds))
+	fmt.Printf("没有奖金spin次数: %d (%.2f%%)\n", free.freeNoBonus, float64(free.freeNoBonus)*100.0/float64(free.rounds))
 	fmt.Println()
 
 	// 免费次数核算
 	fmt.Println("【免费次数核算】")
-	theoreticalTotal := base.freeTotalInitial + free.extraRounds
-	fmt.Printf("理论总免费次数 = 基础触发(%d) + 免费增加(%d) = %d\n",
-		base.freeTotalInitial, free.extraRounds, theoreticalTotal)
-	fmt.Printf("实际玩的免费次数 = %d\n", free.rounds)
-	diff := theoreticalTotal - free.rounds
+	theoretical := base.freeTotalInitial + free.extraRounds
+	diff := theoretical - free.rounds
 	diffPercent := 0.0
-	if theoreticalTotal > 0 {
-		diffPercent = float64(diff) * 100.0 / float64(theoreticalTotal)
+	if theoretical > 0 {
+		diffPercent = float64(diff) * 100.0 / float64(theoretical)
 	}
+	fmt.Printf("理论总免费次数 = 基础触发(%d) + 免费增加(%d) = %d\n", base.freeTotalInitial, free.extraRounds, theoretical)
+	fmt.Printf("实际玩的免费次数 = %d\n", free.rounds)
 	fmt.Printf("差异: %d (%.2f%%)\n", diff, diffPercent)
 	fmt.Println()
 
 	// 蝙蝠统计
 	fmt.Println("【蝙蝠数量统计】")
-	fmt.Printf("免费游戏中累计新增蝙蝠总数: %d\n", free.totalAccumulatedNewBat)
-	fmt.Printf("单次免费游戏最大蝙蝠数量: %d\n", free.maxBatInSingleFree)
+	fmt.Printf("免费游戏中累计新增蝙蝠总数: %d\n", free.totalNewBat)
+	fmt.Printf("单次免费游戏最大蝙蝠数量: %d\n", free.maxBatInFree)
 	if base.freeCount > 0 {
-		avgNewBat := float64(free.totalAccumulatedNewBat) / float64(base.freeCount)
+		avgNewBat := float64(free.totalNewBat) / float64(base.freeCount)
 		fmt.Printf("平均每次免费游戏新增蝙蝠数量: %.2f\n", avgNewBat)
 	}
 	fmt.Println("免费游戏结束时蝙蝠数量分布:")
@@ -318,52 +298,33 @@ func printFinalStats(base, free modeStats, totalBet int64) {
 // printModeStats 打印单个模式的详细统计
 //
 // 参数说明：
-//   - name: 模式名称（基础/免费）
-//   - stats: 统计数据
-//   - totalBet: 总投注（用于计算 RTP）
 //   - isBase: 是否为基础模式（决定显示哪些统计项）
 //   - freeRounds: 免费游戏总局数（仅基础模式需要）
 func printModeStats(name string, stats modeStats, totalBet int64, isBase bool, freeRounds int64) {
 	fmt.Printf("%s总游戏局数: %d\n", name, stats.rounds)
 
-	// 投注统计（仅基础模式）
 	if isBase {
 		fmt.Printf("%s总投注: %.2f\n", name, float64(totalBet))
 	}
 
 	fmt.Printf("%s总奖金: %.2f\n", name, float64(stats.totalWin))
+	fmt.Printf("%sRTP: %.2f%%\n", name, float64(stats.totalWin)*100.0/float64(totalBet))
 
-	// RTP 计算（免费模式的 RTP 也相对于基础投注）
-	rtp := 0.0
-	if totalBet > 0 {
-		rtp = float64(stats.totalWin) * 100.0 / float64(totalBet)
-	}
-	fmt.Printf("%sRTP: %.2f%%\n", name, rtp)
-
-	// 基础模式特有统计
 	if isBase {
-		// 免费游戏触发率（3+ 个夺宝符号）
-		triggerRate := float64(stats.freeCount) * 100.0 / float64(stats.rounds)
+		// 基础模式：免费触发率
 		fmt.Printf("%s免费局触发次数: %d\n", name, stats.freeCount)
-		fmt.Printf("%s触发免费局比例: %.2f%%\n", name, triggerRate)
-
-		// 平均每局免费次数（免费游戏总局数 / 基础游戏局数）
-		avgFree := float64(freeRounds) / float64(stats.rounds)
-		fmt.Printf("%s平均每局免费次数: %.2f\n", name, avgFree)
+		fmt.Printf("%s触发免费局比例: %.2f%%\n", name, float64(stats.freeCount)*100.0/float64(stats.rounds))
+		fmt.Printf("%s平均每局免费次数: %.2f\n", name, float64(freeRounds)/float64(stats.rounds))
 	} else {
-		// 免费模式特有统计
-		// 额外增加的局数（免费游戏中出现夺宝符号 +2 次）
-		fmt.Printf("%s中出现夺宝次数: %d\n", name, stats.freeTreasureInFree)
+		// 免费模式：额外增加统计
+		fmt.Printf("%s中出现夺宝次数: %d\n", name, stats.treasureInFree)
 		fmt.Printf("%s额外增加局数: %d\n", name, stats.extraRounds)
 	}
 
 	// 中奖率统计
 	fmt.Printf("%s中奖局数: %d\n", name, stats.winRounds)
 	if stats.rounds > 0 {
-		winRate := float64(stats.winRounds) * 100.0 / float64(stats.rounds)
-		fmt.Printf("%s中奖率: %.2f%%\n", name, winRate)
-	} else {
-		fmt.Printf("%s中奖率: 0.00%%（未触发免费游戏）\n", name)
+		fmt.Printf("%s中奖率: %.2f%%\n", name, float64(stats.winRounds)*100.0/float64(stats.rounds))
 	}
 	fmt.Println()
 }
@@ -372,8 +333,8 @@ func printModeStats(name string, stats modeStats, totalBet int64, isBase bool, f
 //
 // 说明：
 //   - 模拟真实玩家的游戏环境
-//   - 余额设置为足够大，确保测试不会因余额不足而中断
-//   - forRtpBench=true 标记为 RTP 测试模式
+//   - 余额设置足够大，确保测试不会因余额不足而中断
+//   - forRtpBench=true 标记为RTP测试模式
 func newBetService() *betOrderService {
 	return &betOrderService{
 		req: &request.BetOrderReq{
@@ -405,15 +366,12 @@ func newBetService() *betOrderService {
 			ClientOfFreeGame: &client.ClientOfFreeGame{},
 			ClientGameCache:  &client.ClientGameCache{},
 		},
-		lastOrder:        nil,
-		gameRedis:        nil,
 		scene:            &SpinSceneData{},
-		gameOrder:        nil,
 		bonusAmount:      decimal.Decimal{},
 		betAmount:        decimal.Decimal{},
 		amount:           decimal.Decimal{},
 		isRoundFirstStep: true,
 		isSpinFirstRound: true,
-		forRtpBench:      true, // RTP 测试模式
+		forRtpBench:      true, // RTP测试模式
 	}
 }
