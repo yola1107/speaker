@@ -24,7 +24,7 @@ type betOrderService struct {
 	client           *client.Client       // 用户上下文
 	lastOrder        *game.GameOrder      // 用户上一个订单
 	gameRedis        *redis.Client        // 游戏 redis
-	scene            scene                // 场景数据
+	scene            *SpinSceneData       // 场景数据
 	gameOrder        *game.GameOrder      // 订单
 	bonusAmount      decimal.Decimal      // 奖金金额
 	betAmount        decimal.Decimal      // spin 下注金额
@@ -34,13 +34,13 @@ type betOrderService struct {
 	freeOrderSN      string               // 触发免费的回合的父订单号，基础 step 此字段为空
 	stepMultiplier   int64                // Step倍数
 	isRoundFirstStep bool                 // 是否是 spin 的第一个 step
+	isSpinFirstRound bool                 // 是否为 Spin 的第一回合
 	forRtpBench      bool                 // 是否为RTP测试流程
 	gameConfig       *gameConfigJson      // 配置数据
 	winInfos         []*winInfo           // 中奖信息
 	symbolGrid       *int64Grid           // 符号网格
 	winGrid          *int64Grid           // 中奖网格
 	// xxg2 特有字段
-	isFree            bool         // 是否是免费 step
 	stepMap           *stepMap     // step 预设数据
 	winResults        []*winResult // 中奖结果
 	lineMultiplier    int64        // 中奖线倍数
@@ -58,7 +58,7 @@ func newBetOrderService(forRtpBench bool) *betOrderService {
 	return s
 }
 
-// 下注逻辑
+// 统一下注请求接口，无论是免费还是普通
 func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, error) {
 	s.req = req
 
@@ -82,11 +82,22 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 
 	// 判断是否首次 spin
 	if s.lastOrder == nil {
+		s.isSpinFirstRound = true
 		s.isRoundFirstStep = true
 		s.cleanScene()
 	}
+
 	// 加载场景数据
 	s.reloadScene()
+
+	// spin的第一个round（参考 zcm2）
+	if s.scene.SpinFirstRound == 0 {
+		s.isSpinFirstRound = true
+	}
+	// round的第一个step
+	if s.scene.RoundFirstStep == 0 {
+		s.isRoundFirstStep = true
+	}
 
 	// 执行主要的 spin 逻辑
 	_, err = s.baseSpin()
@@ -110,12 +121,12 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 	}
 
 	// 直接构建返回结果
-	return map[string]any{
+	ret := map[string]any{
 		"orderSN":            s.gameOrder.OrderSn,
-		"symbolGrid":         s.symbolGrid,
+		"symbolGrid":         s.symbolGrid, // Grid经过上下对称处理后的Gird
 		"treasureCount":      s.stepMap.TreatCount,
-		"winGrid":            s.winGrid,
-		"winResults":         s.winResults,
+		"winGrid":            s.winGrid,    //
+		"winResults":         s.winResults, //
 		"baseBet":            s.req.BaseMoney,
 		"multiplier":         s.req.Multiple,
 		"betAmount":          s.betAmount.Round(2).InexactFloat64(),
@@ -124,13 +135,14 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 		"freeBonusAmount":    s.client.ClientOfFreeGame.GetFreeTotalMoney(),
 		"roundBonus":         s.client.ClientOfFreeGame.RoundBonus,
 		"currentBalance":     s.gameOrder.CurBalance,
-		"isFree":             s.isFree,
+		"isFree":             s.isFreeRound(),
 		"step":               s.stepMap.ID,
 		"newFreeCount":       s.stepMap.New,
 		"totalFreeCount":     s.client.GetLastMaxFreeNum(),
 		"remainingFreeCount": s.stepMap.FreeNum,
 		"lineMultiplier":     s.lineMultiplier,
 		"stepMultiplier":     s.stepMultiplier,
-		"bat":                s.stepMap.Bat,
-	}, nil
+		"bat":                s.stepMap.Bat, // 也是通过Grid上下对称处理后的Gird对应的坐标
+	}
+	return ret, nil
 }

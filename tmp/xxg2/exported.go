@@ -40,18 +40,4 @@ func (g *Game) BetOrder(req *request.BetOrderReq) (result map[string]any, err er
 		global.GVA_LOG.Error("BetOrder", zap.Any("req", req), zap.Error(err))
 	}
 	return ret, err
-
-	//return newBetOrderService().betOrder(req)
 }
-
-//// MemberLogin 用户登录
-//func (g *Game) MemberLogin(req *pb.LoginStreamReq, c *client.Client) (result string, err error) {
-//	defer func() {
-//		if r := recover(); r != nil {
-//			global.GVA_LOG.Error("MemberLogin", zap.Any("r", r), zap.Stack("stack"))
-//			result, err = "", InternalServerError
-//			return
-//		}
-//	}()
-//	return newMemberLoginService().memberLogin(req, c)
-//}

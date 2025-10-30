@@ -91,7 +91,7 @@ func (s *betOrderService) showPostUpdateErrorLog() {
 		"showPostUpdateErrorLog",
 		zap.Error(fmt.Errorf("step state mismatch")),
 		zap.Int64("id", s.member.ID),
-		zap.Bool("isFree", s.isFree),
+		zap.Bool("isFree", s.isFreeRound()),
 		zap.Uint64("lastWinID", s.client.ClientOfFreeGame.GetLastWinId()),
 		zap.Uint64("lastMapID", s.client.ClientOfFreeGame.GetLastMapId()),
 		zap.Uint64("freeNum", s.client.ClientOfFreeGame.GetFreeNum()),
@@ -102,130 +102,114 @@ func (s *betOrderService) showPostUpdateErrorLog() {
 	)
 }
 
-// countTreasureSymbols 计算夺宝符号数量和位置
-func (s *betOrderService) countTreasureSymbols() {
-	positions := s.scanSymbolPositions(isTreasure)
-	s.treasureCount, s.treasurePositions = int64(len(positions)), positions
-	s.stepMap.TreatCount = s.treasureCount // 更新step Map
-}
-
-// scanSymbolPositions 扫描符合条件的符号位置
-func (s *betOrderService) scanSymbolPositions(matchFunc func(int64) bool) []*position {
-	var positions []*position
-
-	for row := int64(0); row < _rowCount; row++ {
-		for col := int64(0); col < _colCount; col++ {
-			if matchFunc(s.symbolGrid[row][col]) {
-				positions = append(positions, &position{Row: row, Col: col})
-			}
-		}
-	}
-
-	return positions
-}
-
 // collectBat 收集蝙蝠移动和Wind转换信息
+//
+// 规则说明：
+//
+//	基础模式：1-2个夺宝时，随机选择对应数量的人符号(7/8/9)转换为Wild
+//	免费模式：蝙蝠从上次位置持续移动，移动到人符号位置则转换为Wild
+//	重要：每列最多1个夺宝符号，因此夺宝数量最多5个
 func (s *betOrderService) collectBat() {
-	/*
-		一、基础模式（Base Mode）
-		触发条件：
-		当前盘面中 _treasure（蝙蝠/夺宝符）数量S 满足 1 ≤ S ≤ 2。
-		实现步骤：
-		1>扫描当前盘面，统计所有属于【老人 / 小孩 / 女人】的符号位置，保存为 allPositions。
-		2>从 allPositions 中随机选择 S 个位置（若数量不足 S，则全选）。
-		3>将这些位置上的符号转换为 Wind（Wild）。
+	treasureCount, treasurePositions := s.countTreasureSymbols()
 
-
-		二、免费模式（Free Mode）
-		触发条件：
-		当前处于免费游戏模式（Free Game）。
-
-		实现步骤：
-		1>扫描当前盘面，统计所有 _treasure（蝙蝠）符号的位置，保存为 batPositions。
-		2>从 batPositions 中随机选择 S 个蝙蝠（若数量不足 S，则全选）。
-		3>对每个被选中的蝙蝠执行以下操作：
-		随机选择一个可行的方向（上、下、左、右）；
-		将蝙蝠向该方向移动一格，得到新位置（若越界可忽略或重新随机）。
-		收集所有移动后的小格子位置，检查这些格子上的符号：
-		若符号属于【老人 / 小孩 / 女人】，则将其转换为 Wind（Wild）。
-		记录这些移动后的小格子位置，作为下一次免费模式中蝙蝠的新起始点，使其能持续移动。
-
-	*/
-
-	treasureCount, treasurePositions := s.treasureCount, s.treasurePositions
-
-	if s.isFree {
-		s.stepMap.Bat = s.transformToWildFreeMode(treasurePositions)
+	if s.isFreeRound() {
+		s.stepMap.Bat = s.transformToWildFreeMode(treasureCount, treasurePositions)
 	} else {
 		s.stepMap.Bat = s.transformToWildBaseMode(treasureCount, treasurePositions)
 	}
 }
 
-// transformToWildBaseMode 基础模式Wind转换（1-2个夺宝符时触发）
+// countTreasureSymbols 计算当前盘面的夺宝符号数量和位置
+func (s *betOrderService) countTreasureSymbols() (int64, []*position) {
+	var positions []*position
+	for row := int64(0); row < _rowCount; row++ {
+		for col := int64(0); col < _colCount; col++ {
+			if s.symbolGrid[row][col] == _treasure {
+				positions = append(positions, &position{Row: row, Col: col})
+			}
+		}
+	}
+
+	s.treasureCount = int64(len(positions))
+	s.treasurePositions = positions
+	s.stepMap.TreatCount = s.treasureCount
+
+	return s.treasureCount, positions
+}
+
+// transformToWildBaseMode 基础模式Wind转换
+//
+// 规则：1-2个夺宝时触发，随机选择对应数量的人符号(7/8/9)转换为Wild
 func (s *betOrderService) transformToWildBaseMode(treasureCount int64, treasurePositions []*position) []*Bat {
 	if treasureCount < 1 || treasureCount > 2 {
 		return nil
 	}
 
-	// 找到所有可转换为Wind符号位置 （小孩/女人/老人）
-	allWindPositions := s.scanSymbolPositions(canTransformToWind)
-	if len(allWindPositions) == 0 {
+	// 扫描所有人符号位置(7/8/9)
+	var windPositions []*position
+	for row := int64(0); row < _rowCount; row++ {
+		for col := int64(0); col < _colCount; col++ {
+			symbol := s.symbolGrid[row][col]
+			if symbol == _child || symbol == _woman || symbol == _oldMan {
+				windPositions = append(windPositions, &position{Row: row, Col: col})
+			}
+		}
+	}
+
+	if len(windPositions) == 0 {
 		return nil
 	}
 
-	// 随机选择S个Wind符号（若数量不足则全选）
-	selectCount := min(int(treasureCount), len(allWindPositions))
-
-	// 随机打乱并取前N个
-	indices := rand.Perm(len(allWindPositions))[:selectCount]
-
-	// 建立treasure→Wind映射并转换
+	// 随机选择N个人符号转换
+	selectCount := min(int(treasureCount), len(windPositions))
 	bats := make([]*Bat, 0, selectCount)
-	for i, idx := range indices {
-		windPos := allWindPositions[idx]
-		treasurePos := treasurePositions[i%len(treasurePositions)]
-		windSymbol := s.symbolGrid[windPos.Row][windPos.Col]
 
-		bats = append(bats, createBat(treasurePos, windPos, windSymbol, _wild))
-		s.symbolGrid[windPos.Row][windPos.Col] = _wild
+	for i, idx := range rand.Perm(len(windPositions))[:selectCount] {
+		pos := windPositions[idx]
+		oldSymbol := s.symbolGrid[pos.Row][pos.Col]
+		s.symbolGrid[pos.Row][pos.Col] = _wild
+		bats = append(bats, createBat(treasurePositions[i%len(treasurePositions)], pos, oldSymbol, _wild))
 	}
 
 	return bats
 }
 
 // transformToWildFreeMode 免费模式Wind转换（蝙蝠持续移动）
-func (s *betOrderService) transformToWildFreeMode(treasurePositions []*position) []*Bat {
-	// 获取蝙蝠位置：有保存的用保存的（持续移动），否则用treasure位置（首次）
-	batPositions := treasurePositions
-	if len(s.scene.BatPositions) > 0 {
-		batPositions = s.scene.BatPositions
-	}
-
+//
+// 逻辑：
+//  1. 从scene.BatPositions获取蝙蝠当前位置
+//  2. 每只蝙蝠随机8个方向移动一格
+//  3. 移动到人符号(7/8/9)位置则转换为Wild
+//  4. 返回所有蝙蝠的移动记录
+func (s *betOrderService) transformToWildFreeMode(treasureCount int64, treasurePositions []*position) []*Bat {
+	batPositions := s.scene.BatPositions
 	if len(batPositions) == 0 {
 		return nil
 	}
 
-	// 最多_maxBatPositions个格子进行移动
-	if len(batPositions) >= _maxBatPositions {
-		batPositions = batPositions[:_maxBatPositions] // TODO 可随机n个
-	}
-
 	bats := make([]*Bat, 0, len(batPositions))
 
-	// 对每个蝙蝠执行移动和转换
-	for _, batPos := range batPositions {
-		// 蝙蝠随机方向移动一格
-		newPos := moveBatOneStep(batPos)
-		targetSymbol := s.symbolGrid[newPos.Row][newPos.Col]
-		originalSymbol := s.symbolGrid[batPos.Row][batPos.Col]
+	// 保存原始符号，支持多只蝙蝠移入同一格子
+	originalSymbols := make(map[string]int64)
 
-		// 如果新位置是Wind符号，转换为Wild
-		if canTransformToWind(targetSymbol) {
+	// 移动每只蝙蝠并转换Wind符号
+	for _, batPos := range batPositions {
+		newPos := moveBatOneStep(batPos)
+
+		// 获取目标位置的原始符号（支持多只蝙蝠移入同一格子）
+		posKey := fmt.Sprintf("%d_%d", newPos.Row, newPos.Col)
+		targetSymbol, exists := originalSymbols[posKey]
+		if !exists {
+			targetSymbol = s.symbolGrid[newPos.Row][newPos.Col]
+			originalSymbols[posKey] = targetSymbol
+		}
+
+		// 如果新位置是人符号(7/8/9)，转换为Wild
+		if targetSymbol == _child || targetSymbol == _woman || targetSymbol == _oldMan {
 			s.symbolGrid[newPos.Row][newPos.Col] = _wild
 			bats = append(bats, createBat(batPos, newPos, targetSymbol, _wild))
 		} else {
-			// 只记录移动
-			bats = append(bats, createBat(batPos, newPos, originalSymbol, targetSymbol))
+			bats = append(bats, createBat(batPos, newPos, s.symbolGrid[batPos.Row][batPos.Col], targetSymbol))
 		}
 	}
 
@@ -240,6 +224,7 @@ type direction struct {
 
 var allDirections = []direction{
 	{-1, 0}, {1, 0}, {0, -1}, {0, 1}, // 上、下、左、右
+	{-1, -1}, {-1, 1}, {1, -1}, {1, 1}, // 左上、右上、左下、右下
 }
 
 // isValidPosition 检查位置是否在边界内
@@ -247,9 +232,8 @@ func isValidPosition(row, col int64) bool {
 	return row >= 0 && row < _rowCount && col >= 0 && col < _colCount
 }
 
-// moveBatOneStep 蝙蝠向随机可行方向移动一格
+// moveBatOneStep 蝙蝠随机移动一格（8个方向）
 func moveBatOneStep(pos *position) *position {
-	// 收集可行方向
 	var validDirs []direction
 	for _, dir := range allDirections {
 		if isValidPosition(pos.Row+dir.dRow, pos.Col+dir.dCol) {
@@ -261,34 +245,18 @@ func moveBatOneStep(pos *position) *position {
 		return pos
 	}
 
-	// 随机选择一个方向并移动
 	dir := validDirs[rand.IntN(len(validDirs))]
 	return &position{Row: pos.Row + dir.dRow, Col: pos.Col + dir.dCol}
 }
 
-// createBat 创建Bat数据
+// createBat 创建蝙蝠移动记录
 func createBat(fromPos, toPos *position, oldSymbol, newSymbol int64) *Bat {
 	return &Bat{
-		X: fromPos.Row, Y: fromPos.Col,
-		TransX: toPos.Row, TransY: toPos.Col,
-		Syb: oldSymbol, Sybn: newSymbol,
+		X:      fromPos.Row,
+		Y:      fromPos.Col,
+		TransX: toPos.Row,
+		TransY: toPos.Col,
+		Syb:    oldSymbol,
+		Sybn:   newSymbol,
 	}
-}
-
-// calculateFreeTimes 计算触发的免费次数
-func (s *betOrderService) calculateFreeTimes(treasureCount int64) int64 {
-	if treasureCount < _triggerTreasureCount {
-		return 0
-	}
-
-	extraScatters := treasureCount - _triggerTreasureCount
-	return s.gameConfig.FreeGameInitTimes + (extraScatters * s.gameConfig.ExtraScatterExtraTime)
-}
-
-// calculateFreeAddTimes 计算免费游戏中追加的次数
-func (s *betOrderService) calculateFreeAddTimes(treasureCount int64) int64 {
-	if treasureCount == 0 {
-		return 0
-	}
-	return treasureCount * s.gameConfig.ExtraScatterExtraTime
 }

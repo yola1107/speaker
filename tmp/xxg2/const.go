@@ -26,14 +26,12 @@ const (
 
 const _minMatchCount = 3        // 最小中奖数量
 const _triggerTreasureCount = 3 // 触发免费的夺宝符号最低数量
-const _maxBatPositions = 5      // 触发免费的夺宝符号生成格子最大数量
+const _maxBatPositions = 5      // 免费游戏中蝙蝠总数上限（每次spin所有蝙蝠都移动）
 
-// isTreasure 是否是夺宝符号 （简称S）
-func isTreasure(symbol int64) bool {
-	return symbol == _treasure
-}
+// 游戏阶段常量（参考 mahjong）
+const (
+	_spinTypeBase = 1 // 基础游戏
+	_spinTypeFree = 2 // 免费游戏
+)
 
-// canTransformToWind 判断是否可转换为Wind符号（小孩/女人/老人）
-func canTransformToWind(symbol int64) bool {
-	return symbol == _child || symbol == _woman || symbol == _oldMan
-}
+const _debugMode = false // 调试开关（true时使用固定测试数据）

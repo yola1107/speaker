@@ -1,12 +1,5 @@
 package xxg2
 
-import (
-	"fmt"
-)
-
-// sceneDataKeyPrefix 场景数据 key 前缀
-var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", _gameID)
-
 /*
 
 	Config

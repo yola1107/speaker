@@ -7,7 +7,6 @@ import (
 	"egame-grpc/gamelogic"
 	"egame-grpc/global"
 	"egame-grpc/model/game"
-
 	"egame-grpc/utils/json"
 	"egame-grpc/utils/snow"
 
@@ -24,21 +23,24 @@ func (s *betOrderService) initialize() error {
 		s.orderSN = strconv.FormatInt(snow.GenarotorID(s.member.ID), 10)
 	}
 
-	// 判断是首次还是后续 step
-	if s.isRoundFirstStep {
+	// 首次spin或基础模式
+	if s.scene == nil || s.scene.Stage == _spinTypeBase || s.scene.Stage == 0 {
 		if err := s.initFirstStepForSpin(); err != nil {
 			return err
 		}
+		s.isSpinFirstRound = false
+		s.scene.SpinFirstRound = 1 // 处理场景中间数据（标记非首次）
 	} else {
+		// 免费模式后续spin
 		s.initStepForNextStep()
 	}
 
 	return nil
 }
 
-// 初始化首次 step
+// 初始化首次step
 func (s *betOrderService) initFirstStepForSpin() error {
-	// 非测试模式下验证下注金额和余额
+	// 验证下注金额和余额
 	if !s.forRtpBench {
 		if !s.updateBetAmount() {
 			return InvalidRequestParams
@@ -48,10 +50,7 @@ func (s *betOrderService) initFirstStepForSpin() error {
 		}
 	}
 
-	// 重置客户端状态
 	s.resetClientState()
-
-	// 设置下注金额和唯一标识
 	s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
 	s.amount = s.betAmount
 	s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
@@ -68,46 +67,7 @@ func (s *betOrderService) resetClientState() {
 	s.client.ClientOfFreeGame.ResetRoundBonusStaging()
 }
 
-// 初始化后续 step
-func (s *betOrderService) initStepForNextStep() {
-	// 恢复下注配置
-	if !s.forRtpBench {
-		s.req.BaseMoney = s.lastOrder.BaseAmount
-		s.req.Multiple = s.lastOrder.Multiple
-	} else {
-		s.req.BaseMoney = 1
-		s.req.Multiple = 1
-	}
-
-	s.betAmount = decimal.NewFromFloat(s.client.ClientOfFreeGame.GetBetAmount())
-	s.amount = decimal.Zero
-
-	if s.forRtpBench {
-		return
-	}
-
-	// 设置父订单号和免费订单号
-	if s.isFree {
-		// 免费模式：设置免费订单号
-		switch {
-		case s.lastOrder.FreeOrderSn != "":
-			s.freeOrderSN = s.lastOrder.FreeOrderSn
-		case s.lastOrder.ParentOrderSn != "":
-			s.freeOrderSN = s.lastOrder.ParentOrderSn
-		default:
-			s.freeOrderSN = s.lastOrder.OrderSn
-		}
-	} else {
-		// 基础模式：设置父订单号
-		if s.lastOrder.ParentOrderSn != "" {
-			s.parentOrderSN = s.lastOrder.ParentOrderSn
-		} else {
-			s.parentOrderSN = s.lastOrder.OrderSn
-		}
-	}
-}
-
-// 更新订单
+// 更新订单（参考 mahjong，使用 scene 中的倍数字段）
 func (s *betOrderService) updateGameOrder() bool {
 	gameOrder := game.GameOrder{
 		MerchantID:        s.merchant.ID,
@@ -119,8 +79,8 @@ func (s *betOrderService) updateGameOrder() bool {
 		BaseMultiple:      _baseMultiplier,
 		Multiple:          s.req.Multiple,
 		LineMultiple:      s.lineMultiplier,
-		BonusHeadMultiple: 1,
-		BonusMultiple:     s.stepMultiplier,
+		BonusHeadMultiple: 0,                // xxg2 无消除，固定为0
+		BonusMultiple:     s.stepMultiplier, // xxg2 无消除，直接用 stepMultiplier
 		BaseAmount:        s.req.BaseMoney,
 		Amount:            s.amount.Round(2).InexactFloat64(),
 		ValidAmount:       s.amount.Round(2).InexactFloat64(),
@@ -130,12 +90,12 @@ func (s *betOrderService) updateGameOrder() bool {
 		ParentOrderSn:     s.parentOrderSN,
 		FreeOrderSn:       s.freeOrderSN,
 		State:             1,
-		BonusTimes:        0,
-		HuNum:             s.treasureCount,
-		FreeNum:           s.stepMap.FreeNum,
+		BonusTimes:        0,               // xxg2 无消除，固定为0
+		HuNum:             s.treasureCount, // 夺宝符号数量
+		FreeNum:           int64(s.client.ClientOfFreeGame.GetFreeNum()),
 		FreeTimes:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
 	}
-	if s.isFree {
+	if s.isFreeRound() {
 		gameOrder.IsFree = 1
 	}
 	s.gameOrder = &gameOrder
@@ -159,17 +119,6 @@ func (s *betOrderService) settleStep() bool {
 		return false
 	}
 	return true
-}
-
-// 加载step数据
-func (s *betOrderService) loadStepData() {
-	var symbolGrid int64Grid
-	for row := int64(0); row < _rowCount; row++ {
-		for col := int64(0); col < _colCount; col++ {
-			symbolGrid[row][col] = s.stepMap.Map[row*_colCount+col]
-		}
-	}
-	s.symbolGrid = &symbolGrid
 }
 
 // 查找中奖信息（Ways玩法：从左到右连续匹配）
@@ -261,32 +210,32 @@ func (s *betOrderService) getCurrentBalance() float64 {
 // 填充订单细节
 func (s *betOrderService) fillInGameOrderDetails() bool {
 	// 序列化符号网格
-	if betRawDetail, err := json.CJSON.MarshalToString(s.symbolGrid); err != nil {
+	betRawDetail, err := json.CJSON.MarshalToString(s.symbolGrid)
+	if err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails: marshal symbolGrid", zap.Error(err))
 		return false
-	} else {
-		s.gameOrder.BetRawDetail = betRawDetail
 	}
+	s.gameOrder.BetRawDetail = betRawDetail
 
 	// 序列化中奖网格
-	if winRawDetail, err := json.CJSON.MarshalToString(s.winGrid); err != nil {
+	winRawDetail, err := json.CJSON.MarshalToString(s.winGrid)
+	if err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails: marshal winGrid", zap.Error(err))
 		return false
-	} else {
-		s.gameOrder.BonusRawDetail = winRawDetail
 	}
+	s.gameOrder.BonusRawDetail = winRawDetail
 
 	// 转换为字符串格式
 	s.gameOrder.BetDetail = s.symbolGridToString()
 	s.gameOrder.BonusDetail = s.winGridToString()
 
 	// 序列化中奖详情
-	if winDetails, err := json.CJSON.MarshalToString(s.getWinDetailsMap()); err != nil {
+	winDetails, err := json.CJSON.MarshalToString(s.getWinDetailsMap())
+	if err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails: marshal winDetails", zap.Error(err))
 		return false
-	} else {
-		s.gameOrder.WinDetails = winDetails
 	}
+	s.gameOrder.WinDetails = winDetails
 
 	return true
 }
@@ -320,12 +269,7 @@ func (s *betOrderService) findSymbolWinInfo(symbol int64) (*winInfo, bool) {
 		if count == 0 {
 			// 检查是否满足中奖条件（至少3列 且 有真实符号）
 			if col >= _minMatchCount && hasRealSymbol {
-				return &winInfo{
-					Symbol:      symbol,
-					SymbolCount: col,
-					LineCount:   lineCount,
-					Positions:   positions,
-				}, true
+				return &winInfo{Symbol: symbol, SymbolCount: col, LineCount: lineCount, Positions: positions}, true
 			}
 			return nil, false
 		}
@@ -335,12 +279,7 @@ func (s *betOrderService) findSymbolWinInfo(symbol int64) (*winInfo, bool) {
 
 		// 到达最后一列 → 全屏中奖
 		if col == _colCount-1 && hasRealSymbol {
-			return &winInfo{
-				Symbol:      symbol,
-				SymbolCount: _colCount,
-				LineCount:   lineCount,
-				Positions:   positions,
-			}, true
+			return &winInfo{Symbol: symbol, SymbolCount: _colCount, LineCount: lineCount, Positions: positions}, true
 		}
 	}
 
@@ -401,7 +340,7 @@ func (s *betOrderService) getWinDetailsMap() map[string]any {
 		"spinBonusAmount":    s.client.ClientOfFreeGame.GetGeneralWinTotal(),
 		"freeBonusAmount":    s.client.ClientOfFreeGame.GetFreeTotalMoney(),
 		"roundBonus":         s.client.ClientOfFreeGame.RoundBonus,
-		"isFree":             s.isFree,
+		"isFree":             s.isFreeRound(),
 		"newFreeCount":       s.newFreeCount,
 		"totalFreeCount":     s.client.GetLastMaxFreeNum(),
 		"remainingFreeCount": s.client.ClientOfFreeGame.GetFreeNum(),
