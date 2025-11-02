@@ -25,9 +25,6 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 		Bat:        nil,
 		Map:        symbols,
 	}
-	if s.isFreeRound() {
-		s.stepMap.IsFree = 1
-	}
 
 	// 加载网格，扫描treasure
 	s.loadStepData()
@@ -40,7 +37,7 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 	s.processWinInfos()
 	s.updateBonusAmount()
 
-	// 构建结果
+	// 构建并更新结果
 	result := &BaseSpinResult{
 		lineMultiplier: s.lineMultiplier,
 		stepMultiplier: s.stepMultiplier,
@@ -50,16 +47,10 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 		winResults:     s.winResults,
 	}
 
-	// 更新状态
 	if s.isFreeRound() {
-		result.InitialBatCount = s.scene.InitialBatCount
-		result.AccumulatedNewBat = s.scene.AccumulatedNewBat
-		s.updateFreeStepResult()
-		result.SpinOver = (s.client.ClientOfFreeGame.GetFreeNum() < 1)
-		result.IsFreeGameEnding = result.SpinOver
+		s.updateFreeStepResult(result)
 	} else {
-		s.updateBaseStepResult()
-		result.SpinOver = (s.newFreeCount == 0)
+		s.updateBaseStepResult(result)
 	}
 
 	return result, nil
@@ -107,16 +98,12 @@ func (s *betOrderService) initSpinSymbol() [_rowCount * _colCount]int64 {
 		}
 
 		startIdx := rand.IntN(len(columnData))
-		if _debugModeOpen {
-			startIdx = 0
+		for row := 0; row < int(_rowCount); row++ {
+			symbols[row*int(_colCount)+col] = columnData[(startIdx+row)%len(columnData)]
 		}
 
 		if s.forRtpBench {
 			s.debug.col[col] = statColInfo{startIdx: startIdx, len: len(columnData)}
-		}
-
-		for row := 0; row < int(_rowCount); row++ {
-			symbols[row*int(_colCount)+col] = columnData[(startIdx+row)%len(columnData)]
 		}
 	}
 
@@ -288,7 +275,7 @@ var allDirections = []direction{
 }
 
 // updateBaseStepResult 更新基础模式结果
-func (s *betOrderService) updateBaseStepResult() {
+func (s *betOrderService) updateBaseStepResult(result *BaseSpinResult) {
 	// 更新中奖金额
 	if s.bonusAmount.GreaterThan(decimal.Zero) {
 		bonusFloat := s.bonusAmount.Round(2).InexactFloat64()
@@ -316,10 +303,15 @@ func (s *betOrderService) updateBaseStepResult() {
 
 	s.validateGameState()
 	s.stepMultiplier = s.lineMultiplier
+
+	result.SpinOver = s.newFreeCount == 0
 }
 
 // 更新免费游戏步骤结果
-func (s *betOrderService) updateFreeStepResult() {
+func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
+	result.InitialBatCount = s.scene.InitialBatCount
+	result.AccumulatedNewBat = s.scene.AccumulatedNewBat
+
 	// 更新计数器
 	s.client.ClientOfFreeGame.IncrFreeTimes()
 	s.client.ClientOfFreeGame.Decr()
@@ -375,6 +367,9 @@ func (s *betOrderService) updateFreeStepResult() {
 
 	s.validateGameState()
 	s.stepMultiplier = s.lineMultiplier
+
+	result.SpinOver = s.client.ClientOfFreeGame.GetFreeNum() < 1
+	result.IsFreeGameEnding = result.SpinOver
 }
 
 // validateGameState 校验游戏状态一致性

@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	testRounds       = 10000000 // 测试局数（功能测试100万，压测改为1000万）
-	progressInterval = 100000   // 进度输出间隔（每10万局）
-	debugFileOpen    = false    // 调试模式（true=输出详细信息到文件）
+	testRounds       = 1000000 // 测试局数（功能测试100万，压测改为1000万）
+	progressInterval = 100000  // 进度输出间隔（每10万局）
+	debugFileOpen    = false   // 调试模式（true=输出详细信息到文件）
 )
 
 func init() {
@@ -59,9 +59,9 @@ func TestRtp(t *testing.T) {
 	start := time.Now()
 	buf := &strings.Builder{} // 用于统计结果输出
 
-	var debugBuf *strings.Builder
+	var fileBuf *strings.Builder
 	if debugFileOpen {
-		debugBuf = &strings.Builder{}
+		fileBuf = &strings.Builder{}
 	}
 
 	svc := newBetService()
@@ -84,7 +84,7 @@ func TestRtp(t *testing.T) {
 			if !svc.isFreeRound() {
 				gameCount++
 			}
-			writeSpinDetail(debugBuf, svc, res, gameCount, svc.isFreeRound())
+			writeSpinDetail(fileBuf, svc, res, gameCount, svc.isFreeRound())
 		}
 
 		// 统计
@@ -156,10 +156,10 @@ func TestRtp(t *testing.T) {
 	fmt.Print(result) // 输出到控制台
 
 	// 保存调试文件（头部+统计结果+详细信息）
-	if debugFileOpen && debugBuf != nil {
+	if debugFileOpen && fileBuf != nil {
 		// 正确顺序：头部 + 统计结果 + 详细信息
 		header := fmt.Sprintf("===== RTP测试调试日志 =====\n    生成时间: %s", time.Now().Format("2006-01-02 15:04:05"))
-		content := header + result + "\n" + debugBuf.String()
+		content := header + result + "\n" + fileBuf.String()
 
 		_ = os.MkdirAll("logs", 0755)
 		filename := fmt.Sprintf("logs/%s.txt", time.Now().Format("20060102_150405"))
@@ -169,16 +169,18 @@ func TestRtp(t *testing.T) {
 }
 
 func updateScene(s *betOrderService) {
-	if s.scene.IsFreeRound {
+	// 根据免费次数设置阶段
+	if s.client.ClientOfFreeGame.GetFreeNum() > 0 {
 		s.scene.Stage = _spinTypeFree
 	} else {
 		s.scene.Stage = _spinTypeBase
 	}
+
+	// 处理阶段切换
 	if s.scene.NextStage > 0 && s.scene.NextStage != s.scene.Stage {
 		s.scene.Stage = s.scene.NextStage
 		s.scene.NextStage = 0
 	}
-	s.scene.IsFreeRound = s.scene.Stage == _spinTypeFree
 }
 
 func printProg(buf *strings.Builder, r, bet, bw, fw int64, t time.Duration) {
@@ -291,11 +293,17 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 		}
 	}
 
-	// 初始符号
+	// 初始符号（优先使用 originalGrid，回退到 stepMap.Map）
 	w("【初始符号图案】\n")
 	for r := int64(0); r < _rowCount; r++ {
 		for c := int64(0); c < _colCount; c++ {
-			w("%3d ", svc.stepMap.Map[r*_colCount+c])
+			var sym int64
+			if svc.originalGrid != nil {
+				sym = svc.originalGrid[r][c]
+			} else {
+				sym = svc.stepMap.Map[r*_colCount+c]
+			}
+			w("%3d ", sym)
 			if c < _colCount-1 {
 				buf.WriteString("| ")
 			}
@@ -312,11 +320,17 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 			batPos[fmt.Sprintf("%d_%d", bat.X, bat.Y)] = true
 		}
 
-		// 标记当前夺宝位置
+		// 标记当前夺宝位置（优先使用 originalGrid，回退到 stepMap.Map）
 		treasurePos := make(map[string]bool)
 		for r := int64(0); r < _rowCount; r++ {
 			for c := int64(0); c < _colCount; c++ {
-				if svc.stepMap.Map[r*_colCount+c] == _treasure {
+				var sym int64
+				if svc.originalGrid != nil {
+					sym = svc.originalGrid[r][c]
+				} else {
+					sym = svc.stepMap.Map[r*_colCount+c]
+				}
+				if sym == _treasure {
 					treasurePos[fmt.Sprintf("%d_%d", r, c)] = true
 				}
 			}
@@ -325,7 +339,12 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 		w("【框符号图案】当前%d个蝙蝠\n", len(svc.stepMap.Bat))
 		for r := int64(0); r < _rowCount; r++ {
 			for c := int64(0); c < _colCount; c++ {
-				sym := svc.stepMap.Map[r*_colCount+c]
+				var sym int64
+				if svc.originalGrid != nil {
+					sym = svc.originalGrid[r][c]
+				} else {
+					sym = svc.stepMap.Map[r*_colCount+c]
+				}
 				key := fmt.Sprintf("%d_%d", r, c)
 				if batPos[key] {
 					w(" ^%2d", sym) // 蝙蝠位置
@@ -342,7 +361,7 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 		}
 	}
 
-	// 变换后符号（仅在有Wind转换时输出）
+	// 变换后符号（仅在有Wild转换时输出完整网格）
 	if svc.stepMap != nil && len(svc.stepMap.Bat) > 0 {
 		converted := make(map[int64]int)
 		transformedPos := make(map[string]bool)
@@ -354,18 +373,18 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 		}
 
 		if len(converted) > 0 {
-			//w("------------------------------------------------------\n")
+			w("------------------------------------------------------\n")
 			buf.WriteString("【变换后符号图案")
 			first := true
 			for sym, cnt := range converted {
 				if first {
-					w("-%d/10", sym)
+					w("-%d→10", sym)
 					first = false
 				} else {
-					w(", %d/10", sym)
+					w(", %d→10", sym)
 				}
 				if cnt > 1 {
-					w("(+%d个)", cnt)
+					w("(×%d)", cnt)
 				}
 			}
 			buf.WriteString("】\n")
@@ -389,6 +408,29 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 				buf.WriteString("\n")
 			}
 		}
+	}
+
+	// 蝙蝠移动详情（免费模式）
+	if isFree && svc.stepMap != nil && len(svc.stepMap.Bat) > 0 {
+		w("------------------------------------------------------\n")
+		w("【蝙蝠移动详情】\n")
+		wildTransformed := 0
+		for i, bat := range svc.stepMap.Bat {
+			moved := bat.X != bat.TransX || bat.Y != bat.TransY
+			transformed := bat.Syb != _wild && bat.Sybn == _wild
+			if transformed {
+				wildTransformed++
+				w("蝙蝠%d: [%d,%d]→[%d,%d] 符号%d→Wild ✓转换\n",
+					i+1, bat.X, bat.Y, bat.TransX, bat.TransY, bat.Syb)
+			} else if moved {
+				w("蝙蝠%d: [%d,%d]→[%d,%d] 符号%d→%d 移动但未转换\n",
+					i+1, bat.X, bat.Y, bat.TransX, bat.TransY, bat.Syb, bat.Sybn)
+			} else {
+				w("蝙蝠%d: [%d,%d] 原地不动 符号%d\n",
+					i+1, bat.X, bat.Y, bat.Syb)
+			}
+		}
+		w("本次转换成Wild的数量: %d/%d\n", wildTransformed, len(svc.stepMap.Bat))
 	}
 
 	// 中奖
@@ -422,12 +464,10 @@ func newBetService() *betOrderService {
 			ClientOfFreeGame: &client.ClientOfFreeGame{},
 			ClientGameCache:  &client.ClientGameCache{},
 		},
-		scene:            &SpinSceneData{},
-		bonusAmount:      decimal.Decimal{},
-		betAmount:        decimal.Decimal{},
-		amount:           decimal.Decimal{},
-		isRoundFirstStep: true,
-		isSpinFirstRound: true,
-		forRtpBench:      true,
+		scene:       &SpinSceneData{},
+		bonusAmount: decimal.Decimal{},
+		betAmount:   decimal.Decimal{},
+		amount:      decimal.Decimal{},
+		forRtpBench: true,
 	}
 }

@@ -7,12 +7,12 @@ import (
 // 初始化后续 step
 func (s *betOrderService) initStepForNextStep() {
 	// 恢复下注配置
-	if !s.forRtpBench {
-		s.req.BaseMoney = s.lastOrder.BaseAmount
-		s.req.Multiple = s.lastOrder.Multiple
-	} else {
+	if s.forRtpBench {
 		s.req.BaseMoney = 1
 		s.req.Multiple = 1
+	} else {
+		s.req.BaseMoney = s.lastOrder.BaseAmount
+		s.req.Multiple = s.lastOrder.Multiple
 	}
 
 	s.betAmount = decimal.NewFromFloat(s.client.ClientOfFreeGame.GetBetAmount())

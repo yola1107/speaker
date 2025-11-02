@@ -28,8 +28,6 @@ func (s *betOrderService) initialize() error {
 		if err := s.initFirstStepForSpin(); err != nil {
 			return err
 		}
-		s.isSpinFirstRound = false
-		s.scene.SpinFirstRound = 1 // 处理场景中间数据（标记非首次）
 	} else {
 		// 免费模式后续spin
 		s.initStepForNextStep()
@@ -40,7 +38,6 @@ func (s *betOrderService) initialize() error {
 
 // 初始化首次step
 func (s *betOrderService) initFirstStepForSpin() error {
-	// 验证下注金额和余额
 	if !s.forRtpBench {
 		if !s.updateBetAmount() {
 			return InvalidRequestParams
@@ -51,13 +48,12 @@ func (s *betOrderService) initFirstStepForSpin() error {
 	}
 
 	s.resetClientState()
+	s.amount = s.betAmount
 
-	// 优化：RTP测试时跳过不必要的操作
 	if !s.forRtpBench {
 		s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
 		s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
 	}
-	s.amount = s.betAmount
 
 	return nil
 }
@@ -106,23 +102,19 @@ func (s *betOrderService) updateGameOrder() bool {
 	return s.fillInGameOrderDetails()
 }
 
-// 结算step
+// settleStep 结算step
 func (s *betOrderService) settleStep() bool {
 	s.gameOrder.CreatedAt = time.Now().Unix()
 
-	saveParam := &gamelogic.SaveTransferParam{
+	saveParam := gamelogic.SaveTransfer(&gamelogic.SaveTransferParam{
 		Client:      s.client,
 		GameOrder:   s.gameOrder,
 		MerchantOne: s.merchant,
 		MemberOne:   s.member,
 		Ip:          s.req.Ip,
-	}
+	})
 
-	res := gamelogic.SaveTransfer(saveParam)
-	if res.Err != nil {
-		return false
-	}
-	return true
+	return saveParam.Err == nil
 }
 
 // 查找中奖信息（Ways玩法：从左到右连续匹配）
@@ -131,8 +123,8 @@ func (s *betOrderService) findWinInfos() {
 	infos := make([]*winInfo, 0, 10)
 
 	// 如果第一列有wild，使用盘面去重后的符号列表；否则使用默认checkWin
-	checkSymbols := checkWin
-	if hasWild, symbols := s.checkWindInFirstCol(); hasWild {
+	checkSymbols := checkWinSymbols
+	if hasWild, symbols := s.checkWildInFirstCol(); hasWild {
 		checkSymbols = symbols
 	}
 
@@ -156,26 +148,24 @@ func (s *betOrderService) findWinInfos() {
 	s.winInfos = infos
 }
 
-// 统计第一列是否出现wild，如果出现wild 获取盘面所有的symbols (去掉重复出现)
-func (s *betOrderService) checkWindInFirstCol() (bool, []int64) {
-	// 检查第一列（col=0）是否有wild符号（10）
+// 判断第一列是否出现wild，如果出现wild 获取盘面所有的不重复的symbols
+func (s *betOrderService) checkWildInFirstCol() (bool, []int64) {
+	// 检查第一列是否有wild
 	hasWild := false
 	for row := int64(0); row < _rowCount; row++ {
-		symbol := s.symbolGrid[row][0]
-		if symbol == _wild {
+		if s.symbolGrid[row][0] == _wild {
 			hasWild = true
 			break
 		}
 	}
 
-	// 如果第一列没有wild，返回false
 	if !hasWild {
 		return false, nil
 	}
 
-	// 收集盘面所有不重复的符号（一次遍历完成）
+	// 收集盘面所有不重复符号（最多10个：1-10，排除treasure）
 	symbolSet := make(map[int64]struct{})
-	symbols := make([]int64, 0, _treasure)
+	symbols := make([]int64, 0, len(checkWinSymbols))
 	for row := int64(0); row < _rowCount; row++ {
 		for col := int64(0); col < _colCount; col++ {
 			symbol := s.symbolGrid[row][col]
@@ -256,35 +246,31 @@ func (s *betOrderService) getCurrentBalance() float64 {
 		InexactFloat64()
 }
 
-// 填充订单细节
+// fillInGameOrderDetails 填充订单细节
 func (s *betOrderService) fillInGameOrderDetails() bool {
+	var err error
+
 	// 序列化符号网格
-	betRawDetail, err := json.CJSON.MarshalToString(s.symbolGrid)
-	if err != nil {
+	if s.gameOrder.BetRawDetail, err = json.CJSON.MarshalToString(s.symbolGrid); err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails: marshal symbolGrid", zap.Error(err))
 		return false
 	}
-	s.gameOrder.BetRawDetail = betRawDetail
 
 	// 序列化中奖网格
-	winRawDetail, err := json.CJSON.MarshalToString(s.winGrid)
-	if err != nil {
+	if s.gameOrder.BonusRawDetail, err = json.CJSON.MarshalToString(s.winGrid); err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails: marshal winGrid", zap.Error(err))
 		return false
 	}
-	s.gameOrder.BonusRawDetail = winRawDetail
 
 	// 转换为字符串格式
 	s.gameOrder.BetDetail = s.symbolGridToString()
 	s.gameOrder.BonusDetail = s.winGridToString()
 
 	// 序列化中奖详情
-	winDetails, err := json.CJSON.MarshalToString(s.getWinDetailsMap())
-	if err != nil {
+	if s.gameOrder.WinDetails, err = json.CJSON.MarshalToString(s.getWinDetailsMap()); err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails: marshal winDetails", zap.Error(err))
 		return false
 	}
-	s.gameOrder.WinDetails = winDetails
 
 	return true
 }

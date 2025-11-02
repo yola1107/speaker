@@ -54,7 +54,7 @@ type BaseSpinResult struct {
 	symbolGrid        *int64Grid   // 符号网格
 	winGrid           *int64Grid   // 中奖网格
 	winResults        []*winResult // 中奖结果
-	SpinOver          bool         // 一局游戏是否结束（参考 mahjong）
+	SpinOver          bool         // 一局游戏是否结束
 	InitialBatCount   int64        // 初始蝙蝠数量（用于RTP测试统计）
 	AccumulatedNewBat int64        // 累计新增蝙蝠数量（用于RTP测试统计）
 	IsFreeGameEnding  bool         // 免费游戏是否在本次spin后结束（用于RTP测试统计）

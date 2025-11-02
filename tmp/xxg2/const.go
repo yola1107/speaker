@@ -28,13 +28,10 @@ const _minMatchCount = 3        // 最小中奖数量
 const _triggerTreasureCount = 3 // 触发免费的夺宝符号最低数量
 const _maxBatPositions = 5      // 免费游戏中蝙蝠总数上限（每次spin所有蝙蝠都移动）
 
-// 游戏阶段常量（参考 mahjong）
+// 游戏阶段常量
 const (
 	_spinTypeBase = 1 // 基础游戏
 	_spinTypeFree = 2 // 免费游戏
 )
 
-const _debugModeOpen = false // 调试开关（true时使用固定测试数据）
-//const _debugFileOpen = false // 详细调试开关（true时打印每局详细信息）
-
-var checkWin = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+var checkWinSymbols = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
