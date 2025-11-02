@@ -42,30 +42,7 @@ type betOrderService struct {
 	winResults     []*winResult // 中奖结果
 	lineMultiplier int64        // 中奖线倍数
 	newFreeCount   int64        // step 新增免费次数
-	// RTP压测调试
-	debug rtpDebugData // RTP调试数据
-}
-
-// rtpDebugData RTP调试结构
-type rtpDebugData struct {
-	open bool // RTP测试开关
-
-	// 转轮信息（用于调试输出）
-	reelPositions [_colCount]reelPosition
-
-	// 初始符号网格（转换前，用于调试输出）
-	originalGrid *int64Grid
-
-	// 免费游戏统计（用于RTP统计）
-	initialBatCount   int64 // 触发免费时的初始蝙蝠数量
-	accumulatedNewBat int64 // 免费游戏中累计新增蝙蝠数量
-	isFreeGameEnding  bool  // 本次spin后免费游戏是否结束
-}
-
-// reelPosition 转轮位置信息
-type reelPosition struct {
-	startIdx int // 起始位置
-	length   int // 转轮长度
+	debug          rtpDebugData // RTP压测调试
 }
 
 // 生成下注服务实例
