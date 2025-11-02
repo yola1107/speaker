@@ -34,4 +34,7 @@ const (
 	_spinTypeFree = 2 // 免费游戏
 )
 
-const _debugMode = false // 调试开关（true时使用固定测试数据）
+const _debugModeOpen = false // 调试开关（true时使用固定测试数据）
+//const _debugFileOpen = false // 详细调试开关（true时打印每局详细信息）
+
+var checkWin = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}

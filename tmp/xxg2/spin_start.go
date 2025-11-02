@@ -38,15 +38,25 @@ type betOrderService struct {
 	forRtpBench      bool                 // 是否为RTP测试流程
 	gameConfig       *gameConfigJson      // 配置数据
 	winInfos         []*winInfo           // 中奖信息
-	symbolGrid       *int64Grid           // 符号网格
+	originalGrid     *int64Grid           // 初始符号网格（转换前）
+	symbolGrid       *int64Grid           // 符号网格（填wind后）
 	winGrid          *int64Grid           // 中奖网格
 	// xxg2 特有字段
-	stepMap           *stepMap     // step 预设数据
-	winResults        []*winResult // 中奖结果
-	lineMultiplier    int64        // 中奖线倍数
-	treasureCount     int64        // 夺宝符号数量
-	treasurePositions []*position  // 夺宝符号位置
-	newFreeCount      int64        // step 新增免费次数
+	stepMap        *stepMap     // step 预设数据
+	winResults     []*winResult // 中奖结果
+	lineMultiplier int64        // 中奖线倍数
+	newFreeCount   int64        // step 新增免费次数
+
+	debug statDebug // 调试信息
+}
+
+// RTP 调试信息
+type statDebug struct {
+	col [_colCount]statColInfo // 转轮起始位置（用于调试）
+}
+type statColInfo struct {
+	startIdx int
+	len      int
 }
 
 // 生成下注服务实例
@@ -123,10 +133,10 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 	// 直接构建返回结果
 	ret := map[string]any{
 		"orderSN":            s.gameOrder.OrderSn,
-		"symbolGrid":         s.symbolGrid, // Grid经过上下对称处理后的Gird
-		"treasureCount":      s.stepMap.TreatCount,
-		"winGrid":            s.winGrid,    //
-		"winResults":         s.winResults, //
+		"symbolGrid":         s.symbolGrid,         // Grid经过上下对称处理后的Gird
+		"treasureCount":      s.stepMap.TreatCount, // 本轮treasure(11号符号)数量
+		"winGrid":            s.winGrid,            //
+		"winResults":         s.winResults,         //
 		"baseBet":            s.req.BaseMoney,
 		"multiplier":         s.req.Multiple,
 		"betAmount":          s.betAmount.Round(2).InexactFloat64(),

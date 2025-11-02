@@ -51,9 +51,13 @@ func (s *betOrderService) initFirstStepForSpin() error {
 	}
 
 	s.resetClientState()
-	s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
+
+	// 优化：RTP测试时跳过不必要的操作
+	if !s.forRtpBench {
+		s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
+		s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
+	}
 	s.amount = s.betAmount
-	s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
 
 	return nil
 }
@@ -90,8 +94,8 @@ func (s *betOrderService) updateGameOrder() bool {
 		ParentOrderSn:     s.parentOrderSN,
 		FreeOrderSn:       s.freeOrderSN,
 		State:             1,
-		BonusTimes:        0,               // xxg2 无消除，固定为0
-		HuNum:             s.treasureCount, // 夺宝符号数量
+		BonusTimes:        0,                    // xxg2 无消除，固定为0
+		HuNum:             s.stepMap.TreatCount, // 夺宝符号数量
 		FreeNum:           int64(s.client.ClientOfFreeGame.GetFreeNum()),
 		FreeTimes:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
 	}
@@ -123,10 +127,17 @@ func (s *betOrderService) settleStep() bool {
 
 // 查找中奖信息（Ways玩法：从左到右连续匹配）
 func (s *betOrderService) findWinInfos() {
-	var infos []*winInfo
+	// 优化：预分配切片容量，减少内存分配
+	infos := make([]*winInfo, 0, 10)
 
-	// 遍历符号 1 到 10（不包括 treasure=11）
-	for symbol := _blank + 1; symbol < _treasure; symbol++ {
+	// 如果第一列有wild，使用盘面去重后的符号列表；否则使用默认checkWin
+	checkSymbols := checkWin
+	if hasWild, symbols := s.checkWindInFirstCol(); hasWild {
+		checkSymbols = symbols
+	}
+
+	// 遍历符号列表查找中奖
+	for _, symbol := range checkSymbols {
 		var info *winInfo
 		var ok bool
 
@@ -145,9 +156,47 @@ func (s *betOrderService) findWinInfos() {
 	s.winInfos = infos
 }
 
+// 统计第一列是否出现wild，如果出现wild 获取盘面所有的symbols (去掉重复出现)
+func (s *betOrderService) checkWindInFirstCol() (bool, []int64) {
+	// 检查第一列（col=0）是否有wild符号（10）
+	hasWild := false
+	for row := int64(0); row < _rowCount; row++ {
+		symbol := s.symbolGrid[row][0]
+		if symbol == _wild {
+			hasWild = true
+			break
+		}
+	}
+
+	// 如果第一列没有wild，返回false
+	if !hasWild {
+		return false, nil
+	}
+
+	// 收集盘面所有不重复的符号（一次遍历完成）
+	symbolSet := make(map[int64]struct{})
+	symbols := make([]int64, 0, _treasure)
+	for row := int64(0); row < _rowCount; row++ {
+		for col := int64(0); col < _colCount; col++ {
+			symbol := s.symbolGrid[row][col]
+			if symbol == _treasure {
+				continue
+			}
+			// 只在第一次遇到时添加
+			if _, exists := symbolSet[symbol]; !exists {
+				symbolSet[symbol] = struct{}{}
+				symbols = append(symbols, symbol)
+			}
+		}
+	}
+
+	return true, symbols
+}
+
 // 处理中奖信息（计算倍率和构建中奖网格）
 func (s *betOrderService) processWinInfos() {
-	var winResults []*winResult
+	// 优化：预分配切片容量
+	winResults := make([]*winResult, 0, len(s.winInfos))
 	var winGrid int64Grid
 	totalLineMultiplier := int64(0)
 
@@ -330,7 +379,7 @@ func (s *betOrderService) getWinDetailsMap() map[string]any {
 	return map[string]any{
 		"orderSN":            s.gameOrder.OrderSn,
 		"symbolGrid":         s.symbolGrid,
-		"treasureCount":      s.treasureCount,
+		"treasureCount":      s.stepMap.TreatCount,
 		"winGrid":            s.winGrid,
 		"winResults":         s.winResults,
 		"baseBet":            s.req.BaseMoney,

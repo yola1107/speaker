@@ -36,3 +36,34 @@ package xxg2
 	6>下一轮
 
 */
+
+/*
+蝙蝠数据流转说明：
+
+1. stepMap.TreatPos/TreatCount（统一数据源）
+   - loadStepData() 扫描本轮盘面，保存treasure(11号符号)位置和数量到stepMap
+   - 整个spin流程从stepMap读取
+
+2. scene.BatPositions（持久化状态）
+   - 保存蝙蝠**移动后**的位置
+   - 基础触发免费时：stepMap.TreatPos → scene.BatPositions
+   - 免费每轮更新：从stepMap.Bat提取移动后位置 → scene.BatPositions
+   - 持久化到Redis，整个免费游戏期间保持
+
+3. stepMap.Bat（动画数据）
+   - 记录蝙蝠完整移动信息：(X,Y)→(TransX,TransY)，Syb→Sybn
+   - 用途：前端播放蝙蝠飞行/射线动画
+   - 生命周期：单次spin
+
+数据流转：
+  基础模式(有3个treasure) → stepMap.TreatPos=[pos1,pos2,pos3]
+                          → scene.BatPositions=[pos1,pos2,pos3]（保存）
+
+  免费第1轮 → scene.BatPositions读取[pos1,pos2,pos3]
+          → moveBatOneStep移动 → pos1',pos2',pos3'
+          → stepMap.Bat=[{X:pos1,TransX:pos1',...},...]
+          → scene.BatPositions=[pos1',pos2',pos3']（更新）
+
+  免费第2轮 → scene.BatPositions读取[pos1',pos2',pos3']
+          → 重复上述流程...
+*/

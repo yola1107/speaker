@@ -18,12 +18,13 @@ type winInfo struct {
 // step 预设数据
 type stepMap struct {
 	ID         int64                        `json:"id"`  // id
-	FreeNum    int64                        `json:"fr"`  //免费次数
-	IsFree     int64                        `json:"isf"` //是不是免费
-	New        int64                        `json:"ne"`  //新增次数
-	TreatCount int64                        `json:"tr"`  //本step夺宝符
-	Bat        []*Bat                       `json:"bat"`
-	Map        [_rowCount * _colCount]int64 `json:"mp"` // 预设数据
+	FreeNum    int64                        `json:"fr"`  // 剩余免费次数
+	IsFree     int64                        `json:"isf"` // 是否免费模式（0=base, 1=free）
+	New        int64                        `json:"ne"`  // 本轮新增免费次数
+	TreatCount int64                        `json:"tr"`  // 本轮treasure数量
+	TreatPos   []*position                  `json:"tp"`  // 本轮treasure位置（统一数据源）
+	Bat        []*Bat                       `json:"bat"` // 蝙蝠移动/转换信息（前端动画用）
+	Map        [_rowCount * _colCount]int64 `json:"mp"`  // 原始符号数组（4x5=20）
 }
 
 // 中奖结果
