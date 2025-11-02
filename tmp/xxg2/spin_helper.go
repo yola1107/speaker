@@ -3,6 +3,7 @@ package xxg2
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"egame-grpc/gamelogic"
 	"egame-grpc/global"
@@ -18,7 +19,7 @@ func (s *betOrderService) getRequestContext() bool {
 
 // selectGameRedis 初始化游戏redis
 func (s *betOrderService) selectGameRedis() {
-	if s.forRtpBench {
+	if s.debug.open {
 		return
 	}
 	if len(global.GVA_GAME_REDIS) == 0 {
@@ -57,15 +58,20 @@ func (s *betOrderService) updateBonusAmount() {
 
 // symbolGridToString 符号网格转换为字符串
 func (s *betOrderService) symbolGridToString() string {
-	var result string
+	var builder strings.Builder
+	builder.Grow(int(_rowCount * _colCount * 8)) // 预分配容量：每个格子约8字节
+
 	sn := 1
 	for row := int64(0); row < _rowCount; row++ {
 		for col := int64(0); col < _colCount; col++ {
-			result += strconv.Itoa(sn) + ":" + strconv.FormatInt(s.symbolGrid[row][col], 10) + "; "
+			builder.WriteString(strconv.Itoa(sn))
+			builder.WriteByte(':')
+			builder.WriteString(strconv.FormatInt(s.symbolGrid[row][col], 10))
+			builder.WriteString("; ")
 			sn++
 		}
 	}
-	return result
+	return builder.String()
 }
 
 // winGridToString 中奖网格转换为字符串
@@ -73,15 +79,21 @@ func (s *betOrderService) winGridToString() string {
 	if s.winGrid == nil {
 		return ""
 	}
-	var result string
+
+	var builder strings.Builder
+	builder.Grow(int(_rowCount * _colCount * 8)) // 预分配容量：每个格子约8字节
+
 	sn := 1
 	for row := int64(0); row < _rowCount; row++ {
 		for col := int64(0); col < _colCount; col++ {
-			result += strconv.Itoa(sn) + ":" + strconv.FormatInt(s.winGrid[row][col], 10) + "; "
+			builder.WriteString(strconv.Itoa(sn))
+			builder.WriteByte(':')
+			builder.WriteString(strconv.FormatInt(s.winGrid[row][col], 10))
+			builder.WriteString("; ")
 			sn++
 		}
 	}
-	return result
+	return builder.String()
 }
 
 // showPostUpdateErrorLog 错误日志记录

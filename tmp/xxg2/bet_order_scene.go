@@ -71,7 +71,7 @@ func (s *betOrderService) reloadScene() bool {
 
 // saveScene 保存场景数据到Redis
 func (s *betOrderService) saveScene() error {
-	if s.forRtpBench {
+	if s.debug.open {
 		return nil
 	}
 

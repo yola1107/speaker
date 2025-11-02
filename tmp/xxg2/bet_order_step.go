@@ -19,7 +19,7 @@ func (s *betOrderService) initialize() error {
 	s.client.ClientOfFreeGame.ResetFreeClean()
 
 	// RTP 测试时跳过订单号生成
-	if !s.forRtpBench {
+	if !s.debug.open {
 		s.orderSN = strconv.FormatInt(snow.GenarotorID(s.member.ID), 10)
 	}
 
@@ -38,7 +38,7 @@ func (s *betOrderService) initialize() error {
 
 // 初始化首次step
 func (s *betOrderService) initFirstStepForSpin() error {
-	if !s.forRtpBench {
+	if !s.debug.open {
 		if !s.updateBetAmount() {
 			return InvalidRequestParams
 		}
@@ -50,7 +50,7 @@ func (s *betOrderService) initFirstStepForSpin() error {
 	s.resetClientState()
 	s.amount = s.betAmount
 
-	if !s.forRtpBench {
+	if !s.debug.open {
 		s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
 		s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
 	}
@@ -279,7 +279,7 @@ func (s *betOrderService) fillInGameOrderDetails() bool {
 // 规则：从左到右连续匹配，至少3列，百搭可替代
 func (s *betOrderService) findSymbolWinInfo(symbol int64) (*winInfo, bool) {
 	lineCount := int64(1) // Ways倍数初始值
-	var positions []*position
+	positions := make([]*position, 0, _rowCount*_colCount)
 	hasRealSymbol := false // 是否有真实符号（非百搭）
 
 	// 从左到右遍历每一列
@@ -325,7 +325,7 @@ func (s *betOrderService) findSymbolWinInfo(symbol int64) (*winInfo, bool) {
 // 规则：只统计纯百搭符号，不与其他符号混合
 func (s *betOrderService) findWildWinInfo(symbol int64) (*winInfo, bool) {
 	lineCount := int64(1) // Ways倍数初始值
-	var positions []*position
+	positions := make([]*position, 0, _rowCount*_colCount)
 
 	// 从左到右遍历每一列
 	for col := int64(0); col < _colCount; col++ {

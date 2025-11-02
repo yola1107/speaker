@@ -12,7 +12,7 @@ import (
 // 获取商户信息
 func (s *betOrderService) mdbGetMerchant() bool {
 
-	if s.forRtpBench {
+	if s.debug.open {
 		s.merchant = &merchant.Merchant{
 			ID:          20020,
 			Merchant:    "Jack23",
@@ -50,7 +50,7 @@ func (s *betOrderService) mdbGetMerchant() bool {
 // 获取用户信息
 func (s *betOrderService) mdbGetMember() bool {
 
-	if s.forRtpBench {
+	if s.debug.open {
 		s.member = &member.Member{
 			ID:            3566020,
 			MemberName:    "Jack23",
@@ -98,7 +98,7 @@ func (s *betOrderService) mdbGetMember() bool {
 // 获取游戏信息
 func (s *betOrderService) mdbGetGame() bool {
 
-	if s.forRtpBench {
+	if s.debug.open {
 		s.game = &game.Game{
 			ID:             _gameID,
 			GameType:       11,

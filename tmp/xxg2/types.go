@@ -2,9 +2,10 @@ package xxg2
 
 type int64Grid = [_rowCount][_colCount]int64
 
+// position 位置坐标
 type position struct {
-	Row int64 `json:"r"`
-	Col int64 `json:"c"`
+	Row int64 `json:"r"` // 行（0-3）
+	Col int64 `json:"c"` // 列（0-4）
 }
 
 // 中奖信息
@@ -37,25 +38,23 @@ type winResult struct {
 	WinPositions       [_rowCount][_colCount]int64 `json:"winPositions"`
 }
 
+// Bat 蝙蝠移动记录（用于前端播放飞行动画）
 type Bat struct {
-	X      int64 `json:"x"`
-	Y      int64 `json:"y"`
-	TransX int64 `json:"nx"`
-	TransY int64 `json:"ny"`
-	Syb    int64 `json:"syb"`
-	Sybn   int64 `json:"sybn"`
+	X      int64 `json:"x"`    // 起始行
+	Y      int64 `json:"y"`    // 起始列
+	TransX int64 `json:"nx"`   // 目标行
+	TransY int64 `json:"ny"`   // 目标列
+	Syb    int64 `json:"syb"`  // 原符号
+	Sybn   int64 `json:"sybn"` // 新符号（转换后）
 }
 
 // BaseSpinResult baseSpin 返回结果
 type BaseSpinResult struct {
-	lineMultiplier    int64        // 线倍数
-	stepMultiplier    int64        // 总倍数
-	treasureCount     int64        // 夺宝符个数
-	symbolGrid        *int64Grid   // 符号网格
-	winGrid           *int64Grid   // 中奖网格
-	winResults        []*winResult // 中奖结果
-	SpinOver          bool         // 一局游戏是否结束
-	InitialBatCount   int64        // 初始蝙蝠数量（用于RTP测试统计）
-	AccumulatedNewBat int64        // 累计新增蝙蝠数量（用于RTP测试统计）
-	IsFreeGameEnding  bool         // 免费游戏是否在本次spin后结束（用于RTP测试统计）
+	lineMultiplier int64        // 线倍数
+	stepMultiplier int64        // 总倍数
+	treasureCount  int64        // 夺宝符个数
+	symbolGrid     *int64Grid   // 符号网格
+	winGrid        *int64Grid   // 中奖网格
+	winResults     []*winResult // 中奖结果
+	SpinOver       bool         // 一局游戏是否结束
 }

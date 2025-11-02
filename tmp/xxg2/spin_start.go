@@ -33,10 +33,8 @@ type betOrderService struct {
 	parentOrderSN  string               // 父订单号，回合第一个 step 此字段为空
 	freeOrderSN    string               // 触发免费的回合的父订单号，基础 step 此字段为空
 	stepMultiplier int64                // Step倍数
-	forRtpBench    bool                 // 是否为RTP测试流程
 	gameConfig     *gameConfigJson      // 配置数据
 	winInfos       []*winInfo           // 中奖信息
-	originalGrid   *int64Grid           // 初始符号网格（转换前）
 	symbolGrid     *int64Grid           // 符号网格（填wind后）
 	winGrid        *int64Grid           // 中奖网格
 	// xxg2 特有字段
@@ -44,22 +42,36 @@ type betOrderService struct {
 	winResults     []*winResult // 中奖结果
 	lineMultiplier int64        // 中奖线倍数
 	newFreeCount   int64        // step 新增免费次数
-	debug          statDebug    // 调试信息
+	// RTP压测调试
+	debug rtpDebugData // RTP调试数据
 }
 
-// RTP 调试信息
-type statDebug struct {
-	col [_colCount]statColInfo // 转轮起始位置（用于调试）
+// rtpDebugData RTP调试结构
+type rtpDebugData struct {
+	open bool // RTP测试开关
+
+	// 转轮信息（用于调试输出）
+	reelPositions [_colCount]reelPosition
+
+	// 初始符号网格（转换前，用于调试输出）
+	originalGrid *int64Grid
+
+	// 免费游戏统计（用于RTP统计）
+	initialBatCount   int64 // 触发免费时的初始蝙蝠数量
+	accumulatedNewBat int64 // 免费游戏中累计新增蝙蝠数量
+	isFreeGameEnding  bool  // 本次spin后免费游戏是否结束
 }
-type statColInfo struct {
-	startIdx int
-	len      int
+
+// reelPosition 转轮位置信息
+type reelPosition struct {
+	startIdx int // 起始位置
+	length   int // 转轮长度
 }
 
 // 生成下注服务实例
 func newBetOrderService(forRtpBench bool) *betOrderService {
 	s := &betOrderService{
-		forRtpBench: forRtpBench,
+		debug: rtpDebugData{open: forRtpBench},
 	}
 	s.selectGameRedis()
 	return s

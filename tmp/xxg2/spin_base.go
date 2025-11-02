@@ -13,17 +13,10 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 		return nil, err
 	}
 
-	// 初始化stepMap
+	// 初始化stepMap（零值字段无需显式赋值）
 	symbols := s.initSpinSymbol()
 	s.stepMap = &stepMap{
-		ID:         0,
-		FreeNum:    0,
-		IsFree:     0,
-		New:        0,
-		TreatCount: 0,
-		TreatPos:   nil,
-		Bat:        nil,
-		Map:        symbols,
+		Map: symbols,
 	}
 
 	// 加载网格，扫描treasure
@@ -102,8 +95,8 @@ func (s *betOrderService) initSpinSymbol() [_rowCount * _colCount]int64 {
 			symbols[row*int(_colCount)+col] = columnData[(startIdx+row)%len(columnData)]
 		}
 
-		if s.forRtpBench {
-			s.debug.col[col] = statColInfo{startIdx: startIdx, len: len(columnData)}
+		if s.debug.open {
+			s.debug.reelPositions[col] = reelPosition{startIdx: startIdx, length: len(columnData)}
 		}
 	}
 
@@ -112,7 +105,7 @@ func (s *betOrderService) initSpinSymbol() [_rowCount * _colCount]int64 {
 
 // loadStepData 加载符号网格并扫描treasure
 func (s *betOrderService) loadStepData() {
-	var positions []*position
+	positions := make([]*position, 0, _rowCount*_colCount)
 	var grid int64Grid
 
 	for row := int64(0); row < _rowCount; row++ {
@@ -129,9 +122,9 @@ func (s *betOrderService) loadStepData() {
 	s.stepMap.TreatCount = int64(len(positions))
 	s.stepMap.TreatPos = positions
 
-	if s.forRtpBench {
+	if s.debug.open {
 		gridCopy := grid
-		s.originalGrid = &gridCopy
+		s.debug.originalGrid = &gridCopy
 	}
 }
 
@@ -212,14 +205,13 @@ func (s *betOrderService) getCachedSymbol(pos *position, cache map[string]int64)
 	if symbol, ok := cache[key]; ok {
 		return symbol
 	}
-	symbol := s.symbolGrid[pos.Row][pos.Col]
-	cache[key] = symbol
-	return symbol
+	cache[key] = s.symbolGrid[pos.Row][pos.Col]
+	return cache[key]
 }
 
 // findHumanSymbols 查找所有人符号位置(7/8/9)
 func (s *betOrderService) findHumanSymbols() []*position {
-	var positions []*position
+	positions := make([]*position, 0, _rowCount*_colCount)
 	for row := int64(0); row < _rowCount; row++ {
 		for col := int64(0); col < _colCount; col++ {
 			if isHumanSymbol(s.symbolGrid[row][col]) {
@@ -309,8 +301,11 @@ func (s *betOrderService) updateBaseStepResult(result *BaseSpinResult) {
 
 // 更新免费游戏步骤结果
 func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
-	result.InitialBatCount = s.scene.InitialBatCount
-	result.AccumulatedNewBat = s.scene.AccumulatedNewBat
+	// RTP测试统计信息
+	if s.debug.open {
+		s.debug.initialBatCount = s.scene.InitialBatCount
+		s.debug.accumulatedNewBat = s.scene.AccumulatedNewBat
+	}
 
 	// 更新计数器
 	s.client.ClientOfFreeGame.IncrFreeTimes()
@@ -369,12 +364,16 @@ func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
 	s.stepMultiplier = s.lineMultiplier
 
 	result.SpinOver = s.client.ClientOfFreeGame.GetFreeNum() < 1
-	result.IsFreeGameEnding = result.SpinOver
+
+	// RTP测试统计：记录免费游戏是否结束
+	if s.debug.open {
+		s.debug.isFreeGameEnding = result.SpinOver
+	}
 }
 
 // validateGameState 校验游戏状态一致性
 func (s *betOrderService) validateGameState() {
-	if s.forRtpBench {
+	if s.debug.open {
 		return
 	}
 

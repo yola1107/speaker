@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	testRounds       = 1000000 // 测试局数（功能测试100万，压测改为1000万）
-	progressInterval = 100000  // 进度输出间隔（每10万局）
+	testRounds       = 1000000 // 测试局数
+	progressInterval = 100000  // 进度输出间隔
 	debugFileOpen    = false   // 调试模式（true=输出详细信息到文件）
 )
 
@@ -121,12 +121,13 @@ func TestRtp(t *testing.T) {
 
 		// 回合结束
 		if res.SpinOver {
-			if res.IsFreeGameEnding {
-				t := res.InitialBatCount + res.AccumulatedNewBat
+			// 免费游戏结束统计（从debug读取）
+			if svc.debug.isFreeGameEnding {
+				t := svc.debug.initialBatCount + svc.debug.accumulatedNewBat
 				if t < 10 {
 					free.batDistribution[t]++
 				}
-				free.totalNewBat += res.AccumulatedNewBat
+				free.totalNewBat += svc.debug.accumulatedNewBat
 			}
 
 			base.rounds++
@@ -286,20 +287,20 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 	w("\n===== %s-第%d局 =====\n", mode, gameNum)
 
 	// 转轮坐标
-	if svc.debug.col[0].len > 0 {
+	if svc.debug.reelPositions[0].length > 0 {
 		w("【转轮坐标信息】\n")
-		for k, v := range svc.debug.col {
-			w("转轮%d: 长度=%d, 起始位置=%d\n", k+1, v.len, v.startIdx)
+		for k, v := range svc.debug.reelPositions {
+			w("转轮%d: 长度=%d, 起始位置=%d\n", k+1, v.length, v.startIdx)
 		}
 	}
 
-	// 初始符号（优先使用 originalGrid，回退到 stepMap.Map）
+	// 初始符号（优先使用 debug.originalGrid，回退到 stepMap.Map）
 	w("【初始符号图案】\n")
 	for r := int64(0); r < _rowCount; r++ {
 		for c := int64(0); c < _colCount; c++ {
 			var sym int64
-			if svc.originalGrid != nil {
-				sym = svc.originalGrid[r][c]
+			if svc.debug.originalGrid != nil {
+				sym = svc.debug.originalGrid[r][c]
 			} else {
 				sym = svc.stepMap.Map[r*_colCount+c]
 			}
@@ -320,13 +321,13 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 			batPos[fmt.Sprintf("%d_%d", bat.X, bat.Y)] = true
 		}
 
-		// 标记当前夺宝位置（优先使用 originalGrid，回退到 stepMap.Map）
+		// 标记当前夺宝位置（优先使用 debug.originalGrid，回退到 stepMap.Map）
 		treasurePos := make(map[string]bool)
 		for r := int64(0); r < _rowCount; r++ {
 			for c := int64(0); c < _colCount; c++ {
 				var sym int64
-				if svc.originalGrid != nil {
-					sym = svc.originalGrid[r][c]
+				if svc.debug.originalGrid != nil {
+					sym = svc.debug.originalGrid[r][c]
 				} else {
 					sym = svc.stepMap.Map[r*_colCount+c]
 				}
@@ -340,8 +341,8 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 		for r := int64(0); r < _rowCount; r++ {
 			for c := int64(0); c < _colCount; c++ {
 				var sym int64
-				if svc.originalGrid != nil {
-					sym = svc.originalGrid[r][c]
+				if svc.debug.originalGrid != nil {
+					sym = svc.debug.originalGrid[r][c]
 				} else {
 					sym = svc.stepMap.Map[r*_colCount+c]
 				}
@@ -468,6 +469,6 @@ func newBetService() *betOrderService {
 		bonusAmount: decimal.Decimal{},
 		betAmount:   decimal.Decimal{},
 		amount:      decimal.Decimal{},
-		forRtpBench: true,
+		debug:       rtpDebugData{open: true},
 	}
 }
