@@ -34,7 +34,4 @@ const (
 	_spinTypeFree = 2 // 免费游戏
 )
 
-var checkWinSymbols = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} // 检查中奖的符号列表(1-10，排除treasure=11)
-
-// 字符串构建容量估算
-const gridStringCapacity = 8 // 每个格子字符串容量估算(如 "1:10; ")
+var checkWinSymbols = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}

@@ -14,16 +14,7 @@ import (
 
 // getRequestContext 获取请求上下文
 func (s *betOrderService) getRequestContext() bool {
-	switch {
-	case !s.mdbGetMerchant():
-		return false
-	case !s.mdbGetMember():
-		return false
-	case !s.mdbGetGame():
-		return false
-	default:
-		return true
-	}
+	return s.mdbGetMerchant() && s.mdbGetMember() && s.mdbGetGame()
 }
 
 // selectGameRedis 初始化游戏redis
@@ -68,7 +59,7 @@ func (s *betOrderService) updateBonusAmount() {
 // symbolGridToString 符号网格转换为字符串
 func (s *betOrderService) symbolGridToString() string {
 	var builder strings.Builder
-	builder.Grow(int(_rowCount * _colCount * gridStringCapacity)) // 预分配容量
+	builder.Grow(int(_rowCount * _colCount * 8)) // 预分配容量：每个格子约8字节
 
 	sn := 1
 	for row := int64(0); row < _rowCount; row++ {
@@ -90,7 +81,7 @@ func (s *betOrderService) winGridToString() string {
 	}
 
 	var builder strings.Builder
-	builder.Grow(int(_rowCount * _colCount * gridStringCapacity)) // 预分配容量
+	builder.Grow(int(_rowCount * _colCount * 8)) // 预分配容量：每个格子约8字节
 
 	sn := 1
 	for row := int64(0); row < _rowCount; row++ {
