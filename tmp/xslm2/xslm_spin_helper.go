@@ -1,12 +1,73 @@
 package xslm2
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
+	"egame-grpc/gamelogic"
 	"egame-grpc/global"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
+
+// ========== 请求和验证 ==========
+
+// getRequestContext 获取请求上下文（商户、用户、游戏信息）
+func (s *betOrderService) getRequestContext() bool {
+	switch {
+	case !s.mdbGetMerchant():
+		return false
+	case !s.mdbGetMember():
+		return false
+	case !s.mdbGetGame():
+		return false
+	default:
+		return true
+	}
+}
+
+// selectGameRedis 选择游戏Redis
+func (s *betOrderService) selectGameRedis() {
+	index := _gameID % int64(len(global.GVA_GAME_REDIS))
+	s.gameRedis = global.GVA_GAME_REDIS[index]
+}
+
+// updateBetAmount 计算下注金额
+func (s *betOrderService) updateBetAmount() bool {
+	betAmount := decimal.NewFromFloat(s.req.BaseMoney).
+		Mul(decimal.NewFromInt(s.req.Multiple)).
+		Mul(decimal.NewFromInt(_baseMultiplier))
+	s.betAmount = betAmount
+	if s.betAmount.LessThanOrEqual(decimal.Zero) {
+		global.GVA_LOG.Warn("updateBetAmount",
+			zap.Error(fmt.Errorf("invalid request params: [%v,%v]", s.req.BaseMoney, s.req.Multiple)))
+		return false
+	}
+	return true
+}
+
+// checkBalance 检查余额
+func (s *betOrderService) checkBalance() bool {
+	f, _ := s.betAmount.Float64()
+	return gamelogic.CheckMemberBalance(f, s.member)
+}
+
+// updateBonusAmount 计算奖金
+func (s *betOrderService) updateBonusAmount() {
+	if s.spin.stepMultiplier <= 0 {
+		s.bonusAmount = decimal.Zero
+		return
+	}
+	bonusAmount := s.betAmount.
+		Div(decimal.NewFromInt(_baseMultiplier)).
+		Mul(decimal.NewFromInt(s.spin.stepMultiplier))
+	s.bonusAmount = bonusAmount
+}
+
+// ========== spin辅助函数 ==========
 
 // loadStepData 从预设数据加载当前step的符号网格
 // 预设数据中每个step都包含完整的符号布局（无需下落填充）
@@ -214,4 +275,61 @@ func (s *spin) updateStepResults(partialElimination bool) {
 	s.stepMultiplier = lineMultiplier
 	s.winResults = winResults
 	s.winGrid = &winGrid
+}
+
+// ========== 辅助函数 ==========
+
+func (s *betOrderService) showPostUpdateErrorLog() {
+	global.GVA_LOG.Error(
+		"updateStepResult",
+		zap.Error(errors.New("inconsistent state")),
+		zap.Int64("merchantID", s.merchant.ID),
+		zap.Int64("memberID", s.member.ID),
+		zap.String("orderSN", s.orderSN),
+		zap.Bool("isRoundOver", s.client.IsRoundOver),
+		zap.Uint64("lastMapID", s.client.ClientOfFreeGame.GetLastMapId()),
+		zap.Uint64("freeNum", s.client.ClientOfFreeGame.GetFreeNum()),
+	)
+}
+
+func (s *betOrderService) symbolGridToString() string {
+	builder := ""
+	for r := int64(0); r < _rowCount; r++ {
+		builder += "["
+		for c := int64(0); c < _colCount; c++ {
+			builder += strconv.FormatInt(s.spin.symbolGrid[r][c], 10)
+			if c < _colCount-1 {
+				builder += ","
+			}
+		}
+		builder += "]"
+		if r < _rowCount-1 {
+			builder += "\n"
+		}
+	}
+	return builder
+}
+
+func (s *betOrderService) winGridToString() string {
+	builder := ""
+	for r := int64(0); r < _rowCount; r++ {
+		builder += "["
+		for c := int64(0); c < _colCount; c++ {
+			builder += strconv.FormatInt(s.spin.winGrid[r][c], 10)
+			if c < _colCount-1 {
+				builder += ","
+			}
+		}
+		builder += "]"
+		if r < _rowCount-1 {
+			builder += "\n"
+		}
+	}
+	return builder
+}
+
+func (s *betOrderService) sleepForDebug() {
+	if s.debug.open {
+		time.Sleep(time.Millisecond * time.Duration(s.debug.delayMillis))
+	}
 }

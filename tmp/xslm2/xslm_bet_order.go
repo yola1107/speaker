@@ -46,6 +46,10 @@ type betOrderService struct {
 	gameOrder          *game.GameOrder
 	bonusAmount        decimal.Decimal
 	currBalance        decimal.Decimal
+	debug              struct {
+		open        bool
+		delayMillis int64
+	}
 }
 
 func newBetOrderService() *betOrderService {
