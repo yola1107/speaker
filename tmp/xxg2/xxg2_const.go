@@ -1,8 +1,7 @@
 package xxg2
 
-const GameID = 18891       // 吸血鬼
-const _gameID = 18891      // 吸血鬼
-const _baseMultiplier = 20 // 虚拟中奖线倍数
+const GameID = 18891  // 吸血鬼
+const _gameID = 18891 // 吸血鬼
 
 const (
 	_rowCount int64 = 4 // 行数
@@ -26,7 +25,6 @@ const (
 
 const _minMatchCount = 3        // 最小中奖数量
 const _triggerTreasureCount = 3 // 触发免费的夺宝符号最低数量
-const _maxBatPositions = 5      // 免费游戏中蝙蝠总数上限（每次spin所有蝙蝠都移动）
 
 // 游戏阶段常量
 const (
@@ -34,4 +32,7 @@ const (
 	_spinTypeFree = 2 // 免费游戏
 )
 
-var checkWinSymbols = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+var checkWinSymbols = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} // 检查中奖的符号列表(1-10，排除treasure=11)
+
+// 字符串构建容量估算
+const gridStringCapacity = 8 // 每个格子字符串容量估算(如 "1:10; ")

@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	testRounds       = 1000000 // 测试局数
-	progressInterval = 100000  // 进度输出间隔
-	debugFileOpen    = false   // 调试模式（true=输出详细信息到文件）
+	testRounds       = 1e8   // 测试局数
+	progressInterval = 1e5   // 进度输出间隔
+	debugFileOpen    = false // 调试模式（true=输出详细信息到文件）
 )
 
 func init() {
@@ -69,7 +69,9 @@ func TestRtp(t *testing.T) {
 	cfg := svc.gameConfig
 
 	tmpInterval := int64(min(progressInterval, testRounds))
-	gameCount := 0
+	baseGameCount := 0
+	freeGameCount := 0
+	triggeringBaseRound := 0 // 记录触发当前免费游戏的基础模式局数
 
 	for base.rounds < testRounds {
 		updateScene(svc)
@@ -79,43 +81,51 @@ func TestRtp(t *testing.T) {
 			panic(err)
 		}
 
+		// 缓存isFreeRound结果，避免重复调用
+		isFree := svc.isFreeRound()
+
 		// 调试输出（且未超过限制）
 		if debugFileOpen {
-			if !svc.isFreeRound() {
-				gameCount++
+			if !isFree {
+				baseGameCount++
+				writeSpinDetail(fileBuf, svc, res, baseGameCount, 0, false)
+			} else {
+				freeGameCount++
+				writeSpinDetail(fileBuf, svc, res, freeGameCount, triggeringBaseRound, true)
 			}
-			writeSpinDetail(fileBuf, svc, res, gameCount, svc.isFreeRound())
 		}
 
 		// 统计
-		if svc.isFreeRound() {
+		stepWin := res.stepMultiplier
+		treasureCnt := res.treasureCount
+		if isFree {
 			free.rounds++
-			free.totalWin += res.stepMultiplier
-			free.currentWin += res.stepMultiplier
-			if res.stepMultiplier > 0 {
+			free.totalWin += stepWin
+			free.currentWin += stepWin
+			if stepWin > 0 {
 				free.winRounds++
 				free.freeWithBonus++
 			} else {
 				free.freeNoBonus++
 			}
-			if svc.newFreeCount > 0 {
+			if treasureCnt > 0 {
 				free.extraRounds += svc.newFreeCount
-				free.treasureInFree++
+				free.treasureInFree += treasureCnt
 			}
 			tb := svc.scene.InitialBatCount + svc.scene.AccumulatedNewBat
 			if tb > free.maxBatInFree {
 				free.maxBatInFree = tb
 			}
 		} else {
-			base.totalWin += res.stepMultiplier
-			base.currentWin += res.stepMultiplier
-			tc := res.treasureCount
-			if tc >= 1 && tc <= 5 {
-				base.treasureCount[tc]++
+			base.totalWin += stepWin
+			base.currentWin += stepWin
+			if treasureCnt >= 1 && treasureCnt <= 5 {
+				base.treasureCount[treasureCnt]++
 			}
-			if tc >= 3 && svc.newFreeCount > 0 {
+			if treasureCnt >= 3 && svc.newFreeCount > 0 {
 				base.freeCount++
 				base.freeTotalInitial += svc.newFreeCount
+				triggeringBaseRound = baseGameCount // 记录触发免费游戏的基础模式局数
 			}
 		}
 
@@ -135,20 +145,29 @@ func TestRtp(t *testing.T) {
 				base.winRounds++
 			}
 			base.currentWin, free.currentWin = 0, 0
-			bet += _baseMultiplier
+			bet += cfg.BaseBat
 
+			// 优化进度打印：减少字符串分配和重复计算
 			if base.rounds%tmpInterval == 0 {
-				printProg(buf, base.rounds, bet, base.totalWin, free.totalWin, time.Since(start))
-				fmt.Print(buf.String())
+				elapsed := time.Since(start)
+				elapsedSec := elapsed.Seconds()
+				betFloat := float64(bet)
+				speed := float64(base.rounds) / elapsedSec
 				buf.Reset()
+				fmt.Fprintf(buf, "\r进度: %d局 | 用时: %v | 速度: %.0f局/秒 | 基础RTP: %.2f%% | 免费RTP: %.2f%% | 总RTP: %.2f%%",
+					base.rounds, elapsed.Round(time.Second), speed,
+					float64(base.totalWin)*100/betFloat,
+					float64(free.totalWin)*100/betFloat,
+					float64(base.totalWin+free.totalWin)*100/betFloat)
+				fmt.Print(buf.String())
 			}
 
 			if base.rounds >= testRounds {
 				break
 			}
 
-			svc = newBetService()
-			svc.gameConfig = cfg
+			// 重置service而不是创建新的，减少内存分配
+			resetBetService(svc, cfg)
 		}
 	}
 
@@ -277,10 +296,10 @@ func printResult(buf *strings.Builder, base, free *stats, bet int64) {
 	w("==========================================\n")
 }
 
-func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinResult, gameNum int, isFree bool) {
+func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinResult, gameNum int, triggeringBaseRound int, isFree bool) {
 	mode := "基础模式"
 	if isFree {
-		mode = "免费模式"
+		mode = fmt.Sprintf("免费模式(由基础第%d局触发)", triggeringBaseRound)
 	}
 	w := func(s string, args ...interface{}) { buf.WriteString(fmt.Sprintf(s, args...)) }
 
@@ -414,7 +433,64 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 	// 蝙蝠移动详情（免费模式）
 	if isFree && svc.stepMap != nil && len(svc.stepMap.Bat) > 0 {
 		w("------------------------------------------------------\n")
-		w("【蝙蝠移动详情】\n")
+
+		// 先打印移动轨迹网格（分起飞和降落两部分）
+		w("【蝙蝠起飞位置】\n")
+		for r := int64(0); r < _rowCount; r++ {
+			for c := int64(0); c < _colCount; c++ {
+				batNums := ""
+				// 检查所有蝙蝠的起始位置
+				for i, bat := range svc.stepMap.Bat {
+					if bat.X == r && bat.Y == c {
+						if batNums != "" {
+							batNums += ","
+						}
+						batNums += fmt.Sprintf("%d", i+1)
+					}
+				}
+
+				if batNums != "" {
+					w("%3s ", batNums) // 右对齐3位+空格，与符号格式一致
+				} else {
+					w("    ") // 4个空格
+				}
+
+				if c < _colCount-1 {
+					buf.WriteString("| ")
+				}
+			}
+			buf.WriteString("\n")
+		}
+
+		w("【蝙蝠降落位置】\n")
+		for r := int64(0); r < _rowCount; r++ {
+			for c := int64(0); c < _colCount; c++ {
+				batNums := ""
+				// 检查所有蝙蝠的结束位置
+				for i, bat := range svc.stepMap.Bat {
+					if bat.TransX == r && bat.TransY == c {
+						if batNums != "" {
+							batNums += ","
+						}
+						batNums += fmt.Sprintf("%d", i+1)
+					}
+				}
+
+				if batNums != "" {
+					w("%3s ", batNums) // 右对齐3位+空格，与符号格式一致
+				} else {
+					w("    ") // 4个空格
+				}
+
+				if c < _colCount-1 {
+					buf.WriteString("| ")
+				}
+			}
+			buf.WriteString("\n")
+		}
+
+		// 再打印蝙蝠移动详情
+		//w("【蝙蝠移动详情】\n")
 		wildTransformed := 0
 		for i, bat := range svc.stepMap.Bat {
 			moved := bat.X != bat.TransX || bat.Y != bat.TransY
@@ -432,10 +508,10 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 			}
 		}
 		w("本次转换成Wild的数量: %d/%d\n", wildTransformed, len(svc.stepMap.Bat))
+		w("------------------------------------------------------\n")
 	}
 
-	// 中奖
-	//w("------------------------------------------------------\n")
+	// 中奖信息
 	w("【中奖信息】\n")
 	if len(svc.winResults) == 0 {
 		buf.WriteString("未中奖\n")
@@ -447,6 +523,12 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 		}
 	}
 	w("总中奖金额: %.2f\n", svc.bonusAmount.InexactFloat64())
+
+	// 免费模式下的新增免费次数
+	if isFree && res.treasureCount > 0 {
+		// 免费模式下每个夺宝+1次
+		w("【新增免费次数】本局出现%d个夺宝，新增%d次免费游戏（每个夺宝+1次）\n", res.treasureCount, res.treasureCount)
+	}
 }
 
 func newBetService() *betOrderService {
@@ -471,4 +553,34 @@ func newBetService() *betOrderService {
 		amount:      decimal.Decimal{},
 		debug:       rtpDebugData{open: true},
 	}
+}
+
+// resetBetService 重置service状态，避免每次创建新对象
+func resetBetService(svc *betOrderService, cfg *gameConfigJson) {
+	// 重置client
+	svc.client.ClientOfFreeGame = &client.ClientOfFreeGame{}
+
+	// 重置scene
+	svc.scene = &SpinSceneData{}
+
+	// 重置金额
+	svc.bonusAmount = decimal.Decimal{}
+	svc.betAmount = decimal.Decimal{}
+	svc.amount = decimal.Decimal{}
+
+	// 重置其他状态
+	svc.lineMultiplier = 0
+	svc.stepMultiplier = 0
+	svc.newFreeCount = 0
+	svc.winInfos = nil
+	svc.winResults = nil
+	svc.symbolGrid = nil
+	svc.winGrid = nil
+	svc.stepMap = nil
+
+	// 重置debug（保持open=true）
+	svc.debug = rtpDebugData{open: true}
+
+	// 重新设置配置
+	svc.gameConfig = cfg
 }

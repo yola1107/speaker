@@ -1,7 +1,6 @@
 package xxg2
 
 import (
-	"fmt"
 	"math/rand/v2"
 
 	"github.com/shopspring/decimal"
@@ -13,24 +12,13 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 		return nil, err
 	}
 
-	// 初始化stepMap（零值字段无需显式赋值）
-	symbols := s.initSpinSymbol()
-	s.stepMap = &stepMap{
-		Map: symbols,
-	}
-
-	// 加载网格，扫描treasure
+	s.stepMap = &stepMap{Map: s.initSpinSymbol()}
 	s.loadStepData()
-
-	// Wind转换
 	s.collectBat()
-
-	// 计算中奖
 	s.findWinInfos()
 	s.processWinInfos()
 	s.updateBonusAmount()
 
-	// 构建并更新结果
 	result := &BaseSpinResult{
 		lineMultiplier: s.lineMultiplier,
 		stepMultiplier: s.stepMultiplier,
@@ -49,19 +37,16 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 	return result, nil
 }
 
-// initSpinSymbol 初始化滚轴符号
+// initSpinSymbol 根据权重随机生成滚轴符号
 func (s *betOrderService) initSpinSymbol() [_rowCount * _colCount]int64 {
-	// 获取配置
 	rollCfg := &s.gameConfig.RollCfg.Base
 	if s.isFreeRound() {
 		rollCfg = &s.gameConfig.RollCfg.Free
 	}
 
-	// 根据权重随机选择 RealData 索引
+	// 根据权重选择RealData索引
 	realIndex := 0
-	if len(rollCfg.Weight) == 1 {
-		realIndex = int(rollCfg.UseKey[0])
-	} else {
+	if len(rollCfg.Weight) > 1 {
 		totalWeight := int64(0)
 		for _, w := range rollCfg.Weight {
 			totalWeight += w
@@ -74,6 +59,8 @@ func (s *betOrderService) initSpinSymbol() [_rowCount * _colCount]int64 {
 			}
 			r -= w
 		}
+	} else {
+		realIndex = int(rollCfg.UseKey[0])
 	}
 
 	if realIndex >= len(s.gameConfig.RealData) {
@@ -83,7 +70,7 @@ func (s *betOrderService) initSpinSymbol() [_rowCount * _colCount]int64 {
 	realData := s.gameConfig.RealData[realIndex]
 	var symbols [_rowCount * _colCount]int64
 
-	// 从每列的 RealData 中随机选择起始位置，生成符号
+	// 每列随机选择起始位置生成符号
 	for col := 0; col < int(_colCount); col++ {
 		columnData := realData[col]
 		if len(columnData) < int(_rowCount) {
@@ -103,9 +90,9 @@ func (s *betOrderService) initSpinSymbol() [_rowCount * _colCount]int64 {
 	return symbols
 }
 
-// loadStepData 加载符号网格并扫描treasure
+// loadStepData 加载符号到网格并扫描treasure位置
 func (s *betOrderService) loadStepData() {
-	positions := make([]*position, 0, _rowCount*_colCount)
+	positions := make([]*position, 0, 5)
 	var grid int64Grid
 
 	for row := int64(0); row < _rowCount; row++ {
@@ -128,7 +115,7 @@ func (s *betOrderService) loadStepData() {
 	}
 }
 
-// collectBat Wind转换调度
+// collectBat 执行Wind转换（基础模式=射线映射，免费模式=蝙蝠移动）
 func (s *betOrderService) collectBat() {
 	if s.isFreeRound() {
 		s.stepMap.Bat = s.transformToWildFreeMode()
@@ -137,51 +124,53 @@ func (s *betOrderService) collectBat() {
 	}
 }
 
-// transformToWildBaseMode 基础模式Wind转换（1-2个treasure触发）
+// transformToWildBaseMode 基础模式：treasure射线到Wind转Wild（1-2个treasure）
 func (s *betOrderService) transformToWildBaseMode() []*Bat {
 	if s.stepMap.TreatCount < 1 || s.stepMap.TreatCount > 2 {
 		return nil
 	}
 
-	// 收集所有人符号位置
 	humanPos := s.findHumanSymbols()
 	if len(humanPos) == 0 {
 		return nil
 	}
 
-	// 随机选择N个转为Wild
 	count := min(int(s.stepMap.TreatCount), len(humanPos))
-	bats := make([]*Bat, 0, count)
+	bats := make([]*Bat, count)
+	perm := rand.Perm(len(humanPos))
 
-	for i, idx := range rand.Perm(len(humanPos))[:count] {
-		pos := humanPos[idx]
+	for i := 0; i < count; i++ {
+		pos := humanPos[perm[i]]
 		oldSymbol := s.symbolGrid[pos.Row][pos.Col]
 		s.symbolGrid[pos.Row][pos.Col] = _wild
 
-		treasureIdx := i % len(s.stepMap.TreatPos)
-		bats = append(bats, newBat(s.stepMap.TreatPos[treasureIdx], pos, oldSymbol, _wild))
+		treasurePos := s.stepMap.TreatPos[i%len(s.stepMap.TreatPos)]
+		bats[i] = newBat(treasurePos, pos, oldSymbol, _wild)
 	}
 
 	return bats
 }
 
-// transformToWildFreeMode 免费模式Wind转换（蝙蝠持续移动）
+// transformToWildFreeMode 免费模式：蝙蝠持续移动并转换Wind为Wild
 func (s *betOrderService) transformToWildFreeMode() []*Bat {
-	// 合并所有蝙蝠位置（旧蝙蝠 + 新treasure）
 	allBats := append([]*position{}, s.scene.BatPositions...)
-	allBats = append(allBats, s.stepMap.TreatPos...)
+	remainingSlots := int(s.gameConfig.MaxBatPositions) - len(allBats)
 
-	// 超过5个则随机选择
-	if len(allBats) > _maxBatPositions {
-		rand.Shuffle(len(allBats), func(i, j int) {
-			allBats[i], allBats[j] = allBats[j], allBats[i]
-		})
-		allBats = allBats[:_maxBatPositions]
+	// 添加新treasure（如果有空位）
+	if remainingSlots > 0 && len(s.stepMap.TreatPos) > 0 {
+		newTreasures := s.stepMap.TreatPos
+		if len(newTreasures) > remainingSlots {
+			rand.Shuffle(len(newTreasures), func(i, j int) {
+				newTreasures[i], newTreasures[j] = newTreasures[j], newTreasures[i]
+			})
+			newTreasures = newTreasures[:remainingSlots]
+		}
+		allBats = append(allBats, newTreasures...)
 	}
 
-	// 统一移动和转换
-	var bats []*Bat
-	visited := make(map[string]int64)
+	// 移动蝙蝠并检查Wind转换
+	bats := make([]*Bat, 0, len(allBats))
+	visited := make(map[int64]int64, len(allBats))
 
 	for _, oldPos := range allBats {
 		newPos := s.moveBat(oldPos)
@@ -199,9 +188,9 @@ func (s *betOrderService) transformToWildFreeMode() []*Bat {
 	return bats
 }
 
-// getCachedSymbol 获取符号（带缓存，防止多只蝙蝠移入同格时冲突）
-func (s *betOrderService) getCachedSymbol(pos *position, cache map[string]int64) int64 {
-	key := fmt.Sprintf("%d_%d", pos.Row, pos.Col)
+// getCachedSymbol 获取符号（缓存防止多蝙蝠移入同格冲突）
+func (s *betOrderService) getCachedSymbol(pos *position, cache map[int64]int64) int64 {
+	key := pos.Row*_colCount + pos.Col
 	if symbol, ok := cache[key]; ok {
 		return symbol
 	}
@@ -209,12 +198,13 @@ func (s *betOrderService) getCachedSymbol(pos *position, cache map[string]int64)
 	return cache[key]
 }
 
-// findHumanSymbols 查找所有人符号位置(7/8/9)
+// findHumanSymbols 查找所有Wind符号位置（7/8/9）
 func (s *betOrderService) findHumanSymbols() []*position {
-	positions := make([]*position, 0, _rowCount*_colCount)
+	positions := make([]*position, 0, 12)
 	for row := int64(0); row < _rowCount; row++ {
 		for col := int64(0); col < _colCount; col++ {
-			if isHumanSymbol(s.symbolGrid[row][col]) {
+			sym := s.symbolGrid[row][col]
+			if sym == _child || sym == _woman || sym == _oldMan {
 				positions = append(positions, &position{Row: row, Col: col})
 			}
 		}
@@ -224,23 +214,26 @@ func (s *betOrderService) findHumanSymbols() []*position {
 
 // moveBat 蝙蝠随机移动一格（8方向）
 func (s *betOrderService) moveBat(pos *position) *position {
-	validDirs := make([]direction, 0, 8)
+	validCount := 0
+	var validDirs [8]direction
+
 	for _, dir := range allDirections {
 		newRow, newCol := pos.Row+dir.dRow, pos.Col+dir.dCol
 		if newRow >= 0 && newRow < _rowCount && newCol >= 0 && newCol < _colCount {
-			validDirs = append(validDirs, dir)
+			validDirs[validCount] = dir
+			validCount++
 		}
 	}
 
-	if len(validDirs) == 0 {
+	if validCount == 0 {
 		return pos
 	}
 
-	dir := validDirs[rand.IntN(len(validDirs))]
+	dir := validDirs[rand.IntN(validCount)]
 	return &position{Row: pos.Row + dir.dRow, Col: pos.Col + dir.dCol}
 }
 
-// isHumanSymbol 判断是否为人符号(7/8/9)
+// isHumanSymbol 判断是否为Wind符号（7/8/9）
 func isHumanSymbol(symbol int64) bool {
 	return symbol == _child || symbol == _woman || symbol == _oldMan
 }
@@ -257,18 +250,8 @@ func newBat(from, to *position, oldSym, newSym int64) *Bat {
 	}
 }
 
-type direction struct {
-	dRow, dCol int64
-}
-
-var allDirections = []direction{
-	{-1, 0}, {1, 0}, {0, -1}, {0, 1}, // 上下左右
-	{-1, -1}, {-1, 1}, {1, -1}, {1, 1}, // 四个斜角
-}
-
 // updateBaseStepResult 更新基础模式结果
 func (s *betOrderService) updateBaseStepResult(result *BaseSpinResult) {
-	// 更新中奖金额
 	if s.bonusAmount.GreaterThan(decimal.Zero) {
 		bonusFloat := s.bonusAmount.Round(2).InexactFloat64()
 		s.client.ClientOfFreeGame.IncrGeneralWinTotal(bonusFloat)
@@ -277,7 +260,6 @@ func (s *betOrderService) updateBaseStepResult(result *BaseSpinResult) {
 
 	// 触发免费游戏（>=3个treasure）
 	if s.stepMap.TreatCount >= _triggerTreasureCount {
-		// 计算免费次数：10 + (夺宝数-3)×2
 		s.newFreeCount = s.gameConfig.FreeGameInitTimes +
 			(s.stepMap.TreatCount-_triggerTreasureCount)*s.gameConfig.ExtraScatterExtraTime
 
@@ -286,7 +268,6 @@ func (s *betOrderService) updateBaseStepResult(result *BaseSpinResult) {
 		s.client.ClientOfFreeGame.SetFreeNum(uint64(s.newFreeCount))
 		s.client.SetLastMaxFreeNum(uint64(s.newFreeCount))
 
-		// 初始化免费游戏数据：treasure位置变成初始蝙蝠位置（从stepMap读取）
 		s.scene.BatPositions = s.stepMap.TreatPos
 		s.scene.InitialBatCount = s.stepMap.TreatCount
 		s.scene.AccumulatedNewBat = 0
@@ -295,23 +276,19 @@ func (s *betOrderService) updateBaseStepResult(result *BaseSpinResult) {
 
 	s.validateGameState()
 	s.stepMultiplier = s.lineMultiplier
-
 	result.SpinOver = s.newFreeCount == 0
 }
 
-// 更新免费游戏步骤结果
+// updateFreeStepResult 更新免费模式结果
 func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
-	// RTP测试统计信息
 	if s.debug.open {
 		s.debug.initialBatCount = s.scene.InitialBatCount
 		s.debug.accumulatedNewBat = s.scene.AccumulatedNewBat
 	}
 
-	// 更新计数器
 	s.client.ClientOfFreeGame.IncrFreeTimes()
 	s.client.ClientOfFreeGame.Decr()
 
-	// 更新中奖金额
 	if s.bonusAmount.GreaterThan(decimal.Zero) {
 		bonusFloat := s.bonusAmount.Round(2).InexactFloat64()
 		s.client.ClientOfFreeGame.IncrGeneralWinTotal(bonusFloat)
@@ -319,29 +296,29 @@ func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
 		s.client.ClientOfFreeGame.IncRoundBonus(bonusFloat)
 	}
 
-	// 保存蝙蝠移动后的新位置
-	var newBatPositions []*position
-	actualAddedBatCount := 0
-	for _, bat := range s.stepMap.Bat {
-		newBatPositions = append(newBatPositions, &position{Row: bat.TransX, Col: bat.TransY})
-		// 统计实际添加的蝙蝠（位置未移动 且 是夺宝符号）
-		if bat.TransX == bat.X && bat.TransY == bat.Y && bat.Syb == _treasure {
-			actualAddedBatCount++
+	// 保存蝙蝠新位置
+	batCount := len(s.stepMap.Bat)
+	actualAddedCount := 0
+	if batCount > 0 {
+		newBatPositions := make([]*position, batCount)
+		for i, bat := range s.stepMap.Bat {
+			newBatPositions[i] = &position{Row: bat.TransX, Col: bat.TransY}
+			if bat.TransX == bat.X && bat.TransY == bat.Y && bat.Syb == _treasure {
+				actualAddedCount++
+			}
 		}
+		s.scene.BatPositions = newBatPositions
+	} else {
+		s.scene.BatPositions = nil
 	}
-	s.scene.BatPositions = newBatPositions
 
-	// 计算新增免费次数（参考XXG逻辑）
-	// 规则：根据当前新生成盘面的夺宝数量，每个夺宝+1次免费
+	// 计算新增免费次数（每个treasure+1次）
 	s.newFreeCount = 0
 	s.stepMap.New = 0
-
-	// 只在没有奖金时，根据当前盘面的夺宝数量计算免费次数
-	if !s.bonusAmount.GreaterThan(decimal.Zero) && s.stepMap.TreatCount > 0 {
-		// 每个夺宝符号+1次免费（独立于蝙蝠生成的5个上限）
+	if s.stepMap.TreatCount > 0 {
 		s.newFreeCount = s.stepMap.TreatCount
 		s.stepMap.New = s.newFreeCount
-		s.scene.AccumulatedNewBat += int64(actualAddedBatCount) // 累计实际添加的蝙蝠（用于统计）
+		s.scene.AccumulatedNewBat += int64(actualAddedCount)
 
 		newTotal := s.client.ClientOfFreeGame.GetFreeNum() + uint64(s.newFreeCount)
 		s.stepMap.FreeNum = int64(newTotal)
@@ -351,8 +328,9 @@ func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
 		s.stepMap.FreeNum = int64(s.client.ClientOfFreeGame.GetFreeNum())
 	}
 
-	// 免费游戏结束时清理
-	if s.client.ClientOfFreeGame.GetFreeNum() < 1 {
+	// 判断是否结束
+	result.SpinOver = s.client.ClientOfFreeGame.GetFreeNum() < 1
+	if result.SpinOver {
 		s.scene.BatPositions = nil
 		s.scene.InitialBatCount = 0
 		s.scene.AccumulatedNewBat = 0
@@ -363,9 +341,6 @@ func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
 	s.validateGameState()
 	s.stepMultiplier = s.lineMultiplier
 
-	result.SpinOver = s.client.ClientOfFreeGame.GetFreeNum() < 1
-
-	// RTP测试统计：记录免费游戏是否结束
 	if s.debug.open {
 		s.debug.isFreeGameEnding = result.SpinOver
 	}
@@ -376,10 +351,8 @@ func (s *betOrderService) validateGameState() {
 	if s.debug.open {
 		return
 	}
-
 	lastMapID := s.client.ClientOfFreeGame.GetLastMapId()
 	freeNum := s.client.ClientOfFreeGame.GetFreeNum()
-
 	if (lastMapID > 0 && freeNum == 0) || (lastMapID == 0 && freeNum > 0) {
 		s.showPostUpdateErrorLog()
 	}

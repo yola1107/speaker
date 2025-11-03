@@ -14,7 +14,16 @@ import (
 
 // getRequestContext 获取请求上下文
 func (s *betOrderService) getRequestContext() bool {
-	return s.mdbGetMerchant() && s.mdbGetMember() && s.mdbGetGame()
+	switch {
+	case !s.mdbGetMerchant():
+		return false
+	case !s.mdbGetMember():
+		return false
+	case !s.mdbGetGame():
+		return false
+	default:
+		return true
+	}
 }
 
 // selectGameRedis 初始化游戏redis
@@ -33,7 +42,7 @@ func (s *betOrderService) selectGameRedis() {
 func (s *betOrderService) updateBetAmount() bool {
 	s.betAmount = decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
-		Mul(decimal.NewFromInt(_baseMultiplier))
+		Mul(decimal.NewFromInt(s.gameConfig.BaseBat))
 
 	if s.betAmount.LessThanOrEqual(decimal.Zero) {
 		global.GVA_LOG.Warn("updateBetAmount",
@@ -56,17 +65,21 @@ func (s *betOrderService) updateBonusAmount() {
 		Mul(decimal.NewFromInt(s.stepMultiplier))
 }
 
-// symbolGridToString 符号网格转换为字符串
-func (s *betOrderService) symbolGridToString() string {
+// gridToString 网格转换为字符串（通用函数）
+func gridToString(grid *int64Grid) string {
+	if grid == nil {
+		return ""
+	}
+
 	var builder strings.Builder
-	builder.Grow(int(_rowCount * _colCount * 8)) // 预分配容量：每个格子约8字节
+	builder.Grow(int(_rowCount * _colCount * gridStringCapacity))
 
 	sn := 1
 	for row := int64(0); row < _rowCount; row++ {
 		for col := int64(0); col < _colCount; col++ {
 			builder.WriteString(strconv.Itoa(sn))
 			builder.WriteByte(':')
-			builder.WriteString(strconv.FormatInt(s.symbolGrid[row][col], 10))
+			builder.WriteString(strconv.FormatInt(grid[row][col], 10))
 			builder.WriteString("; ")
 			sn++
 		}
@@ -74,26 +87,64 @@ func (s *betOrderService) symbolGridToString() string {
 	return builder.String()
 }
 
-// winGridToString 中奖网格转换为字符串
+// symbolGridToString 符号网格转字符串
+func (s *betOrderService) symbolGridToString() string {
+	return gridToString(s.symbolGrid)
+}
+
+// winGridToString 中奖网格转字符串
 func (s *betOrderService) winGridToString() string {
-	if s.winGrid == nil {
-		return ""
+	return gridToString(s.winGrid)
+}
+
+// reverseGridRows 网格行序反转
+func reverseGridRows(grid *int64Grid) int64Grid {
+	if grid == nil {
+		return int64Grid{}
 	}
+	var reversed int64Grid
+	for i := int64(0); i < _rowCount; i++ {
+		reversed[i] = grid[_rowCount-1-i]
+	}
+	return reversed
+}
 
-	var builder strings.Builder
-	builder.Grow(int(_rowCount * _colCount * 8)) // 预分配容量：每个格子约8字节
-
-	sn := 1
-	for row := int64(0); row < _rowCount; row++ {
-		for col := int64(0); col < _colCount; col++ {
-			builder.WriteString(strconv.Itoa(sn))
-			builder.WriteByte(':')
-			builder.WriteString(strconv.FormatInt(s.winGrid[row][col], 10))
-			builder.WriteString("; ")
-			sn++
+// reverseBats 交换bat的X/Y坐标（服务器X=行/Y=列 → 客户端x=列/y=行）
+func reverseBats(bats []*Bat) []*Bat {
+	if len(bats) == 0 {
+		return bats
+	}
+	reversed := make([]*Bat, len(bats))
+	for i, bat := range bats {
+		reversed[i] = &Bat{
+			X:      bat.Y,
+			Y:      bat.X,
+			TransX: bat.TransY,
+			TransY: bat.TransX,
+			Syb:    bat.Syb,
+			Sybn:   bat.Sybn,
 		}
 	}
-	return builder.String()
+	return reversed
+}
+
+// reverseWinResults 反转WinPositions的行序
+func reverseWinResults(winResults []*winResult) []*winResult {
+	if len(winResults) == 0 {
+		return winResults
+	}
+	reversed := make([]*winResult, len(winResults))
+	for i, wr := range winResults {
+		reversed[i] = &winResult{
+			Symbol:             wr.Symbol,
+			SymbolCount:        wr.SymbolCount,
+			LineCount:          wr.LineCount,
+			BaseLineMultiplier: wr.BaseLineMultiplier,
+			TotalMultiplier:    wr.TotalMultiplier,
+			WinPositions:       reverseGridRows(&wr.WinPositions),
+		}
+	}
+	return reversed
 }
 
 // showPostUpdateErrorLog 错误日志记录

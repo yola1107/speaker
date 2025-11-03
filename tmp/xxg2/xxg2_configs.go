@@ -10,6 +10,7 @@ type gameConfigJson struct {
 	BetSizeSlice           []float64   `json:"bet_size"`                  // 下注基础金额
 	BetLevelSlice          []int64     `json:"bet_level"`                 // 下注倍数
 	BaseBat                int64       `json:"base_bat"`                  // 基础倍数
+	MaxBatPositions        int64       `json:"max_bat_positions"`         // 免费游戏中蝙蝠总数上限
 	FreeGameTriggerScatter int64       `json:"free_game_trigger_scatter"` // 触发免费游戏的scatter数量
 	FreeGameInitTimes      int64       `json:"free_game_init_times"`      // 免费游戏初始次数
 	ExtraScatterExtraTime  int64       `json:"extra_scatter_extra_time"`  // 额外scatter增加的次数

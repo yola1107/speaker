@@ -39,11 +39,12 @@ type winResult struct {
 }
 
 // Bat 蝙蝠移动记录（用于前端播放飞行动画）
+// 注意：服务器生成时X=行/Y=列，发送给客户端前需交换为x=列/y=行
 type Bat struct {
-	X      int64 `json:"x"`    // 起始行
-	Y      int64 `json:"y"`    // 起始列
-	TransX int64 `json:"nx"`   // 目标行
-	TransY int64 `json:"ny"`   // 目标列
+	X      int64 `json:"x"`    // 起始行（服务器）→ 起始列（客户端）
+	Y      int64 `json:"y"`    // 起始列（服务器）→ 起始行（客户端）
+	TransX int64 `json:"nx"`   // 目标行（服务器）→ 目标列（客户端）
+	TransY int64 `json:"ny"`   // 目标列（服务器）→ 目标行（客户端）
 	Syb    int64 `json:"syb"`  // 原符号
 	Sybn   int64 `json:"sybn"` // 新符号（转换后）
 }
@@ -57,4 +58,29 @@ type BaseSpinResult struct {
 	winGrid        *int64Grid   // 中奖网格
 	winResults     []*winResult // 中奖结果
 	SpinOver       bool         // 一局游戏是否结束
+}
+
+// rtpDebugData RTP调试结构
+type rtpDebugData struct {
+	open              bool                    // RTP测试开关
+	reelPositions     [_colCount]reelPosition // 转轮信息（用于调试输出）
+	originalGrid      *int64Grid              // 初始符号网格（转换前，用于调试输出）
+	initialBatCount   int64                   // 触发免费时的初始蝙蝠数量（用于RTP统计）
+	accumulatedNewBat int64                   // 免费游戏中累计新增蝙蝠数量（用于RTP统计）
+	isFreeGameEnding  bool                    // 本次spin后免费游戏是否结束（用于RTP统计）
+}
+
+// reelPosition 转轮位置信息
+type reelPosition struct {
+	startIdx int // 起始位置
+	length   int // 转轮长度
+}
+
+type direction struct {
+	dRow, dCol int64
+}
+
+var allDirections = []direction{
+	{-1, 0}, {1, 0}, {0, -1}, {0, 1}, // 上下左右
+	{-1, -1}, {-1, 1}, {1, -1}, {1, 1}, // 四个斜角
 }

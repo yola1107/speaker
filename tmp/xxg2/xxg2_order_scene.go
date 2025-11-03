@@ -28,11 +28,6 @@ func (s *betOrderService) isFreeRound() bool {
 	return s.scene.Stage == _spinTypeFree
 }
 
-// isBaseRound 是否为基础回合
-func (s *betOrderService) isBaseRound() bool {
-	return s.scene.Stage == _spinTypeBase
-}
-
 func (s *betOrderService) getSceneKey() string {
 	return fmt.Sprintf("%s:%s:%d", global.GVA_CONFIG.System.Site, sceneDataKeyPrefix, s.member.ID)
 }
