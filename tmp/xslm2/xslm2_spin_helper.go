@@ -1,0 +1,217 @@
+package xslm2
+
+import (
+	"fmt"
+
+	"egame-grpc/global"
+
+	"go.uber.org/zap"
+)
+
+// loadStepData 从预设数据加载当前step的符号网格
+// 预设数据中每个step都包含完整的符号布局（无需下落填充）
+// 免费模式下还需加载女性符号收集计数
+func (s *spin) loadStepData(isFreeRound bool) bool {
+	// 1. 加载符号网格（从预设的一维数组转为4×5网格）
+	var symbolGrid int64Grid
+	for row := int64(0); row < _rowCount; row++ {
+		for col := int64(0); col < _colCount; col++ {
+			symbolGrid[row][col] = s.stepMap.Map[row*_colCount+col]
+		}
+	}
+	s.symbolGrid = &symbolGrid
+
+	// 2. 基础模式无需加载女性计数
+	if !isFreeRound {
+		return true
+	}
+
+	// 3. 免费模式加载女性符号收集计数
+	if int64(len(s.stepMap.FemaleCountsForFree)) != _femaleC-_femaleA+1 {
+		global.GVA_LOG.Error(
+			"loadStepData",
+			zap.Error(fmt.Errorf("unexpected femaleCountsForFree len: %v", len(s.stepMap.FemaleCountsForFree))),
+			zap.Int64("presetID", s.preset.ID),
+			zap.Int64("stepID", s.stepMap.ID),
+			zap.Int64s("femaleCountsForFree", s.stepMap.FemaleCountsForFree),
+		)
+		return false
+	}
+	for i, c := range s.stepMap.FemaleCountsForFree {
+		s.femaleCountsForFree[i] = c
+		s.nextFemaleCountsForFree[i] = c
+	}
+	return true
+}
+
+// updateStepData 检查是否触发全屏消除
+// 当任意女性符号收集满10个时，启用全屏消除标志
+func (s *spin) updateStepData() {
+	if len(s.stepMap.FemaleCountsForFree) == 0 {
+		return
+	}
+
+	// 检查是否有任意女性符号达到10个
+	for _, c := range s.stepMap.FemaleCountsForFree {
+		if c < _femaleSymbolCountForFullElimination {
+			return
+		}
+	}
+
+	// 所有女性符号都>=10，启用全屏消除
+	s.enableFullElimination = true
+}
+
+func (s *spin) hasWildSymbol() bool {
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			if s.symbolGrid[r][c] == _wild {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *spin) getTreasureCount() int64 {
+	count := int64(0)
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			if s.symbolGrid[r][c] == _treasure {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func (s *spin) findWinInfos() bool {
+	var winInfos []*winInfo
+	for symbol := _blank + 1; symbol < _wildFemaleA; symbol++ {
+		if info, ok := s.findNormalSymbolWinInfo(symbol); ok {
+			if symbol >= _femaleA {
+				s.hasFemaleWin = true
+			}
+			winInfos = append(winInfos, info)
+		}
+	}
+	for symbol := _wildFemaleA; symbol < _wild; symbol++ {
+		if info, ok := s.findWildSymbolWinInfo(symbol); ok {
+			s.hasFemaleWin = true
+			winInfos = append(winInfos, info)
+		}
+	}
+	s.winInfos = winInfos
+	return len(winInfos) > 0
+}
+
+func (s *spin) findNormalSymbolWinInfo(symbol int64) (*winInfo, bool) {
+	exist := false
+	lineCount := int64(1)
+	var winGrid int64Grid
+	for c := int64(0); c < _colCount; c++ {
+		count := int64(0)
+		for r := int64(0); r < _rowCount; r++ {
+			currSymbol := s.symbolGrid[r][c]
+			if currSymbol == symbol || (currSymbol >= _wildFemaleA && currSymbol <= _wild) {
+				if currSymbol == symbol {
+					exist = true
+				}
+				count++
+				winGrid[r][c] = currSymbol
+			}
+		}
+		if count == 0 {
+			if c >= _minMatchCount && exist {
+				info := winInfo{Symbol: symbol, SymbolCount: c, LineCount: lineCount, WinGrid: winGrid}
+				return &info, true
+			}
+			break
+		}
+		lineCount *= count
+		if c == _colCount-1 && exist {
+			info := winInfo{Symbol: symbol, SymbolCount: _colCount, LineCount: lineCount, WinGrid: winGrid}
+			return &info, true
+		}
+	}
+	return nil, false
+}
+
+func (s *spin) findWildSymbolWinInfo(symbol int64) (*winInfo, bool) {
+	lineCount := int64(1)
+	var winGrid int64Grid
+	for c := int64(0); c < _colCount; c++ {
+		count := int64(0)
+		for r := int64(0); r < _rowCount; r++ {
+			currSymbol := s.symbolGrid[r][c]
+			if currSymbol == symbol || currSymbol == _wild {
+				count++
+				winGrid[r][c] = currSymbol
+			}
+		}
+		if count == 0 {
+			if c >= _minMatchCount {
+				info := winInfo{Symbol: symbol, SymbolCount: c, LineCount: lineCount, WinGrid: winGrid}
+				return &info, true
+			}
+			break
+		}
+		lineCount *= count
+		if c == _colCount-1 {
+			info := winInfo{Symbol: symbol, SymbolCount: _colCount, LineCount: lineCount, WinGrid: winGrid}
+			return &info, true
+		}
+	}
+	return nil, false
+}
+
+// updateStepResults 更新步骤结果（计算中奖倍率）
+// 参数：
+//
+//	partialElimination - 部分消除模式
+//	  true:  仅计算女性符号（7-9）的中奖
+//	  false: 计算所有符号的中奖
+//
+// 用途：
+//   - 基础模式：有女性中奖+有Wild时，只计算女性符号（等待下一step消除其他符号）
+//   - 免费模式：类似逻辑
+func (s *spin) updateStepResults(partialElimination bool) {
+	var winResults []*winResult
+	var winGrid int64Grid
+	lineMultiplier := int64(0)
+
+	for _, info := range s.winInfos {
+		// 部分消除模式下，跳过非女性符号
+		if partialElimination && info.Symbol < _femaleA {
+			continue
+		}
+
+		// 计算中奖倍率
+		baseLineMultiplier := _symbolMultiplierGroups[info.Symbol-1][info.SymbolCount-_minMatchCount]
+		totalMultiplier := baseLineMultiplier * info.LineCount
+
+		result := winResult{
+			Symbol:             info.Symbol,
+			SymbolCount:        info.SymbolCount,
+			LineCount:          info.LineCount,
+			BaseLineMultiplier: baseLineMultiplier,
+			TotalMultiplier:    totalMultiplier,
+			WinGrid:            info.WinGrid,
+		}
+		winResults = append(winResults, &result)
+
+		// 合并中奖网格
+		for r := int64(0); r < _rowCount; r++ {
+			for c := int64(0); c < _colCount; c++ {
+				if info.WinGrid[r][c] != _blank {
+					winGrid[r][c] = info.WinGrid[r][c]
+				}
+			}
+		}
+		lineMultiplier += totalMultiplier
+	}
+
+	s.stepMultiplier = lineMultiplier
+	s.winResults = winResults
+	s.winGrid = &winGrid
+}
