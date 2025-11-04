@@ -54,7 +54,7 @@ func (s *betOrderService) mdbGetMember() bool {
 func (s *betOrderService) mdbGetGame() bool {
 	if s.debug.open {
 		s.game = &game.Game{
-			ID:       _gameID,
+			ID:       GameID,
 			GameType: 11,
 			GameName: "XXG2",
 		}
@@ -63,14 +63,14 @@ func (s *betOrderService) mdbGetGame() bool {
 
 	var g game.Game
 	if err := global.GVA_DB.Where("id=? and status=1", s.req.GameId).First(&g).Error; err != nil {
-		global.GVA_LOG.Error("mdbGetGame", zap.Error(err), zap.Int64("gameID", _gameID))
+		global.GVA_LOG.Error("mdbGetGame", zap.Error(err), zap.Int64("gameID", GameID))
 		return false
 	}
 
 	var mg merchant.MerchantGame
-	if err := global.GVA_DB.Where("merchant=? and game_id=?", s.merchant.Merchant, _gameID).First(&mg).Error; err != nil {
+	if err := global.GVA_DB.Where("merchant=? and game_id=?", s.merchant.Merchant, GameID).First(&mg).Error; err != nil {
 		global.GVA_LOG.Error("mdbGetGame", zap.Error(err),
-			zap.Int64("gameID", _gameID),
+			zap.Int64("gameID", GameID),
 			zap.String("merchant", s.merchant.Merchant))
 		return false
 	}

@@ -35,7 +35,6 @@ func (s *memberLoginService) memberLogin(req *pb.LoginStreamReq, c *client.Clien
 	switch {
 	case err == nil:
 		s.client = scenes
-		break
 	case errors.Is(err, redis.Nil):
 		return "", nil
 	case scenes == nil:

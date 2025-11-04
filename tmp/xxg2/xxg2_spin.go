@@ -12,7 +12,7 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 		return nil, err
 	}
 
-	s.stepMap = &stepMap{Map: s.initSpinSymbol()}
+	s.stepMap = &stepMap{Map: _cnf.initSpinSymbol(s.isFreeRound())}
 	s.loadStepData()
 	s.collectBat()
 	s.findWinInfos()
@@ -35,59 +35,6 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 	}
 
 	return result, nil
-}
-
-// initSpinSymbol 根据权重随机生成滚轴符号
-func (s *betOrderService) initSpinSymbol() [_rowCount * _colCount]int64 {
-	rollCfg := &s.gameConfig.RollCfg.Base
-	if s.isFreeRound() {
-		rollCfg = &s.gameConfig.RollCfg.Free
-	}
-
-	// 根据权重选择RealData索引
-	realIndex := 0
-	if len(rollCfg.Weight) > 1 {
-		totalWeight := int64(0)
-		for _, w := range rollCfg.Weight {
-			totalWeight += w
-		}
-		r := rand.Int64N(totalWeight)
-		for i, w := range rollCfg.Weight {
-			if r < w {
-				realIndex = int(rollCfg.UseKey[i])
-				break
-			}
-			r -= w
-		}
-	} else {
-		realIndex = int(rollCfg.UseKey[0])
-	}
-
-	if realIndex >= len(s.gameConfig.RealData) {
-		panic("real data index out of range")
-	}
-
-	realData := s.gameConfig.RealData[realIndex]
-	var symbols [_rowCount * _colCount]int64
-
-	// 每列随机选择起始位置生成符号
-	for col := 0; col < int(_colCount); col++ {
-		columnData := realData[col]
-		if len(columnData) < int(_rowCount) {
-			panic("real data column too short")
-		}
-
-		startIdx := rand.IntN(len(columnData))
-		for row := 0; row < int(_rowCount); row++ {
-			symbols[row*int(_colCount)+col] = columnData[(startIdx+row)%len(columnData)]
-		}
-
-		if s.debug.open {
-			s.debug.reelPositions[col] = reelPosition{startIdx: startIdx, length: len(columnData)}
-		}
-	}
-
-	return symbols
 }
 
 // loadStepData 加载符号到网格并扫描treasure位置
@@ -154,7 +101,7 @@ func (s *betOrderService) transformToWildBaseMode() []*Bat {
 // transformToWildFreeMode 免费模式：蝙蝠持续移动并转换Wind为Wild
 func (s *betOrderService) transformToWildFreeMode() []*Bat {
 	allBats := append([]*position{}, s.scene.BatPositions...)
-	remainingSlots := int(s.gameConfig.MaxBatPositions) - len(allBats)
+	remainingSlots := int(_cnf.MaxBatPositions) - len(allBats)
 
 	// 添加新treasure（如果有空位）
 	if remainingSlots > 0 && len(s.stepMap.TreatPos) > 0 {
@@ -198,13 +145,13 @@ func (s *betOrderService) getCachedSymbol(pos *position, cache map[int64]int64) 
 	return cache[key]
 }
 
-// findHumanSymbols 查找所有Wind符号位置（7/8/9）
+// findHumanSymbols 查找所有人符号位置（7/8/9）
 func (s *betOrderService) findHumanSymbols() []*position {
 	positions := make([]*position, 0, 12)
 	for row := int64(0); row < _rowCount; row++ {
 		for col := int64(0); col < _colCount; col++ {
 			sym := s.symbolGrid[row][col]
-			if sym == _child || sym == _woman || sym == _oldMan {
+			if isHumanSymbol(sym) {
 				positions = append(positions, &position{Row: row, Col: col})
 			}
 		}
@@ -233,7 +180,7 @@ func (s *betOrderService) moveBat(pos *position) *position {
 	return &position{Row: pos.Row + dir.dRow, Col: pos.Col + dir.dCol}
 }
 
-// isHumanSymbol 判断是否为Wind符号（7/8/9）
+// isHumanSymbol 判断是否为人符号(7/8/9)
 func isHumanSymbol(symbol int64) bool {
 	return symbol == _child || symbol == _woman || symbol == _oldMan
 }
@@ -260,8 +207,8 @@ func (s *betOrderService) updateBaseStepResult(result *BaseSpinResult) {
 
 	// 触发免费游戏（>=3个treasure）
 	if s.stepMap.TreatCount >= _triggerTreasureCount {
-		s.newFreeCount = s.gameConfig.FreeGameInitTimes +
-			(s.stepMap.TreatCount-_triggerTreasureCount)*s.gameConfig.ExtraScatterExtraTime
+		s.newFreeCount = _cnf.FreeGameInitTimes +
+			(s.stepMap.TreatCount-_triggerTreasureCount)*_cnf.ExtraScatterExtraTime
 
 		s.stepMap.New = s.newFreeCount
 		s.stepMap.FreeNum = s.newFreeCount
@@ -274,7 +221,6 @@ func (s *betOrderService) updateBaseStepResult(result *BaseSpinResult) {
 		s.scene.NextStage = _spinTypeFree
 	}
 
-	s.validateGameState()
 	s.stepMultiplier = s.lineMultiplier
 	result.SpinOver = s.newFreeCount == 0
 }
@@ -338,22 +284,9 @@ func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
 		s.client.ClientOfFreeGame.SetLastWinId(0)
 	}
 
-	s.validateGameState()
 	s.stepMultiplier = s.lineMultiplier
 
 	if s.debug.open {
 		s.debug.isFreeGameEnding = result.SpinOver
-	}
-}
-
-// validateGameState 校验游戏状态一致性
-func (s *betOrderService) validateGameState() {
-	if s.debug.open {
-		return
-	}
-	lastMapID := s.client.ClientOfFreeGame.GetLastMapId()
-	freeNum := s.client.ClientOfFreeGame.GetFreeNum()
-	if (lastMapID > 0 && freeNum == 0) || (lastMapID == 0 && freeNum > 0) {
-		s.showPostUpdateErrorLog()
 	}
 }

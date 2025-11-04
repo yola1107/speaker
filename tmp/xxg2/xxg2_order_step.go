@@ -40,7 +40,7 @@ func (s *betOrderService) initialize() error {
 func (s *betOrderService) initFirstStepForSpin() error {
 	if s.debug.open {
 		// RTP测试：最小化初始化
-		s.betAmount = decimal.NewFromInt(s.gameConfig.BaseBat)
+		s.betAmount = decimal.NewFromInt(_cnf.BaseBat)
 		s.amount = s.betAmount
 		return nil
 	}
@@ -79,7 +79,7 @@ func (s *betOrderService) updateGameOrder() bool {
 		Member:            s.member.MemberName,
 		GameID:            s.game.ID,
 		GameName:          s.game.GameName,
-		BaseMultiple:      s.gameConfig.BaseBat,
+		BaseMultiple:      _cnf.BaseBat,
 		Multiple:          s.req.Multiple,
 		LineMultiple:      s.lineMultiplier,
 		BonusHeadMultiple: 0,                // xxg2 无消除，固定为0
@@ -159,43 +159,40 @@ func (s *betOrderService) checkWildInFirstCol() (bool, []int64) {
 		return false, nil
 	}
 
-	// 收集盘面所有不重复符号（排除treasure）
-	symbolSet := make(map[int64]struct{})
-	symbols := make([]int64, 0, len(checkWinSymbols))
+	// 收集盘面不重复符号
+	seen := make(map[int64]bool, 10)
+	symbols := make([]int64, 0, 10)
 	for row := int64(0); row < _rowCount; row++ {
 		for col := int64(0); col < _colCount; col++ {
-			symbol := s.symbolGrid[row][col]
-			if symbol != _treasure {
-				if _, exists := symbolSet[symbol]; !exists {
-					symbolSet[symbol] = struct{}{}
-					symbols = append(symbols, symbol)
-				}
+			if sym := s.symbolGrid[row][col]; sym != _treasure && !seen[sym] {
+				seen[sym] = true
+				symbols = append(symbols, sym)
 			}
 		}
 	}
 	return true, symbols
 }
 
-// processWinInfos 处理中奖信息（计算倍率和构建中奖网格）
+// processWinInfos 处理中奖信息并计算倍率
 func (s *betOrderService) processWinInfos() {
 	winResults := make([]*winResult, 0, len(s.winInfos))
 	var winGrid int64Grid
 	totalMultiplier := int64(0)
 
 	for _, info := range s.winInfos {
-		baseMultiplier := s.getSymbolMultiplier(info.Symbol, info.SymbolCount)
-		lineMultiplier := baseMultiplier * info.LineCount
+		baseMultiplier := _cnf.getSymbolMultiplier(info.Symbol, info.SymbolCount)
+		totalLine := baseMultiplier * info.LineCount
 
 		winResults = append(winResults, &winResult{
 			Symbol:             info.Symbol,
 			SymbolCount:        info.SymbolCount,
 			LineCount:          info.LineCount,
 			BaseLineMultiplier: baseMultiplier,
-			TotalMultiplier:    lineMultiplier,
+			TotalMultiplier:    totalLine,
 			WinPositions:       s.buildWinPositions(info, &winGrid),
 		})
 
-		totalMultiplier += lineMultiplier
+		totalMultiplier += totalLine
 	}
 
 	s.lineMultiplier = totalMultiplier
@@ -346,17 +343,4 @@ func (s *betOrderService) getWinDetailsMap() map[string]any {
 		"lineMultiplier":     s.lineMultiplier,
 		"stepMultiplier":     s.stepMultiplier,
 	}
-}
-
-// getSymbolMultiplier 从PayTable获取符号倍率
-func (s *betOrderService) getSymbolMultiplier(symbol int64, symbolCount int64) int64 {
-	if len(s.gameConfig.PayTable) < int(symbol) {
-		return 0
-	}
-	table := s.gameConfig.PayTable[symbol-1]
-	index := int(symbolCount - _minMatchCount)
-	if index < 0 || index >= len(table) {
-		return 0
-	}
-	return table[index]
 }

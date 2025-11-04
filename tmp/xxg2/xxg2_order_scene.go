@@ -11,9 +11,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// sceneDataKeyPrefix 场景数据 key 前缀
-var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", _gameID)
-
 // SpinSceneData 场景数据结构（client 数据通过 ClientGameCache 自动持久化）
 type SpinSceneData struct {
 	Stage             int8        `json:"stage"`             // 当前阶段（1:base, 2:free）
@@ -29,7 +26,7 @@ func (s *betOrderService) isFreeRound() bool {
 }
 
 func (s *betOrderService) getSceneKey() string {
-	return fmt.Sprintf("%s:%s:%d", global.GVA_CONFIG.System.Site, sceneDataKeyPrefix, s.member.ID)
+	return fmt.Sprintf("%s:scene-%d:%d", global.GVA_CONFIG.System.Site, GameID, s.member.ID)
 }
 
 // cleanScene 清理场景数据
@@ -48,7 +45,30 @@ func (s *betOrderService) reloadScene() bool {
 		return false
 	}
 
-	// 设置当前阶段
+	s.updateSceneStage()
+	return true
+}
+
+// saveScene 保存场景数据到Redis
+func (s *betOrderService) saveScene() error {
+	if s.debug.open {
+		return nil
+	}
+
+	s.updateSceneStage()
+
+	sceneStr, _ := jsoniter.MarshalToString(s.scene)
+	key := s.getSceneKey()
+
+	if err := global.GVA_REDIS.Set(context.Background(), key, sceneStr, time.Hour*24*90).Err(); err != nil {
+		global.GVA_LOG.Error("saveScene", zap.Error(err))
+		return err
+	}
+	return nil
+}
+
+// updateSceneStage 更新场景阶段
+func (s *betOrderService) updateSceneStage() {
 	if s.client.ClientOfFreeGame.GetFreeNum() > 0 {
 		s.scene.Stage = _spinTypeFree
 	} else {
@@ -60,31 +80,6 @@ func (s *betOrderService) reloadScene() bool {
 		s.scene.Stage = s.scene.NextStage
 		s.scene.NextStage = 0
 	}
-
-	return true
-}
-
-// saveScene 保存场景数据到Redis
-func (s *betOrderService) saveScene() error {
-	if s.debug.open {
-		return nil
-	}
-
-	// 设置阶段（蝙蝠位置已在updateFreeStepResult中保存）
-	if s.client.ClientOfFreeGame.GetFreeNum() > 0 {
-		s.scene.Stage = _spinTypeFree
-	} else {
-		s.scene.Stage = _spinTypeBase
-	}
-
-	sceneStr, _ := jsoniter.MarshalToString(s.scene)
-	key := s.getSceneKey()
-
-	if err := global.GVA_REDIS.Set(context.Background(), key, sceneStr, time.Hour*24*90).Err(); err != nil {
-		global.GVA_LOG.Error("saveScene", zap.Error(err))
-		return err
-	}
-	return nil
 }
 
 // loadCacheSceneData 从Redis加载场景数据

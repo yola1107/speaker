@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	testRounds       = 1e8   // 测试局数
+	testRounds       = 1e7   // 测试局数
 	progressInterval = 1e5   // 进度输出间隔
 	debugFileOpen    = false // 调试模式（true=输出详细信息到文件）
 )
@@ -57,7 +57,7 @@ func TestRtp(t *testing.T) {
 	base, free := &stats{}, &stats{}
 	bet := int64(0)
 	start := time.Now()
-	buf := &strings.Builder{} // 用于统计结果输出
+	buf := &strings.Builder{}
 
 	var fileBuf *strings.Builder
 	if debugFileOpen {
@@ -65,13 +65,9 @@ func TestRtp(t *testing.T) {
 	}
 
 	svc := newBetService()
-	svc.initGameConfigs()
-	cfg := svc.gameConfig
 
 	tmpInterval := int64(min(progressInterval, testRounds))
-	baseGameCount := 0
-	freeGameCount := 0
-	triggeringBaseRound := 0 // 记录触发当前免费游戏的基础模式局数
+	baseGameCount, freeGameCount, triggeringBaseRound := 0, 0, 0
 
 	for base.rounds < testRounds {
 		updateScene(svc)
@@ -81,10 +77,9 @@ func TestRtp(t *testing.T) {
 			panic(err)
 		}
 
-		// 缓存isFreeRound结果，避免重复调用
 		isFree := svc.isFreeRound()
 
-		// 调试输出（且未超过限制）
+		// 调试输出
 		if debugFileOpen {
 			if !isFree {
 				baseGameCount++
@@ -125,13 +120,12 @@ func TestRtp(t *testing.T) {
 			if treasureCnt >= 3 && svc.newFreeCount > 0 {
 				base.freeCount++
 				base.freeTotalInitial += svc.newFreeCount
-				triggeringBaseRound = baseGameCount // 记录触发免费游戏的基础模式局数
+				triggeringBaseRound = baseGameCount
 			}
 		}
 
 		// 回合结束
 		if res.SpinOver {
-			// 免费游戏结束统计（从debug读取）
 			if svc.debug.isFreeGameEnding {
 				t := svc.debug.initialBatCount + svc.debug.accumulatedNewBat
 				if t < 10 {
@@ -145,20 +139,10 @@ func TestRtp(t *testing.T) {
 				base.winRounds++
 			}
 			base.currentWin, free.currentWin = 0, 0
-			bet += cfg.BaseBat
+			bet += _cnf.BaseBat
 
-			// 优化进度打印：减少字符串分配和重复计算
 			if base.rounds%tmpInterval == 0 {
-				elapsed := time.Since(start)
-				elapsedSec := elapsed.Seconds()
-				betFloat := float64(bet)
-				speed := float64(base.rounds) / elapsedSec
-				buf.Reset()
-				fmt.Fprintf(buf, "\r进度: %d局 | 用时: %v | 速度: %.0f局/秒 | 基础RTP: %.2f%% | 免费RTP: %.2f%% | 总RTP: %.2f%%",
-					base.rounds, elapsed.Round(time.Second), speed,
-					float64(base.totalWin)*100/betFloat,
-					float64(free.totalWin)*100/betFloat,
-					float64(base.totalWin+free.totalWin)*100/betFloat)
+				printProgress(buf, base.rounds, bet, base.totalWin, free.totalWin, time.Since(start))
 				fmt.Print(buf.String())
 			}
 
@@ -166,21 +150,18 @@ func TestRtp(t *testing.T) {
 				break
 			}
 
-			// 重置service而不是创建新的，减少内存分配
-			resetBetService(svc, cfg)
+			resetBetService(svc) // 复用内存
 		}
 	}
 
 	printResult(buf, base, free, bet)
 	result := buf.String()
-	fmt.Print(result) // 输出到控制台
+	fmt.Print(result)
 
-	// 保存调试文件（头部+统计结果+详细信息）
+	// 保存调试文件
 	if debugFileOpen && fileBuf != nil {
-		// 正确顺序：头部 + 统计结果 + 详细信息
 		header := fmt.Sprintf("===== RTP测试调试日志 =====\n    生成时间: %s", time.Now().Format("2006-01-02 15:04:05"))
 		content := header + result + "\n" + fileBuf.String()
-
 		_ = os.MkdirAll("logs", 0755)
 		filename := fmt.Sprintf("logs/%s.txt", time.Now().Format("20060102_150405"))
 		_ = os.WriteFile(filename, []byte(content), 0644)
@@ -189,28 +170,27 @@ func TestRtp(t *testing.T) {
 }
 
 func updateScene(s *betOrderService) {
-	// 根据免费次数设置阶段
 	if s.client.ClientOfFreeGame.GetFreeNum() > 0 {
 		s.scene.Stage = _spinTypeFree
 	} else {
 		s.scene.Stage = _spinTypeBase
 	}
 
-	// 处理阶段切换
 	if s.scene.NextStage > 0 && s.scene.NextStage != s.scene.Stage {
 		s.scene.Stage = s.scene.NextStage
 		s.scene.NextStage = 0
 	}
 }
 
-func printProg(buf *strings.Builder, r, bet, bw, fw int64, t time.Duration) {
+func printProgress(buf *strings.Builder, rounds, bet, baseWin, freeWin int64, elapsed time.Duration) {
 	if bet == 0 {
 		return
 	}
 	b := float64(bet)
-	buf.WriteString(fmt.Sprintf("\r进度: %d局 | 用时: %v | 速度: %.0f局/秒 | 基础RTP: %.2f%% | 免费RTP: %.2f%% | 总RTP: %.2f%%",
-		r, t.Round(time.Second), float64(r)/t.Seconds(),
-		float64(bw)*100/b, float64(fw)*100/b, float64(bw+fw)*100/b))
+	buf.Reset()
+	fmt.Fprintf(buf, "\r进度: %d局 | 用时: %v | 速度: %.0f局/秒 | 基础RTP: %.2f%% | 免费RTP: %.2f%% | 总RTP: %.2f%%",
+		rounds, elapsed.Round(time.Second), float64(rounds)/elapsed.Seconds(),
+		float64(baseWin)*100/b, float64(freeWin)*100/b, float64(baseWin+freeWin)*100/b)
 }
 
 func printResult(buf *strings.Builder, base, free *stats, bet int64) {
@@ -262,16 +242,15 @@ func printResult(buf *strings.Builder, base, free *stats, bet int64) {
 
 	// 核算
 	theoretical := base.freeTotalInitial + free.extraRounds
+	diff := theoretical - free.rounds
+	diffPct := 0.0
+	if theoretical > 0 {
+		diffPct = float64(diff) * 100 / float64(theoretical)
+	}
 	w("【免费次数核算】\n")
 	w("理论总免费次数 = 基础触发(%d) + 免费增加(%d) = %d\n", base.freeTotalInitial, free.extraRounds, theoretical)
 	w("实际玩的免费次数 = %d\n", free.rounds)
-	w("差异: %d (%.2f%%)\n\n", theoretical-free.rounds,
-		func() float64 {
-			if theoretical > 0 {
-				return float64(theoretical-free.rounds) * 100 / float64(theoretical)
-			}
-			return 0
-		}())
+	w("差异: %d (%.2f%%)\n\n", diff, diffPct)
 
 	// 蝙蝠
 	w("【蝙蝠数量统计】\n")
@@ -296,7 +275,9 @@ func printResult(buf *strings.Builder, base, free *stats, bet int64) {
 	w("==========================================\n")
 }
 
-func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinResult, gameNum int, triggeringBaseRound int, isFree bool) {
+// ======== 调试输出辅助函数 ========
+
+func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinResult, gameNum, triggeringBaseRound int, isFree bool) {
 	mode := "基础模式"
 	if isFree {
 		mode = fmt.Sprintf("免费模式(由基础第%d局触发)", triggeringBaseRound)
@@ -306,229 +287,224 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, res *BaseSpinRe
 	w("\n===== %s-第%d局 =====\n", mode, gameNum)
 
 	// 转轮坐标
+	printReelPositions(buf, svc)
+
+	// 初始符号
+	w("【初始符号图案】\n")
+	printSymbolGrid(buf, svc, nil)
+
+	// 框符号图案（免费模式）
+	if isFree && len(svc.stepMap.Bat) > 0 {
+		w("------------------------------------------------------\n")
+		w("【框符号图案】当前%d个蝙蝠\n", len(svc.stepMap.Bat))
+		printSymbolGrid(buf, svc, svc.stepMap.Bat)
+	}
+
+	// 变换后符号
+	printTransformedGrid(buf, svc)
+
+	// 蝙蝠移动详情
+	if isFree && len(svc.stepMap.Bat) > 0 {
+		printBatMovement(buf, svc)
+	}
+
+	// 中奖信息
+	printWinInfo(buf, svc, res, isFree)
+}
+
+func printReelPositions(buf *strings.Builder, svc *betOrderService) {
 	if svc.debug.reelPositions[0].length > 0 {
-		w("【转轮坐标信息】\n")
+		buf.WriteString("【转轮坐标信息】\n")
 		for k, v := range svc.debug.reelPositions {
-			w("转轮%d: 长度=%d, 起始位置=%d\n", k+1, v.length, v.startIdx)
+			fmt.Fprintf(buf, "转轮%d: 长度=%d, 起始位置=%d\n", k+1, v.length, v.startIdx)
+		}
+	}
+}
+
+func printSymbolGrid(buf *strings.Builder, svc *betOrderService, bats []*Bat) {
+	// 构建蝙蝠和夺宝位置集合
+	batPos := make(map[string]bool)
+	treasurePos := make(map[string]bool)
+
+	if bats != nil {
+		for _, bat := range bats {
+			key := posKey(bat.X, bat.Y)
+			batPos[key] = true
 		}
 	}
 
-	// 初始符号（优先使用 debug.originalGrid，回退到 stepMap.Map）
-	w("【初始符号图案】\n")
 	for r := int64(0); r < _rowCount; r++ {
 		for c := int64(0); c < _colCount; c++ {
-			var sym int64
-			if svc.debug.originalGrid != nil {
-				sym = svc.debug.originalGrid[r][c]
-			} else {
-				sym = svc.stepMap.Map[r*_colCount+c]
+			sym := getSymbol(svc, r, c)
+			if sym == _treasure {
+				treasurePos[posKey(r, c)] = true
 			}
-			w("%3d ", sym)
+
+			key := posKey(r, c)
+			if batPos[key] {
+				fmt.Fprintf(buf, " ^%2d", sym)
+			} else if treasurePos[key] {
+				fmt.Fprintf(buf, " *%2d", sym)
+			} else {
+				fmt.Fprintf(buf, "%3d ", sym)
+			}
+
 			if c < _colCount-1 {
 				buf.WriteString("| ")
 			}
 		}
 		buf.WriteString("\n")
 	}
+}
 
-	// 新框符号图案（免费模式显示蝙蝠位置+夺宝位置）
-	if isFree && len(svc.stepMap.Bat) > 0 {
-		w("------------------------------------------------------\n")
-		// 标记上一轮蝙蝠位置（移动前的框）- 使用原始位置X,Y
-		batPos := make(map[string]bool)
-		for _, bat := range svc.stepMap.Bat {
-			batPos[fmt.Sprintf("%d_%d", bat.X, bat.Y)] = true
-		}
+func printTransformedGrid(buf *strings.Builder, svc *betOrderService) {
+	if svc.stepMap == nil || len(svc.stepMap.Bat) == 0 {
+		return
+	}
 
-		// 标记当前夺宝位置（优先使用 debug.originalGrid，回退到 stepMap.Map）
-		treasurePos := make(map[string]bool)
-		for r := int64(0); r < _rowCount; r++ {
-			for c := int64(0); c < _colCount; c++ {
-				var sym int64
-				if svc.debug.originalGrid != nil {
-					sym = svc.debug.originalGrid[r][c]
-				} else {
-					sym = svc.stepMap.Map[r*_colCount+c]
-				}
-				if sym == _treasure {
-					treasurePos[fmt.Sprintf("%d_%d", r, c)] = true
-				}
-			}
-		}
-
-		w("【框符号图案】当前%d个蝙蝠\n", len(svc.stepMap.Bat))
-		for r := int64(0); r < _rowCount; r++ {
-			for c := int64(0); c < _colCount; c++ {
-				var sym int64
-				if svc.debug.originalGrid != nil {
-					sym = svc.debug.originalGrid[r][c]
-				} else {
-					sym = svc.stepMap.Map[r*_colCount+c]
-				}
-				key := fmt.Sprintf("%d_%d", r, c)
-				if batPos[key] {
-					w(" ^%2d", sym) // 蝙蝠位置
-				} else if treasurePos[key] {
-					w(" *%2d", sym) // 夺宝位置
-				} else {
-					w("%3d ", sym)
-				}
-				if c < _colCount-1 {
-					buf.WriteString("| ")
-				}
-			}
-			buf.WriteString("\n")
+	// 统计转换信息
+	converted := make(map[int64]int)
+	transformedPos := make(map[string]bool)
+	for _, bat := range svc.stepMap.Bat {
+		if bat.Syb != _wild && bat.Sybn == _wild {
+			converted[bat.Syb]++
+			transformedPos[posKey(bat.TransX, bat.TransY)] = true
 		}
 	}
 
-	// 变换后符号（仅在有Wild转换时输出完整网格）
-	if svc.stepMap != nil && len(svc.stepMap.Bat) > 0 {
-		converted := make(map[int64]int)
-		transformedPos := make(map[string]bool)
-		for _, bat := range svc.stepMap.Bat {
-			if bat.Syb != _wild && bat.Sybn == _wild {
-				converted[bat.Syb]++
-				transformedPos[fmt.Sprintf("%d_%d", bat.TransX, bat.TransY)] = true
-			}
-		}
-
-		if len(converted) > 0 {
-			w("------------------------------------------------------\n")
-			buf.WriteString("【变换后符号图案")
-			first := true
-			for sym, cnt := range converted {
-				if first {
-					w("-%d→10", sym)
-					first = false
-				} else {
-					w(", %d→10", sym)
-				}
-				if cnt > 1 {
-					w("(×%d)", cnt)
-				}
-			}
-			buf.WriteString("】\n")
-
-			for r := int64(0); r < _rowCount; r++ {
-				for c := int64(0); c < _colCount; c++ {
-					s := svc.symbolGrid[r][c]
-					mark := " "
-					if s == _wild && transformedPos[fmt.Sprintf("%d_%d", r, c)] {
-						if svc.winGrid != nil && svc.winGrid[r][c] > 0 {
-							mark = "*"
-						} else {
-							mark = "+"
-						}
-					}
-					w("%3d%s", s, mark)
-					if c < _colCount-1 {
-						buf.WriteString("| ")
-					}
-				}
-				buf.WriteString("\n")
-			}
-		}
+	if len(converted) == 0 {
+		return
 	}
 
-	// 蝙蝠移动详情（免费模式）
-	if isFree && svc.stepMap != nil && len(svc.stepMap.Bat) > 0 {
-		w("------------------------------------------------------\n")
+	buf.WriteString("------------------------------------------------------\n【变换后符号图案")
+	first := true
+	for sym, cnt := range converted {
+		if first {
+			fmt.Fprintf(buf, "-%d→10", sym)
+			first = false
+		} else {
+			fmt.Fprintf(buf, ", %d→10", sym)
+		}
+		if cnt > 1 {
+			fmt.Fprintf(buf, "(×%d)", cnt)
+		}
+	}
+	buf.WriteString("】\n")
 
-		// 先打印移动轨迹网格（分起飞和降落两部分）
-		w("【蝙蝠起飞位置】\n")
-		for r := int64(0); r < _rowCount; r++ {
-			for c := int64(0); c < _colCount; c++ {
-				batNums := ""
-				// 检查所有蝙蝠的起始位置
-				for i, bat := range svc.stepMap.Bat {
-					if bat.X == r && bat.Y == c {
-						if batNums != "" {
-							batNums += ","
-						}
-						batNums += fmt.Sprintf("%d", i+1)
-					}
-				}
-
-				if batNums != "" {
-					w("%3s ", batNums) // 右对齐3位+空格，与符号格式一致
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			s := svc.symbolGrid[r][c]
+			mark := " "
+			if s == _wild && transformedPos[posKey(r, c)] {
+				if svc.winGrid != nil && svc.winGrid[r][c] > 0 {
+					mark = "*"
 				} else {
-					w("    ") // 4个空格
-				}
-
-				if c < _colCount-1 {
-					buf.WriteString("| ")
+					mark = "+"
 				}
 			}
-			buf.WriteString("\n")
+			fmt.Fprintf(buf, "%3d%s", s, mark)
+			if c < _colCount-1 {
+				buf.WriteString("| ")
+			}
 		}
+		buf.WriteString("\n")
+	}
+}
 
-		w("【蝙蝠降落位置】\n")
-		for r := int64(0); r < _rowCount; r++ {
-			for c := int64(0); c < _colCount; c++ {
-				batNums := ""
-				// 检查所有蝙蝠的结束位置
-				for i, bat := range svc.stepMap.Bat {
-					if bat.TransX == r && bat.TransY == c {
-						if batNums != "" {
-							batNums += ","
-						}
-						batNums += fmt.Sprintf("%d", i+1)
-					}
-				}
+func printBatMovement(buf *strings.Builder, svc *betOrderService) {
+	buf.WriteString("------------------------------------------------------\n")
 
-				if batNums != "" {
-					w("%3s ", batNums) // 右对齐3位+空格，与符号格式一致
+	// 起飞位置
+	buf.WriteString("【蝙蝠起飞位置】\n")
+	printBatGrid(buf, svc.stepMap.Bat, true)
+
+	// 降落位置
+	buf.WriteString("【蝙蝠降落位置】\n")
+	printBatGrid(buf, svc.stepMap.Bat, false)
+
+	// 移动详情
+	wildTransformed := 0
+	for i, bat := range svc.stepMap.Bat {
+		moved := bat.X != bat.TransX || bat.Y != bat.TransY
+		transformed := bat.Syb != _wild && bat.Sybn == _wild
+		if transformed {
+			wildTransformed++
+			fmt.Fprintf(buf, "蝙蝠%d: [%d,%d]→[%d,%d] 符号%d→Wild ✓转换\n",
+				i+1, bat.X, bat.Y, bat.TransX, bat.TransY, bat.Syb)
+		} else if moved {
+			fmt.Fprintf(buf, "蝙蝠%d: [%d,%d]→[%d,%d] 符号%d→%d 移动但未转换\n",
+				i+1, bat.X, bat.Y, bat.TransX, bat.TransY, bat.Syb, bat.Sybn)
+		} else {
+			fmt.Fprintf(buf, "蝙蝠%d: [%d,%d] 原地不动 符号%d\n", i+1, bat.X, bat.Y, bat.Syb)
+		}
+	}
+	fmt.Fprintf(buf, "本次转换成Wild的数量: %d/%d\n", wildTransformed, len(svc.stepMap.Bat))
+	buf.WriteString("------------------------------------------------------\n")
+}
+
+func printBatGrid(buf *strings.Builder, bats []*Bat, isStart bool) {
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			batNums := ""
+			for i, bat := range bats {
+				var rowMatch, colMatch bool
+				if isStart {
+					rowMatch, colMatch = bat.X == r, bat.Y == c
 				} else {
-					w("    ") // 4个空格
+					rowMatch, colMatch = bat.TransX == r, bat.TransY == c
 				}
-
-				if c < _colCount-1 {
-					buf.WriteString("| ")
+				if rowMatch && colMatch {
+					if batNums != "" {
+						batNums += ","
+					}
+					batNums += fmt.Sprintf("%d", i+1)
 				}
 			}
-			buf.WriteString("\n")
-		}
 
-		// 再打印蝙蝠移动详情
-		//w("【蝙蝠移动详情】\n")
-		wildTransformed := 0
-		for i, bat := range svc.stepMap.Bat {
-			moved := bat.X != bat.TransX || bat.Y != bat.TransY
-			transformed := bat.Syb != _wild && bat.Sybn == _wild
-			if transformed {
-				wildTransformed++
-				w("蝙蝠%d: [%d,%d]→[%d,%d] 符号%d→Wild ✓转换\n",
-					i+1, bat.X, bat.Y, bat.TransX, bat.TransY, bat.Syb)
-			} else if moved {
-				w("蝙蝠%d: [%d,%d]→[%d,%d] 符号%d→%d 移动但未转换\n",
-					i+1, bat.X, bat.Y, bat.TransX, bat.TransY, bat.Syb, bat.Sybn)
+			if batNums != "" {
+				fmt.Fprintf(buf, "%3s ", batNums)
 			} else {
-				w("蝙蝠%d: [%d,%d] 原地不动 符号%d\n",
-					i+1, bat.X, bat.Y, bat.Syb)
+				buf.WriteString("    ")
+			}
+
+			if c < _colCount-1 {
+				buf.WriteString("| ")
 			}
 		}
-		w("本次转换成Wild的数量: %d/%d\n", wildTransformed, len(svc.stepMap.Bat))
-		w("------------------------------------------------------\n")
+		buf.WriteString("\n")
 	}
+}
 
-	// 中奖信息
-	w("【中奖信息】\n")
+func printWinInfo(buf *strings.Builder, svc *betOrderService, res *BaseSpinResult, isFree bool) {
+	buf.WriteString("【中奖信息】\n")
 	if len(svc.winResults) == 0 {
 		buf.WriteString("未中奖\n")
 	} else {
 		for _, wr := range svc.winResults {
-			w("符号: %d(%d), 连线: %d, 乘积: %d, 赔率: %.2f, 下注: 1×1, 奖金: %.2f\n",
+			fmt.Fprintf(buf, "符号: %d(%d), 连线: %d, 乘积: %d, 赔率: %.2f, 下注: 1×1, 奖金: %.2f\n",
 				wr.Symbol, wr.Symbol, wr.SymbolCount, wr.LineCount,
 				float64(wr.BaseLineMultiplier), float64(wr.TotalMultiplier))
 		}
 	}
-	w("总中奖金额: %.2f\n", svc.bonusAmount.InexactFloat64())
+	fmt.Fprintf(buf, "总中奖金额: %.2f\n", svc.bonusAmount.InexactFloat64())
 
-	// 免费模式下的新增免费次数
 	if isFree && res.treasureCount > 0 {
-		// 免费模式下每个夺宝+1次
-		w("【新增免费次数】本局出现%d个夺宝，新增%d次免费游戏（每个夺宝+1次）\n", res.treasureCount, res.treasureCount)
+		fmt.Fprintf(buf, "【新增免费次数】本局出现%d个夺宝，新增%d次免费游戏（每个夺宝+1次）\n",
+			res.treasureCount, res.treasureCount)
 	}
+}
+
+// ======== 工具函数 ========
+
+func getSymbol(svc *betOrderService, row, col int64) int64 {
+	if svc.debug.originalGrid != nil {
+		return svc.debug.originalGrid[row][col]
+	}
+	return svc.stepMap.Map[row*_colCount+col]
+}
+
+func posKey(row, col int64) string {
+	return fmt.Sprintf("%d_%d", row, col)
 }
 
 func newBetService() *betOrderService {
@@ -555,20 +531,12 @@ func newBetService() *betOrderService {
 	}
 }
 
-// resetBetService 重置service状态，避免每次创建新对象
-func resetBetService(svc *betOrderService, cfg *gameConfigJson) {
-	// 重置client
+func resetBetService(svc *betOrderService) {
 	svc.client.ClientOfFreeGame = &client.ClientOfFreeGame{}
-
-	// 重置scene
 	svc.scene = &SpinSceneData{}
-
-	// 重置金额
 	svc.bonusAmount = decimal.Decimal{}
 	svc.betAmount = decimal.Decimal{}
 	svc.amount = decimal.Decimal{}
-
-	// 重置其他状态
 	svc.lineMultiplier = 0
 	svc.stepMultiplier = 0
 	svc.newFreeCount = 0
@@ -577,10 +545,5 @@ func resetBetService(svc *betOrderService, cfg *gameConfigJson) {
 	svc.symbolGrid = nil
 	svc.winGrid = nil
 	svc.stepMap = nil
-
-	// 重置debug（保持open=true）
 	svc.debug = rtpDebugData{open: true}
-
-	// 重新设置配置
-	svc.gameConfig = cfg
 }

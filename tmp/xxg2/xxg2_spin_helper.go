@@ -1,7 +1,6 @@
 package xxg2
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -14,16 +13,7 @@ import (
 
 // getRequestContext 获取请求上下文
 func (s *betOrderService) getRequestContext() bool {
-	switch {
-	case !s.mdbGetMerchant():
-		return false
-	case !s.mdbGetMember():
-		return false
-	case !s.mdbGetGame():
-		return false
-	default:
-		return true
-	}
+	return s.mdbGetMerchant() && s.mdbGetMember() && s.mdbGetGame()
 }
 
 // selectGameRedis 初始化游戏redis
@@ -34,22 +24,42 @@ func (s *betOrderService) selectGameRedis() {
 	if len(global.GVA_GAME_REDIS) == 0 {
 		return
 	}
-	index := _gameID % int64(len(global.GVA_GAME_REDIS))
+	index := GameID % int64(len(global.GVA_GAME_REDIS))
 	s.gameRedis = global.GVA_GAME_REDIS[index]
 }
 
 // updateBetAmount 更新下注金额
 func (s *betOrderService) updateBetAmount() bool {
+	// 校验参数
+	if !_cnf.validateBetSize(s.req.BaseMoney) {
+		global.GVA_LOG.Warn("invalid baseMoney", zap.Float64("value", s.req.BaseMoney))
+		return false
+	}
+	if !_cnf.validateBetLevel(s.req.Multiple) {
+		global.GVA_LOG.Warn("invalid multiple", zap.Int64("value", s.req.Multiple))
+		return false
+	}
+
+	// 计算下注金额
 	s.betAmount = decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
-		Mul(decimal.NewFromInt(s.gameConfig.BaseBat))
+		Mul(decimal.NewFromInt(_cnf.BaseBat))
 
 	if s.betAmount.LessThanOrEqual(decimal.Zero) {
-		global.GVA_LOG.Warn("updateBetAmount",
-			zap.Error(fmt.Errorf("invalid request params: [%v,%v]", s.req.BaseMoney, s.req.Multiple)))
+		global.GVA_LOG.Warn("invalid betAmount", zap.String("amount", s.betAmount.String()))
 		return false
 	}
 	return true
+}
+
+// contains 检查值是否在切片中
+func contains[T comparable](slice []T, val T) bool {
+	for _, v := range slice {
+		if v == val {
+			return true
+		}
+	}
+	return false
 }
 
 // checkBalance 检查用户余额
@@ -65,26 +75,26 @@ func (s *betOrderService) updateBonusAmount() {
 		Mul(decimal.NewFromInt(s.stepMultiplier))
 }
 
-// gridToString 网格转换为字符串（通用函数）
+// gridToString 网格转字符串
 func gridToString(grid *int64Grid) string {
 	if grid == nil {
 		return ""
 	}
 
-	var builder strings.Builder
-	builder.Grow(int(_rowCount * _colCount * gridStringCapacity))
+	var b strings.Builder
+	b.Grow(int(_rowCount * _colCount * gridStringCapacity))
 
 	sn := 1
 	for row := int64(0); row < _rowCount; row++ {
 		for col := int64(0); col < _colCount; col++ {
-			builder.WriteString(strconv.Itoa(sn))
-			builder.WriteByte(':')
-			builder.WriteString(strconv.FormatInt(grid[row][col], 10))
-			builder.WriteString("; ")
+			b.WriteString(strconv.Itoa(sn))
+			b.WriteByte(':')
+			b.WriteString(strconv.FormatInt(grid[row][col], 10))
+			b.WriteString("; ")
 			sn++
 		}
 	}
-	return builder.String()
+	return b.String()
 }
 
 // symbolGridToString 符号网格转字符串
@@ -109,7 +119,7 @@ func reverseGridRows(grid *int64Grid) int64Grid {
 	return reversed
 }
 
-// reverseBats 交换bat的X/Y坐标（服务器X=行/Y=列 → 客户端x=列/y=行）
+// reverseBats 交换bat的X/Y坐标(服务器行列→客户端列行)
 func reverseBats(bats []*Bat) []*Bat {
 	if len(bats) == 0 {
 		return bats
@@ -145,21 +155,4 @@ func reverseWinResults(winResults []*winResult) []*winResult {
 		}
 	}
 	return reversed
-}
-
-// showPostUpdateErrorLog 错误日志记录
-func (s *betOrderService) showPostUpdateErrorLog() {
-	global.GVA_LOG.Error(
-		"showPostUpdateErrorLog",
-		zap.Error(fmt.Errorf("step state mismatch")),
-		zap.Int64("id", s.member.ID),
-		zap.Bool("isFree", s.isFreeRound()),
-		zap.Uint64("lastWinID", s.client.ClientOfFreeGame.GetLastWinId()),
-		zap.Uint64("lastMapID", s.client.ClientOfFreeGame.GetLastMapId()),
-		zap.Uint64("freeNum", s.client.ClientOfFreeGame.GetFreeNum()),
-		zap.Uint64("freeTimes", s.client.ClientOfFreeGame.GetFreeTimes()),
-		zap.String("orderSn", s.orderSN),
-		zap.String("parentOrderSN", s.parentOrderSN),
-		zap.String("freeOrderSN", s.freeOrderSN),
-	)
 }

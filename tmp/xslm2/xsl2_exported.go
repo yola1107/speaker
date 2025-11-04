@@ -23,23 +23,23 @@ func NewGame() *Game {
 	return &Game{}
 }
 
+// BetOrder 用户下注
 func (g *Game) BetOrder(req *request.BetOrderReq) (result map[string]any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			global.GVA_LOG.Error("BetOrder", zap.Any("r", r), zap.Stack("stack"))
 			result, err = nil, InternalServerError
-			return
 		}
 	}()
-	return newBetOrderService().betOrder(req)
+	return newBetOrderService(false).betOrder(req)
 }
 
+// MemberLogin 用户登录
 func (g *Game) MemberLogin(req *pb.LoginStreamReq, c *client.Client) (result string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			global.GVA_LOG.Error("MemberLogin", zap.Any("r", r), zap.Stack("stack"))
 			result, err = "", InternalServerError
-			return
 		}
 	}()
 	return newMemberLoginService().memberLogin(req, c)

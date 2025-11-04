@@ -5,7 +5,9 @@ import (
 	"runtime/debug"
 
 	"egame-grpc/global"
+	"egame-grpc/global/client"
 	"egame-grpc/model/game/request"
+	"egame-grpc/model/pb"
 
 	"go.uber.org/zap"
 )
@@ -34,10 +36,21 @@ func (g *Game) BetOrder(req *request.BetOrderReq) (result map[string]any, err er
 	}()
 
 	svc := newBetOrderService(false)
-	svc.initGameConfigs()
 	ret, err := svc.betOrder(req)
 	if err != nil {
 		global.GVA_LOG.Error("BetOrder", zap.Any("req", req), zap.Error(err))
 	}
 	return ret, err
+}
+
+// MemberLogin 用户登录
+func (g *Game) MemberLogin(req *pb.LoginStreamReq, c *client.Client) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			global.GVA_LOG.Error("MemberLogin", zap.Any("r", r), zap.Stack("stack"))
+			result, err = "", InternalServerError
+			return
+		}
+	}()
+	return newMemberLoginService().memberLogin(req, c)
 }

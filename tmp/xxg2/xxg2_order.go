@@ -33,7 +33,6 @@ type betOrderService struct {
 	parentOrderSN  string               // 父订单号，回合第一个 step 此字段为空
 	freeOrderSN    string               // 触发免费的回合的父订单号，基础 step 此字段为空
 	stepMultiplier int64                // Step倍数
-	gameConfig     *gameConfigJson      // 配置数据
 	winInfos       []*winInfo           // 中奖信息
 	symbolGrid     *int64Grid           // 符号网格（填wind后）
 	winGrid        *int64Grid           // 中奖网格
@@ -110,7 +109,7 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 		"orderSN":            s.gameOrder.OrderSn,
 		"symbolGrid":         s.symbolGrid,
 		"treasureCount":      s.stepMap.TreatCount,
-		"winGrid":            s.winGrid,
+		"winGrid":            reverseGridRows(s.winGrid),      // winGrid行序反转
 		"winResults":         reverseWinResults(s.winResults), // WinPositions行序反转
 		"baseBet":            s.req.BaseMoney,
 		"multiplier":         s.req.Multiple,
