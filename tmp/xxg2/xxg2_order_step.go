@@ -14,6 +14,52 @@ import (
 	"go.uber.org/zap"
 )
 
+// ========== 辅助函数 ==========
+
+// getRequestContext 获取请求上下文
+func (s *betOrderService) getRequestContext() bool {
+	return s.mdbGetMerchant() && s.mdbGetMember() && s.mdbGetGame()
+}
+
+// updateBetAmount 更新下注金额
+func (s *betOrderService) updateBetAmount() bool {
+	// 校验参数
+	if !_cnf.validateBetSize(s.req.BaseMoney) {
+		global.GVA_LOG.Warn("invalid baseMoney", zap.Float64("value", s.req.BaseMoney))
+		return false
+	}
+	if !_cnf.validateBetLevel(s.req.Multiple) {
+		global.GVA_LOG.Warn("invalid multiple", zap.Int64("value", s.req.Multiple))
+		return false
+	}
+
+	// 计算下注金额
+	s.betAmount = decimal.NewFromFloat(s.req.BaseMoney).
+		Mul(decimal.NewFromInt(s.req.Multiple)).
+		Mul(decimal.NewFromInt(_cnf.BaseBat))
+
+	if s.betAmount.LessThanOrEqual(decimal.Zero) {
+		global.GVA_LOG.Warn("invalid betAmount", zap.String("amount", s.betAmount.String()))
+		return false
+	}
+	return true
+}
+
+// checkBalance 检查用户余额
+func (s *betOrderService) checkBalance() bool {
+	f, _ := s.betAmount.Float64()
+	return gamelogic.CheckMemberBalance(f, s.member)
+}
+
+// updateBonusAmount 更新奖金金额
+func (s *betOrderService) updateBonusAmount() {
+	s.bonusAmount = decimal.NewFromFloat(s.req.BaseMoney).
+		Mul(decimal.NewFromInt(s.req.Multiple)).
+		Mul(decimal.NewFromInt(s.stepMultiplier))
+}
+
+// ========== 初始化逻辑 ==========
+
 // 初始化
 func (s *betOrderService) initialize() error {
 	s.client.ClientOfFreeGame.ResetFreeClean()
@@ -25,14 +71,11 @@ func (s *betOrderService) initialize() error {
 
 	// 首次spin或基础模式
 	if s.scene == nil || s.scene.Stage == _spinTypeBase || s.scene.Stage == 0 {
-		if err := s.initFirstStepForSpin(); err != nil {
-			return err
-		}
-	} else {
-		// 免费模式后续spin
-		s.initStepForNextStep()
+		return s.initFirstStepForSpin()
 	}
 
+	// 免费模式后续spin
+	s.initStepForNextStep()
 	return nil
 }
 
@@ -68,6 +111,35 @@ func (s *betOrderService) resetClientState() {
 	s.client.ClientOfFreeGame.ResetGeneralWinTotal()
 	s.client.ClientOfFreeGame.ResetRoundBonus()
 	s.client.ClientOfFreeGame.ResetRoundBonusStaging()
+}
+
+// initStepForNextStep 初始化后续step（免费游戏的连续spin）
+func (s *betOrderService) initStepForNextStep() {
+	if s.debug.open {
+		return
+	}
+
+	s.req.BaseMoney = s.lastOrder.BaseAmount
+	s.req.Multiple = s.lastOrder.Multiple
+	s.betAmount = decimal.NewFromFloat(s.client.ClientOfFreeGame.GetBetAmount())
+	s.amount = decimal.Zero
+
+	// 选择父订单号
+	if s.lastOrder.ParentOrderSn != "" {
+		s.parentOrderSN = s.lastOrder.ParentOrderSn
+	} else {
+		s.parentOrderSN = s.lastOrder.OrderSn
+	}
+
+	// 选择免费订单号
+	switch {
+	case s.lastOrder.FreeOrderSn != "":
+		s.freeOrderSN = s.lastOrder.FreeOrderSn
+	case s.lastOrder.ParentOrderSn != "":
+		s.freeOrderSN = s.lastOrder.ParentOrderSn
+	default:
+		s.freeOrderSN = s.lastOrder.OrderSn
+	}
 }
 
 // 更新订单（参考 mahjong，使用 scene 中的倍数字段）
@@ -108,28 +180,25 @@ func (s *betOrderService) updateGameOrder() bool {
 // settleStep 结算step
 func (s *betOrderService) settleStep() bool {
 	s.gameOrder.CreatedAt = time.Now().Unix()
-
-	saveParam := gamelogic.SaveTransfer(&gamelogic.SaveTransferParam{
+	res := gamelogic.SaveTransfer(&gamelogic.SaveTransferParam{
 		Client:      s.client,
 		GameOrder:   s.gameOrder,
 		MerchantOne: s.merchant,
 		MemberOne:   s.member,
 		Ip:          s.req.Ip,
 	})
-
-	return saveParam.Err == nil
+	return res.Err == nil
 }
 
 // findWinInfos 查找中奖信息（Ways玩法：从左到右连续匹配）
 func (s *betOrderService) findWinInfos() {
-	infos := make([]*winInfo, 0, 10)
-
 	// 第一列有wild时，检查盘面所有符号；否则使用默认符号列表
 	checkSymbols := checkWinSymbols
 	if hasWild, symbols := s.checkWildInFirstCol(); hasWild {
 		checkSymbols = symbols
 	}
 
+	infos := make([]*winInfo, 0, len(checkSymbols))
 	for _, symbol := range checkSymbols {
 		var info *winInfo
 		var ok bool
@@ -142,39 +211,42 @@ func (s *betOrderService) findWinInfos() {
 			infos = append(infos, info)
 		}
 	}
-
 	s.winInfos = infos
 }
 
 // checkWildInFirstCol 检查第一列是否有wild，若有则返回盘面所有不重复符号
 func (s *betOrderService) checkWildInFirstCol() (bool, []int64) {
-	hasWild := false
+	// 检查第一列是否有wild
 	for row := int64(0); row < _rowCount; row++ {
 		if s.symbolGrid[row][0] == _wild {
-			hasWild = true
-			break
-		}
-	}
-	if !hasWild {
-		return false, nil
-	}
-
-	// 收集盘面不重复符号
-	seen := make(map[int64]bool, 10)
-	symbols := make([]int64, 0, 10)
-	for row := int64(0); row < _rowCount; row++ {
-		for col := int64(0); col < _colCount; col++ {
-			if sym := s.symbolGrid[row][col]; sym != _treasure && !seen[sym] {
-				seen[sym] = true
-				symbols = append(symbols, sym)
+			// 收集盘面不重复符号
+			seen := make(map[int64]bool, 10)
+			symbols := make([]int64, 0, 10)
+			for r := int64(0); r < _rowCount; r++ {
+				for c := int64(0); c < _colCount; c++ {
+					sym := s.symbolGrid[r][c]
+					if sym != _treasure && !seen[sym] {
+						seen[sym] = true
+						symbols = append(symbols, sym)
+					}
+				}
 			}
+			return true, symbols
 		}
 	}
-	return true, symbols
+	return false, nil
 }
 
 // processWinInfos 处理中奖信息并计算倍率
 func (s *betOrderService) processWinInfos() {
+	if len(s.winInfos) == 0 {
+		s.winResults = nil
+		s.winGrid = &int64Grid{}
+		s.lineMultiplier = 0
+		s.stepMultiplier = 0
+		return
+	}
+
 	winResults := make([]*winResult, 0, len(s.winInfos))
 	var winGrid int64Grid
 	totalMultiplier := int64(0)
@@ -216,7 +288,7 @@ func (s *betOrderService) buildWinPositions(info *winInfo, winGrid *int64Grid) i
 	return winPositions
 }
 
-// 获取当前余额
+// getCurrentBalance 获取当前余额
 func (s *betOrderService) getCurrentBalance() float64 {
 	return decimal.NewFromFloat(s.member.Balance).
 		Sub(s.amount).
@@ -242,8 +314,8 @@ func (s *betOrderService) fillInGameOrderDetails() bool {
 	}
 
 	// 转换为字符串格式
-	s.gameOrder.BetDetail = s.symbolGridToString()
-	s.gameOrder.BonusDetail = s.winGridToString()
+	s.gameOrder.BetDetail = gridToString(s.symbolGrid)
+	s.gameOrder.BonusDetail = gridToString(s.winGrid)
 
 	// 序列化中奖详情
 	if s.gameOrder.WinDetails, err = json.CJSON.MarshalToString(s.getWinDetailsMap()); err != nil {

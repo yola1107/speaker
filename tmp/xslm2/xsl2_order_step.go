@@ -8,7 +8,6 @@ import (
 	"egame-grpc/gamelogic"
 	"egame-grpc/global"
 	"egame-grpc/model/game"
-	"egame-grpc/model/pool"
 	"egame-grpc/utils/json"
 	"egame-grpc/utils/snow"
 
@@ -21,13 +20,34 @@ func (s *betOrderService) getRequestContext() bool {
 	return s.mdbGetMerchant() && s.mdbGetMember() && s.mdbGetGame()
 }
 
-// selectGameRedis 选择游戏Redis（根据gameID取模）
-func (s *betOrderService) selectGameRedis() {
-	if s.debug.open {
-		return // RTP测试模式不需要Redis
+// initialize 初始化step数据
+func (s *betOrderService) initialize() error {
+	s.client.ClientOfFreeGame.ResetFreeClean()
+	s.orderSN = strconv.FormatInt(snow.GenarotorID(s.member.ID), 10)
+
+	if s.isFirst {
+		return s.initStepForFirstStep()
+	} else {
+		return s.initStepForNextStep()
 	}
-	index := _gameID % int64(len(global.GVA_GAME_REDIS))
-	s.gameRedis = global.GVA_GAME_REDIS[index]
+}
+
+// initStepForFirstStep 初始化首次step（回合第一局）
+func (s *betOrderService) initStepForFirstStep() error {
+	if !s.updateBetAmount() {
+		return InvalidRequestParams
+	}
+	if !s.checkBalance() {
+		return InsufficientBalance
+	}
+	s.client.IsRoundOver = false
+	s.client.SetLastMaxFreeNum(0)
+	s.client.ClientOfFreeGame.Reset()
+	s.client.ClientOfFreeGame.ResetGeneralWinTotal()
+	s.client.ClientOfFreeGame.ResetRoundBonus()
+	s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
+	s.amount = s.betAmount
+	return nil
 }
 
 // updateBetAmount 计算下注金额
@@ -56,87 +76,6 @@ func (s *betOrderService) updateBetAmount() bool {
 func (s *betOrderService) checkBalance() bool {
 	f, _ := s.betAmount.Float64()
 	return gamelogic.CheckMemberBalance(f, s.member)
-}
-
-// updateBonusAmount 计算奖金
-func (s *betOrderService) updateBonusAmount() {
-	if s.spin.stepMultiplier <= 0 {
-		s.bonusAmount = decimal.Zero
-		return
-	}
-	s.bonusAmount = s.betAmount.Div(decimal.NewFromInt(_cnf.BaseBat)).Mul(decimal.NewFromInt(s.spin.stepMultiplier))
-}
-
-// symbolGridToString 符号网格转字符串
-func (s *betOrderService) symbolGridToString() string {
-	builder := ""
-	for r := int64(0); r < _rowCount; r++ {
-		builder += "["
-		for c := int64(0); c < _colCount; c++ {
-			builder += strconv.FormatInt(s.spin.symbolGrid[r][c], 10)
-			if c < _colCount-1 {
-				builder += ","
-			}
-		}
-		builder += "]"
-		if r < _rowCount-1 {
-			builder += "\n"
-		}
-	}
-	return builder
-}
-
-// winGridToString 中奖网格转字符串
-func (s *betOrderService) winGridToString() string {
-	builder := ""
-	for r := int64(0); r < _rowCount; r++ {
-		builder += "["
-		for c := int64(0); c < _colCount; c++ {
-			builder += strconv.FormatInt(s.spin.winGrid[r][c], 10)
-			if c < _colCount-1 {
-				builder += ","
-			}
-		}
-		builder += "]"
-		if r < _rowCount-1 {
-			builder += "\n"
-		}
-	}
-	return builder
-}
-
-// initialize 初始化step数据
-func (s *betOrderService) initialize() error {
-	s.client.ClientOfFreeGame.ResetFreeClean()
-	s.orderSN = strconv.FormatInt(snow.GenarotorID(s.member.ID), 10)
-	var err error
-	if s.isFirst {
-		err = s.initStepForFirstStep()
-	} else {
-		err = s.initStepForNextStep()
-	}
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// initStepForFirstStep 初始化首次step（回合第一局）
-func (s *betOrderService) initStepForFirstStep() error {
-	if !s.updateBetAmount() {
-		return InvalidRequestParams
-	}
-	if !s.checkBalance() {
-		return InsufficientBalance
-	}
-	s.client.IsRoundOver = false
-	s.client.SetLastMaxFreeNum(0)
-	s.client.ClientOfFreeGame.Reset()
-	s.client.ClientOfFreeGame.ResetGeneralWinTotal()
-	s.client.ClientOfFreeGame.ResetRoundBonus()
-	s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
-	s.amount = s.betAmount
-	return nil
 }
 
 // initStepForNextStep 初始化后续step（回合内的连消step）
@@ -168,67 +107,65 @@ func (s *betOrderService) initStepForNextStep() error {
 	return nil
 }
 
-// updateCurrentBalance 更新当前余额
-func (s *betOrderService) updateCurrentBalance() {
-	s.currBalance = decimal.NewFromFloat(s.member.Balance).Sub(s.amount).Add(s.bonusAmount)
-}
-
 // updateStepResult 更新step结果
 func (s *betOrderService) updateStepResult() {
 	s.client.IsRoundOver = s.spin.isRoundOver
+
+	// 更新奖金和余额
 	if s.spin.stepMultiplier > 0 {
-		s.updateBonusAmount()
-		bonus := s.bonusAmount.Round(2).InexactFloat64()
-		s.client.ClientOfFreeGame.IncrGeneralWinTotal(bonus)
-		if s.isFreeRound {
-			s.client.ClientOfFreeGame.IncrFreeTotalMoney(bonus)
-		}
-		s.client.ClientOfFreeGame.IncRoundBonus(bonus)
+		s.updateBonusAndBalance()
 	}
+
+	// 免费回合结束处理
 	if s.isFreeRound && s.client.IsRoundOver {
 		s.client.ClientOfFreeGame.IncrFreeTimes()
 		s.client.ClientOfFreeGame.Decr()
 	}
+
+	// 处理新增免费次数
 	if s.spin.newFreeRoundCount > 0 {
-		freeCount := uint64(s.spin.newFreeRoundCount)
-		if !s.isFreeRound {
-			s.client.ClientOfFreeGame.SetFreeNum(freeCount)
-			s.client.SetLastMaxFreeNum(freeCount)
-		} else {
-			s.client.ClientOfFreeGame.Incr(freeCount)
-			s.client.IncLastMaxFreeNum(freeCount)
-		}
+		s.updateFreeRoundCount(uint64(s.spin.newFreeRoundCount))
 	}
+
 	s.updateCurrentBalance()
 }
 
-// getBetResultMap 获取下注结果（返回给前端）
-func (s *betOrderService) getBetResultMap() map[string]any {
-	return map[string]any{
-		"orderSN":                 s.gameOrder.OrderSn,
-		"isFreeRound":             s.isFreeRound,
-		"femaleCountsForFree":     s.spin.femaleCountsForFree,
-		"enableFullElimination":   s.spin.enableFullElimination,
-		"symbolGrid":              s.spin.symbolGrid,
-		"winGrid":                 s.spin.winGrid,
-		"winResults":              s.spin.winResults,
-		"baseBet":                 s.req.BaseMoney,
-		"multiplier":              s.req.Multiple,
-		"betAmount":               s.betAmount.Round(2).InexactFloat64(),
-		"bonusAmount":             s.bonusAmount.Round(2).InexactFloat64(),
-		"spinBonusAmount":         s.client.ClientOfFreeGame.GetGeneralWinTotal(),
-		"freeBonusAmount":         s.client.ClientOfFreeGame.GetFreeTotalMoney(),
-		"roundBonus":              s.client.ClientOfFreeGame.RoundBonus,
-		"currentBalance":          s.gameOrder.CurBalance,
-		"isRoundOver":             s.spin.isRoundOver,
-		"hasFemaleWin":            s.spin.hasFemaleWin,
-		"nextFemaleCountsForFree": s.spin.nextFemaleCountsForFree,
-		"newFreeRoundCount":       s.spin.newFreeRoundCount,
-		"totalFreeRoundCount":     s.client.GetLastMaxFreeNum(),
-		"remainingFreeRoundCount": s.client.ClientOfFreeGame.GetFreeNum(),
-		"lineMultiplier":          s.spin.lineMultiplier,
-		"stepMultiplier":          s.spin.stepMultiplier,
+// updateBonusAndBalance 更新奖金和余额
+func (s *betOrderService) updateBonusAndBalance() {
+	s.updateBonusAmount()
+	bonus := s.bonusAmount.Round(2).InexactFloat64()
+	s.client.ClientOfFreeGame.IncrGeneralWinTotal(bonus)
+
+	if s.isFreeRound {
+		s.client.ClientOfFreeGame.IncrFreeTotalMoney(bonus)
 	}
+
+	s.client.ClientOfFreeGame.IncRoundBonus(bonus)
+}
+
+// updateFreeRoundCount 更新免费次数
+func (s *betOrderService) updateFreeRoundCount(count uint64) {
+	if !s.isFreeRound {
+		s.client.ClientOfFreeGame.SetFreeNum(count)
+		s.client.SetLastMaxFreeNum(count)
+	} else {
+		s.client.ClientOfFreeGame.Incr(count)
+		s.client.IncLastMaxFreeNum(count)
+	}
+}
+
+// updateBonusAmount 计算奖金
+func (s *betOrderService) updateBonusAmount() {
+	if s.spin.stepMultiplier <= 0 {
+		s.bonusAmount = decimal.Zero
+		return
+	}
+	s.bonusAmount = s.betAmount.Div(decimal.NewFromInt(_cnf.BaseBat)).Mul(decimal.NewFromInt(s.spin.stepMultiplier))
+}
+
+// updateCurrentBalance 更新当前余额
+func (s *betOrderService) updateCurrentBalance() {
+	s.currBalance = decimal.NewFromFloat(s.member.Balance).Sub(s.amount).Add(s.bonusAmount)
 }
 
 // ========== 订单更新和结算 ==========
@@ -244,7 +181,7 @@ func (s *betOrderService) updateGameOrder() bool {
 		GameName:          s.game.GameName,
 		BaseMultiple:      _cnf.BaseBat,
 		Multiple:          s.req.Multiple,
-		LineMultiple:      s.spin.lineMultiplier,
+		LineMultiple:      s.spin.stepMultiplier,
 		BonusHeadMultiple: 1,
 		BonusMultiple:     s.spin.stepMultiplier,
 		BaseAmount:        s.req.BaseMoney,
@@ -282,9 +219,9 @@ func (s *betOrderService) fillInGameOrderDetails() bool {
 		return false
 	}
 	s.gameOrder.BonusRawDetail = winRawDetail
-	s.gameOrder.BetDetail = s.symbolGridToString()
-	s.gameOrder.BonusDetail = s.winGridToString()
-	winDetailsMap := s.getWinDetailsMap()
+	s.gameOrder.BetDetail = gridToString(s.spin.symbolGrid)
+	s.gameOrder.BonusDetail = gridToString(s.spin.winGrid)
+	winDetailsMap := s.buildResultMap()
 	winDetails, err := json.CJSON.MarshalToString(winDetailsMap)
 	if err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails", zap.Error(err))
@@ -294,54 +231,9 @@ func (s *betOrderService) fillInGameOrderDetails() bool {
 	return true
 }
 
-// getWinDetailsMap 获取中奖详情map（返回给前端）
-func (s *betOrderService) getWinDetailsMap() map[string]any {
-	var winDetailsMap = make(map[string]any)
-	winDetailsMap["orderSN"] = s.gameOrder.OrderSn
-	winDetailsMap["isFreeRound"] = s.isFreeRound
-	winDetailsMap["femaleCountsForFree"] = s.spin.femaleCountsForFree
-	winDetailsMap["enableFullElimination"] = s.spin.enableFullElimination
-	winDetailsMap["symbolGrid"] = s.spin.symbolGrid
-	winDetailsMap["winGrid"] = s.spin.winGrid
-	winDetailsMap["winResults"] = s.spin.winResults
-	winDetailsMap["baseBet"] = s.req.BaseMoney
-	winDetailsMap["multiplier"] = s.req.Multiple
-	winDetailsMap["betAmount"] = s.betAmount.Round(2).InexactFloat64()
-	winDetailsMap["bonusAmount"] = s.bonusAmount.Round(2).InexactFloat64()
-	winDetailsMap["spinBonusAmount"] = s.client.ClientOfFreeGame.GetGeneralWinTotal()
-	winDetailsMap["freeBonusAmount"] = s.client.ClientOfFreeGame.GetFreeTotalMoney()
-	winDetailsMap["roundBonus"] = s.client.ClientOfFreeGame.RoundBonus
-	winDetailsMap["currentBalance"] = s.gameOrder.CurBalance
-	winDetailsMap["isRoundOver"] = s.spin.isRoundOver
-	winDetailsMap["hasFemaleWin"] = s.spin.hasFemaleWin
-	winDetailsMap["newFreeRoundCount"] = s.spin.newFreeRoundCount
-	winDetailsMap["totalFreeRoundCount"] = s.client.GetLastMaxFreeNum()
-	winDetailsMap["remainingFreeRoundCount"] = s.client.ClientOfFreeGame.GetFreeNum()
-	winDetailsMap["lineMultiplier"] = s.spin.lineMultiplier
-	winDetailsMap["stepMultiplier"] = s.spin.stepMultiplier
-	return winDetailsMap
-}
-
 // settleStep 结算step（保存订单到数据库）
 func (s *betOrderService) settleStep() bool {
-	poolRecord := pool.GamePoolRecord{
-		OrderId:      s.gameOrder.OrderSn,
-		MemberId:     s.gameOrder.MemberID,
-		GameType:     1,
-		GameId:       s.game.ID,
-		GameName:     s.game.GameName,
-		MerchantID:   s.merchant.ID,
-		Merchant:     s.merchant.Merchant,
-		Amount:       0,
-		BeforeAmount: 0,
-		AfterAmount:  0,
-		EventType:    1,
-		EventName:    "自然蓄水",
-		EventDesc:    "",
-		CreatedBy:    "SYSTEM",
-	}
 	s.gameOrder.CreatedAt = time.Now().Unix()
-	poolRecord.CreatedAt = time.Now().Unix()
 	saveParam := &gamelogic.SaveTransferParam{
 		Client:      s.client,
 		GameOrder:   s.gameOrder,
@@ -350,9 +242,5 @@ func (s *betOrderService) settleStep() bool {
 		Ip:          s.req.Ip,
 	}
 	res := gamelogic.SaveTransfer(saveParam)
-	//res.CurBalance 当前余额，已兼容转账、单一
-	if res.Err != nil {
-		return false
-	}
-	return true
+	return res.Err == nil
 }

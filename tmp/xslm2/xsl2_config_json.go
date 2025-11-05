@@ -21,8 +21,6 @@ const _gameJsonConfigsRaw = `
 	"base_bat": 20,
 	"free_rounds": [7, 10, 15],
 	"trigger_treasure_count": 3,
-	"female_symbol_count_for_full_elimination": 10,
-	"max_multiplier_for_base_only": 5000,
 	"roll_cfg": {
 		"base": {
 			"use_key": [0],

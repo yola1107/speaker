@@ -11,7 +11,6 @@ import (
 	"egame-grpc/model/member"
 	"egame-grpc/model/merchant"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
@@ -24,29 +23,25 @@ type betOrderService struct {
 	game          *game.Game           // 游戏信息
 	client        *client.Client       // 用户上下文
 	lastOrder     *game.GameOrder      // 用户上一个订单
-	gameRedis     *redis.Client        // 游戏Redis
-	scene         *SpinSceneData       // 场景数据（持久化状态）
-	spin          spin                 // Spin数据（符号网格、中奖信息等）
 	gameOrder     *game.GameOrder      // 当前订单
+	orderSN       string               // 订单号
+	parentOrderSN string               // 父订单号（回合第一个step此字段为空）
+	freeOrderSN   string               // 触发免费的回合父订单号（基础step为空）
 	bonusAmount   decimal.Decimal      // 本Step奖金
 	betAmount     decimal.Decimal      // Spin下注金额（回合第一局扣费）
 	amount        decimal.Decimal      // Step扣费金额（首局=betAmount，连消=0）
 	currBalance   decimal.Decimal      // 当前余额
-	orderSN       string               // 订单号
-	parentOrderSN string               // 父订单号（回合第一个step此字段为空）
-	freeOrderSN   string               // 触发免费的回合父订单号（基础step为空）
+	scene         *SpinSceneData       // 场景数据（持久化状态）
+	spin          spin                 // Spin数据（符号网格、中奖信息等）
 	isFreeRound   bool                 // 是否免费回合
 	isFirst       bool                 // 是否首次spin（回合第一局）
-
-	debug rtpDebugData // RTP压测调试
+	debug         rtpDebugData         // RTP压测调试
 }
 
 func newBetOrderService(forRtpBench bool) *betOrderService {
-	s := &betOrderService{
+	return &betOrderService{
 		debug: rtpDebugData{open: forRtpBench},
 	}
-	s.selectGameRedis()
-	return s
 }
 
 // betOrder 下注主入口函数
@@ -82,7 +77,7 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 	}
 
 	// 加载场景数据
-	if err := s.reloadScene(); err != nil {
+	if err = s.reloadScene(); err != nil {
 		global.GVA_LOG.Error("betOrder", zap.Error(err))
 		return nil, InternalServerError
 	}
@@ -118,5 +113,34 @@ func (s *betOrderService) doBetOrder() (map[string]any, error) {
 		return nil, InternalServerError
 	}
 
-	return s.getBetResultMap(), nil
+	return s.buildResultMap(), nil
+}
+
+// buildResultMap 构建下注结果（返回给前端，复用于订单详情）
+func (s *betOrderService) buildResultMap() map[string]any {
+	return map[string]any{
+		"orderSN":                 s.gameOrder.OrderSn,
+		"currentBalance":          s.gameOrder.CurBalance,
+		"baseBet":                 s.req.BaseMoney,
+		"multiplier":              s.req.Multiple,
+		"betAmount":               s.betAmount.Round(2).InexactFloat64(),
+		"symbolGrid":              s.spin.symbolGrid,
+		"winGrid":                 s.spin.winGrid,
+		"winResults":              s.spin.winResults,
+		"bonusAmount":             s.bonusAmount.Round(2).InexactFloat64(),
+		"stepMultiplier":          s.spin.stepMultiplier,
+		"lineMultiplier":          s.spin.stepMultiplier, // 兼容字段
+		"isRoundOver":             s.spin.isRoundOver,
+		"hasFemaleWin":            s.spin.hasFemaleWin,
+		"isFreeRound":             s.isFreeRound,
+		"newFreeRoundCount":       s.spin.newFreeRoundCount,
+		"totalFreeRoundCount":     s.client.GetLastMaxFreeNum(),
+		"remainingFreeRoundCount": s.client.ClientOfFreeGame.GetFreeNum(),
+		"femaleCountsForFree":     s.spin.femaleCountsForFree,
+		"nextFemaleCountsForFree": s.spin.nextFemaleCountsForFree,
+		"enableFullElimination":   s.spin.enableFullElimination,
+		"spinBonusAmount":         s.client.ClientOfFreeGame.GetGeneralWinTotal(),
+		"freeBonusAmount":         s.client.ClientOfFreeGame.GetFreeTotalMoney(),
+		"roundBonus":              s.client.ClientOfFreeGame.RoundBonus,
+	}
 }

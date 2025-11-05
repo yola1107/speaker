@@ -51,12 +51,12 @@ type Bat struct {
 
 // BaseSpinResult baseSpin 返回结果
 type BaseSpinResult struct {
-	lineMultiplier int64        // 线倍数
-	stepMultiplier int64        // 总倍数
-	treasureCount  int64        // 夺宝符个数
-	symbolGrid     *int64Grid   // 符号网格
-	winGrid        *int64Grid   // 中奖网格
-	winResults     []*winResult // 中奖结果
+	LineMultiplier int64        // 线倍数
+	StepMultiplier int64        // 总倍数
+	TreasureCount  int64        // 夺宝符个数
+	SymbolGrid     *int64Grid   // 符号网格
+	WinGrid        *int64Grid   // 中奖网格
+	WinResults     []*winResult // 中奖结果
 	SpinOver       bool         // 一局游戏是否结束
 }
 

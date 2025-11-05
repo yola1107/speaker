@@ -1,7 +1,7 @@
 package xxg2
 
 import (
-	"math/rand/v2"
+	mathRand "math/rand"
 
 	jsoniter "github.com/json-iterator/go"
 )
@@ -40,14 +40,13 @@ func initGameConfigs() {
 	if _cnf != nil {
 		return
 	}
-	tmp := &gameConfig{}
-	if err := jsoniter.UnmarshalFromString(_gameJsonConfigsRaw, tmp); err != nil {
+	_cnf = &gameConfig{}
+	if err := jsoniter.UnmarshalFromString(_gameJsonConfigsRaw, _cnf); err != nil {
 		panic("parse game config failed: " + err.Error())
 	}
-	if len(tmp.BetSizeSlice) == 0 || len(tmp.BetLevelSlice) == 0 {
+	if len(_cnf.BetSizeSlice) == 0 || len(_cnf.BetLevelSlice) == 0 {
 		panic("bet_size or bet_level config is empty")
 	}
-	_cnf = tmp
 }
 
 // initSpinSymbol 根据权重随机生成滚轴符号
@@ -57,13 +56,17 @@ func (c *gameConfig) initSpinSymbol(isFreeRound bool) [_rowCount * _colCount]int
 		cfg = &c.RollCfg.Free
 	}
 
+	r := randPool.Get().(*mathRand.Rand)
+	defer randPool.Put(r)
+
+	// 根据权重选择数据集索引
 	idx := 0
 	if len(cfg.Weight) > 1 {
 		total := int64(0)
 		for _, w := range cfg.Weight {
 			total += w
 		}
-		num := rand.Int64N(total)
+		num := r.Int63n(total)
 		for i, w := range cfg.Weight {
 			if num < w {
 				idx = int(cfg.UseKey[i])
@@ -75,20 +78,11 @@ func (c *gameConfig) initSpinSymbol(isFreeRound bool) [_rowCount * _colCount]int
 		idx = int(cfg.UseKey[0])
 	}
 
-	if idx >= len(c.RealData) {
-		panic("real data index out of range")
-	}
-
+	// 生成符号网格
 	var symbols [_rowCount * _colCount]int64
 	for col := 0; col < int(_colCount); col++ {
-		if col >= len(c.RealData[idx]) {
-			panic("real data column out of range")
-		}
 		data := c.RealData[idx][col]
-		if len(data) < int(_rowCount) {
-			panic("real data column too short")
-		}
-		start := rand.IntN(len(data))
+		start := r.Intn(len(data))
 		for row := 0; row < int(_rowCount); row++ {
 			symbols[row*int(_colCount)+col] = data[(start+row)%len(data)]
 		}

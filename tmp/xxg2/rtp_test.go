@@ -91,8 +91,8 @@ func TestRtp(t *testing.T) {
 		}
 
 		// 统计
-		stepWin := res.stepMultiplier
-		treasureCnt := res.treasureCount
+		stepWin := res.StepMultiplier
+		treasureCnt := res.TreasureCount
 		if isFree {
 			free.rounds++
 			free.totalWin += stepWin
@@ -488,9 +488,9 @@ func printWinInfo(buf *strings.Builder, svc *betOrderService, res *BaseSpinResul
 	}
 	fmt.Fprintf(buf, "总中奖金额: %.2f\n", svc.bonusAmount.InexactFloat64())
 
-	if isFree && res.treasureCount > 0 {
+	if isFree && res.TreasureCount > 0 {
 		fmt.Fprintf(buf, "【新增免费次数】本局出现%d个夺宝，新增%d次免费游戏（每个夺宝+1次）\n",
-			res.treasureCount, res.treasureCount)
+			res.TreasureCount, res.TreasureCount)
 	}
 }
 

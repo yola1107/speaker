@@ -11,7 +11,6 @@ import (
 	"egame-grpc/model/member"
 	"egame-grpc/model/merchant"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
@@ -23,7 +22,6 @@ type betOrderService struct {
 	game           *game.Game           // 游戏信息
 	client         *client.Client       // 用户上下文
 	lastOrder      *game.GameOrder      // 用户上一个订单
-	gameRedis      *redis.Client        // 游戏 redis
 	scene          *SpinSceneData       // 场景数据
 	gameOrder      *game.GameOrder      // 订单
 	bonusAmount    decimal.Decimal      // 奖金金额
@@ -33,24 +31,21 @@ type betOrderService struct {
 	parentOrderSN  string               // 父订单号，回合第一个 step 此字段为空
 	freeOrderSN    string               // 触发免费的回合的父订单号，基础 step 此字段为空
 	stepMultiplier int64                // Step倍数
+	lineMultiplier int64                // 线倍数
 	winInfos       []*winInfo           // 中奖信息
 	symbolGrid     *int64Grid           // 符号网格（填wind后）
 	winGrid        *int64Grid           // 中奖网格
-	// xxg2 特有字段
-	stepMap        *stepMap     // step 预设数据
-	winResults     []*winResult // 中奖结果
-	lineMultiplier int64        // 中奖线倍数
-	newFreeCount   int64        // step 新增免费次数
-	debug          rtpDebugData // RTP压测调试
+	stepMap        *stepMap             // step 预设数据
+	winResults     []*winResult         // 中奖结果
+	newFreeCount   int64                // step 新增免费次数
+	debug          rtpDebugData         // RTP压测调试
 }
 
 // 生成下注服务实例
 func newBetOrderService(forRtpBench bool) *betOrderService {
-	s := &betOrderService{
+	return &betOrderService{
 		debug: rtpDebugData{open: forRtpBench},
 	}
-	s.selectGameRedis()
-	return s
 }
 
 // 统一下注请求接口，无论是免费还是普通
@@ -60,12 +55,14 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 	if !s.getRequestContext() {
 		return nil, InternalServerError
 	}
+
 	c, ok := client.GVA_CLIENT_BUCKET.GetClient(req.MemberId)
 	if !ok {
 		global.GVA_LOG.Error("betOrder", zap.Error(errors.New("user not exists")))
 		return nil, fmt.Errorf("client not exist")
 	}
 	s.client = c
+
 	c.BetLock.Lock()
 	defer c.BetLock.Unlock()
 
@@ -80,26 +77,23 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 		s.cleanScene()
 	}
 
-	// 加载场景数据
 	s.reloadScene()
 
-	// 执行主要的 spin 逻辑
-	_, err = s.baseSpin()
-	if err != nil {
+	if _, err = s.baseSpin(); err != nil {
 		return nil, err
 	}
 
-	// 更新游戏订单
 	if !s.updateGameOrder() {
 		return nil, InternalServerError
 	}
 
-	// 结算 step
 	if !s.settleStep() {
 		return nil, InternalServerError
 	}
 
-	// 保存场景数据
+	// 保存当前 isFree 状态（必须在 saveScene() 之前，因为 saveScene 会更新 Stage）
+	currentIsFree := s.isFreeRound()
+
 	if err = s.saveScene(); err != nil {
 		return nil, err
 	}
@@ -119,7 +113,7 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 		"freeBonusAmount":    s.client.ClientOfFreeGame.GetFreeTotalMoney(),
 		"roundBonus":         s.client.ClientOfFreeGame.RoundBonus,
 		"currentBalance":     s.gameOrder.CurBalance,
-		"isFree":             s.isFreeRound(),
+		"isFree":             currentIsFree, // 使用保存的状态，不受 saveScene 影响
 		"step":               s.stepMap.ID,
 		"newFreeCount":       s.stepMap.New,
 		"totalFreeCount":     s.client.GetLastMaxFreeNum(),

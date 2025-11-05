@@ -30,5 +30,6 @@ const (
 
 // 游戏规则配置
 const (
-	_minMatchCount = 3 // 最少匹配列数
+	_minMatchCount                       = 3  // 最少匹配列数
+	_femaleSymbolCountForFullElimination = 10 // 女性符号收集阈值（达到此数量触发全屏消除）
 )

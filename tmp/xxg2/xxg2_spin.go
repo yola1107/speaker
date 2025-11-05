@@ -1,7 +1,7 @@
 package xxg2
 
 import (
-	"math/rand/v2"
+	mathRand "math/rand"
 
 	"github.com/shopspring/decimal"
 )
@@ -20,12 +20,12 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 	s.updateBonusAmount()
 
 	result := &BaseSpinResult{
-		lineMultiplier: s.lineMultiplier,
-		stepMultiplier: s.stepMultiplier,
-		treasureCount:  s.stepMap.TreatCount,
-		symbolGrid:     s.symbolGrid,
-		winGrid:        s.winGrid,
-		winResults:     s.winResults,
+		LineMultiplier: s.lineMultiplier,
+		StepMultiplier: s.stepMultiplier,
+		TreasureCount:  s.stepMap.TreatCount,
+		SymbolGrid:     s.symbolGrid,
+		WinGrid:        s.winGrid,
+		WinResults:     s.winResults,
 	}
 
 	if s.isFreeRound() {
@@ -39,22 +39,22 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 
 // loadStepData 加载符号到网格并扫描treasure位置
 func (s *betOrderService) loadStepData() {
-	positions := make([]*position, 0, 5)
 	var grid int64Grid
+	treasures := make([]*position, 0, 5)
 
 	for row := int64(0); row < _rowCount; row++ {
 		for col := int64(0); col < _colCount; col++ {
 			val := s.stepMap.Map[row*_colCount+col]
 			grid[row][col] = val
 			if val == _treasure {
-				positions = append(positions, &position{Row: row, Col: col})
+				treasures = append(treasures, &position{Row: row, Col: col})
 			}
 		}
 	}
 
 	s.symbolGrid = &grid
-	s.stepMap.TreatCount = int64(len(positions))
-	s.stepMap.TreatPos = positions
+	s.stepMap.TreatCount = int64(len(treasures))
+	s.stepMap.TreatPos = treasures
 
 	if s.debug.open {
 		gridCopy := grid
@@ -82,9 +82,12 @@ func (s *betOrderService) transformToWildBaseMode() []*Bat {
 		return nil
 	}
 
+	r := randPool.Get().(*mathRand.Rand)
+	defer randPool.Put(r)
+
 	count := min(int(s.stepMap.TreatCount), len(humanPos))
 	bats := make([]*Bat, count)
-	perm := rand.Perm(len(humanPos))
+	perm := r.Perm(len(humanPos))
 
 	for i := 0; i < count; i++ {
 		pos := humanPos[perm[i]]
@@ -105,9 +108,12 @@ func (s *betOrderService) transformToWildFreeMode() []*Bat {
 
 	// 添加新treasure（如果有空位）
 	if remainingSlots > 0 && len(s.stepMap.TreatPos) > 0 {
+		r := randPool.Get().(*mathRand.Rand)
+		defer randPool.Put(r)
+
 		newTreasures := s.stepMap.TreatPos
 		if len(newTreasures) > remainingSlots {
-			rand.Shuffle(len(newTreasures), func(i, j int) {
+			r.Shuffle(len(newTreasures), func(i, j int) {
 				newTreasures[i], newTreasures[j] = newTreasures[j], newTreasures[i]
 			})
 			newTreasures = newTreasures[:remainingSlots]
@@ -176,25 +182,11 @@ func (s *betOrderService) moveBat(pos *position) *position {
 		return pos
 	}
 
-	dir := validDirs[rand.IntN(validCount)]
+	r := randPool.Get().(*mathRand.Rand)
+	defer randPool.Put(r)
+
+	dir := validDirs[r.Intn(validCount)]
 	return &position{Row: pos.Row + dir.dRow, Col: pos.Col + dir.dCol}
-}
-
-// isHumanSymbol 判断是否为人符号(7/8/9)
-func isHumanSymbol(symbol int64) bool {
-	return symbol == _child || symbol == _woman || symbol == _oldMan
-}
-
-// newBat 创建蝙蝠移动记录
-func newBat(from, to *position, oldSym, newSym int64) *Bat {
-	return &Bat{
-		X:      from.Row,
-		Y:      from.Col,
-		TransX: to.Row,
-		TransY: to.Col,
-		Syb:    oldSym,
-		Sybn:   newSym,
-	}
 }
 
 // updateBaseStepResult 更新基础模式结果
