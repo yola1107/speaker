@@ -3,6 +3,7 @@ package xxg2
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	mathRand "math/rand"
 	"strconv"
 	"strings"
@@ -115,4 +116,23 @@ func newBat(from, to *position, oldSym, newSym int64) *Bat {
 		Syb:    oldSym,
 		Sybn:   newSym,
 	}
+}
+
+// ToJSON json string
+func ToJSON(v any) string {
+	j, err := json.Marshal(v)
+	if err != nil {
+		return err.Error()
+	}
+	return string(j)
+}
+
+// ToJSONPretty converts any value to a pretty-printed JSON string.
+// If encoding fails, it returns the error string.
+func ToJSONPretty(v any) string {
+	j, err := json.MarshalIndent(v, "", "  ") // 使用两个空格缩进
+	if err != nil {
+		return err.Error()
+	}
+	return string(j)
 }

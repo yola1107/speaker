@@ -50,6 +50,8 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 	if !s.getRequestContext() {
 		return nil, InternalServerError
 	}
+
+	// 获取客户端并加锁
 	c, ok := client.GVA_CLIENT_BUCKET.GetClient(req.MemberId)
 	if !ok {
 		global.GVA_LOG.Error("betOrder", zap.Error(errors.New("user not exists")))
@@ -59,21 +61,18 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 	c.BetLock.Lock()
 	defer c.BetLock.Unlock()
 
+	// 获取上一个订单
 	lastOrder, _, err := c.GetLastOrder()
-	switch {
-	case err != nil:
+	if err != nil {
 		global.GVA_LOG.Error("betOrder", zap.Error(err))
 		return nil, InternalServerError
 	}
 	s.lastOrder = lastOrder
 
 	// 判断是否首次spin
-	switch {
-	case s.lastOrder == nil:
-		s.isFirst = true
-		s.cleanScene() // 首次spin清除场景
-	case s.client.IsRoundOver:
-		s.isFirst = true
+	s.isFirst = s.lastOrder == nil || s.client.IsRoundOver
+	if s.lastOrder == nil {
+		s.cleanScene()
 	}
 
 	// 加载场景数据
@@ -91,8 +90,8 @@ func (s *betOrderService) doBetOrder() (map[string]any, error) {
 		return nil, err
 	}
 
-	// 调用 baseSpin 执行核心逻辑
-	s.spin.baseSpin(s.isFreeRound)
+	// 调用 baseSpin 执行核心逻辑（传递网格和滚轴）
+	s.spin.baseSpin(s.isFreeRound, s.isFirst, s.scene.NextSymbolGrid, s.scene.SymbolRollers)
 
 	// 更新状态
 	s.updateStepResult()
@@ -107,7 +106,7 @@ func (s *betOrderService) doBetOrder() (map[string]any, error) {
 		return nil, InternalServerError
 	}
 
-	// 保存场景数据
+	// 保存场景数据（包括当前网格）
 	if err := s.saveScene(); err != nil {
 		global.GVA_LOG.Error("doBetOrder", zap.Error(err))
 		return nil, InternalServerError

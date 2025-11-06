@@ -56,10 +56,10 @@ func (s *betOrderService) loadStepData() {
 	s.stepMap.TreatCount = int64(len(treasures))
 	s.stepMap.TreatPos = treasures
 
-	if s.debug.open {
-		gridCopy := grid
-		s.debug.originalGrid = &gridCopy
-	}
+	//if s.debug.open {
+	gridCopy := grid
+	s.debug.originalGrid = &gridCopy
+	//}
 }
 
 // collectBat 执行Wind转换（基础模式=射线映射，免费模式=蝙蝠移动）
@@ -130,11 +130,12 @@ func (s *betOrderService) transformToWildFreeMode() []*Bat {
 		targetSymbol := s.getCachedSymbol(newPos, visited)
 
 		if isHumanSymbol(targetSymbol) {
+			// 降落到人物符号：转换为wild
 			s.symbolGrid[newPos.Row][newPos.Col] = _wild
 			bats = append(bats, newBat(oldPos, newPos, targetSymbol, _wild))
 		} else {
-			oldSymbol := s.symbolGrid[oldPos.Row][oldPos.Col]
-			bats = append(bats, newBat(oldPos, newPos, oldSymbol, targetSymbol))
+			// 降落到非人物符号：不转换，只记录移动信息
+			bats = append(bats, newBat(oldPos, newPos, targetSymbol, targetSymbol))
 		}
 	}
 

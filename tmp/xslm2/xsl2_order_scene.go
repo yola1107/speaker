@@ -13,7 +13,10 @@ import (
 
 // SpinSceneData 场景数据（需要持久化的状态）
 type SpinSceneData struct {
-	FemaleCountsForFree [_femaleC - _femaleA + 1]int64 `json:"femaleCounts"` // 女性符号计数
+	FemaleCountsForFree [_femaleC - _femaleA + 1]int64 `json:"femaleCounts"`   // 女性符号计数
+	NextSymbolGrid      *int64Grid                     `json:"nextGrid"`       // 下一step的符号网格（已消除下落填充）
+	SymbolRollers       *[_colCount]SymbolRoller       `json:"rollers"`        // 滚轴状态（保存Start位置）
+	RoundFirstStep      int                            `json:"roundFirstStep"` // round首次step标志（0=首次，>0=非首次）
 }
 
 // getSceneKey 获取场景数据的Redis key
@@ -75,8 +78,27 @@ func (s *betOrderService) saveScene() error {
 		return nil
 	}
 
+	// 免费游戏完全结束时，清空所有场景数据
+	if s.isFreeRound && s.client.ClientOfFreeGame.GetFreeNum() == 0 {
+		s.cleanScene()
+		return nil
+	}
+
 	// 更新场景数据
 	s.scene.FemaleCountsForFree = s.spin.nextFemaleCountsForFree
+
+	// 保存下一step的网格和滚轴（已经消除下落填充完成）
+	if !s.spin.isRoundOver {
+		// 回合未结束，保存下落后的网格和滚轴状态供下一step使用
+		s.scene.NextSymbolGrid = s.spin.nextSymbolGrid
+		s.scene.SymbolRollers = &s.spin.rollers // 保存滚轴状态
+		s.scene.RoundFirstStep = 1              // 标记非首次
+	} else {
+		// 回合结束，清空网格和滚轴数据
+		s.scene.NextSymbolGrid = nil
+		s.scene.SymbolRollers = nil // 清空滚轴
+		s.scene.RoundFirstStep = 0  // 重置为首次
+	}
 
 	return s.saveCacheSceneData()
 }

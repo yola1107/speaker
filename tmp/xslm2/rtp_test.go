@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	testRounds       = 1e7   // 测试局数 (1000万局)
+	testRounds       = 1e8   // 测试局数 (1000万局)
 	progressInterval = 1e5   // 进度输出间隔
 	debugFileOpen    = false // 调试文件开关（true=输出详细信息到文件）
 )
@@ -46,7 +46,7 @@ type rtpStats struct {
 	// 基础模式特有
 	baseWildTrigger int64    // Wild触发连消次数
 	baseFemaleWild  int64    // 女性+Wild组合次数
-	treasureCount   [6]int64 // 夺宝统计 [3]=3个,[4]=4个,[5]=5个
+	treasureCount   [6]int64 // 夺宝统计 [1]=1个,[2]=2个,[3]=3个,[4]=4个,[5]=5个
 	freeTriggered   int64    // 免费游戏触发次数
 	totalFreeGiven  int64    // 基础触发给予的总免费次数
 
@@ -82,13 +82,34 @@ func TestRtp(t *testing.T) {
 		hadWildInPrevStep := false
 
 		// 一个完整回合（包含所有连消step）
+		var nextGrid *int64Grid
+		var rollers *[_colCount]SymbolRoller
+		maxCascadeSteps := 50 // 安全保护：最大连消步数
+
 		for {
-			svc.spin.baseSpin(isFree)
+			isFirst := (cascadeCount == 0)
+			svc.spin.baseSpin(isFree, isFirst, nextGrid, rollers)
 			svc.updateStepResult()
+
+			// 保存下一step的网格和滚轴（已经消除下落填充好的）
+			nextGrid = svc.spin.nextSymbolGrid
+			if nextGrid != nil {
+				rollers = &svc.spin.rollers
+			} else {
+				rollers = nil
+			}
 
 			cascadeCount++
 			stepWin := svc.spin.stepMultiplier
 			roundWin += stepWin
+
+			// 安全检查：防止无限循环
+			if cascadeCount >= maxCascadeSteps {
+				if debugFileOpen && fileBuf != nil {
+					fileBuf.WriteString(fmt.Sprintf("\n⚠️  警告：连消步数达到上限 %d，强制结束回合\n", maxCascadeSteps))
+				}
+				break
+			}
 
 			// 调试输出
 			if debugFileOpen && fileBuf != nil {
@@ -111,15 +132,18 @@ func TestRtp(t *testing.T) {
 					free.fullElimination++
 				}
 
-				// 女性符号收集
-				for i, count := range svc.spin.nextFemaleCountsForFree {
-					free.femaleCollect[i] = count
+				// 女性符号收集（每个step收集的增量）
+				for i := 0; i < 3; i++ {
+					delta := svc.spin.nextFemaleCountsForFree[i] - svc.spin.femaleCountsForFree[i]
+					if delta > 0 {
+						free.femaleCollect[i] += delta
+					}
 				}
 
 				// 夺宝统计
 				if svc.spin.treasureCount > 0 {
 					free.treasureInFree++
-					free.extraFreeRounds += svc.spin.treasureCount
+					free.extraFreeRounds += svc.spin.newFreeRoundCount
 				}
 
 			} else {
@@ -138,7 +162,7 @@ func TestRtp(t *testing.T) {
 
 				// 夺宝统计
 				tc := svc.spin.treasureCount
-				if tc >= 3 && tc <= 5 {
+				if tc >= 1 && tc <= 5 {
 					base.treasureCount[tc]++
 				}
 			}
@@ -181,8 +205,11 @@ func TestRtp(t *testing.T) {
 			svc.client.ClientOfFreeGame.IncrFreeTimes()
 			svc.client.ClientOfFreeGame.Decr()
 			if svc.client.ClientOfFreeGame.GetFreeNum() == 0 {
-				// 清空场景
+				// 清空场景：女性符号计数 + 网格数据 + 滚轴数据
 				svc.scene.FemaleCountsForFree = [3]int64{}
+				svc.scene.NextSymbolGrid = nil
+				svc.scene.SymbolRollers = nil
+				svc.scene.RoundFirstStep = 1
 			}
 		} else {
 			base.rounds++
@@ -258,17 +285,14 @@ func printFinalStats(buf *strings.Builder, base, free *rtpStats, bet int64) {
 
 	// 夺宝统计
 	w("【夺宝符号统计】\n")
-	for i := 3; i <= 5; i++ {
+	for i := 1; i <= 5; i++ {
 		if base.treasureCount[i] > 0 {
-			expectedFree := int64(0)
-			switch i {
-			case 3:
-				expectedFree = base.treasureCount[i] * 7
-			case 4:
-				expectedFree = base.treasureCount[i] * 10
-			case 5:
-				expectedFree = base.treasureCount[i] * 15
+			// 从配置中获取免费次数：free_spin_count[0]=1个scatter, free_spin_count[1]=2个scatter, free_spin_count[2]=3个scatter...
+			idx := int64(i) - 1 // 索引0=1个scatter，索引1=2个scatter...
+			if idx < 0 || idx >= int64(len(_cnf.FreeSpinCount)) {
+				idx = int64(len(_cnf.FreeSpinCount)) - 1
 			}
+			expectedFree := base.treasureCount[i] * _cnf.FreeSpinCount[idx]
 			w("  %d个夺宝: %d次 (%.2f%%) → 预期%d次免费\n", i, base.treasureCount[i],
 				float64(base.treasureCount[i])*100/float64(base.rounds), expectedFree)
 		}
@@ -367,17 +391,22 @@ func newRtpBetService() *betOrderService {
 }
 
 func (s *betOrderService) resetForNextRound(wasFree bool) {
-	// 保留场景数据（女性符号计数）
-	sceneBackup := s.scene
+	// 保留场景数据（女性符号计数），但清理 NextSymbolGrid 和 SymbolRollers
+	femaleCountsBackup := s.scene.FemaleCountsForFree
 
-	// 重置其他数据
+	// 重置所有数据
 	s.bonusAmount = decimal.Zero
 	s.spin = spin{}
+	s.scene = &SpinSceneData{
+		FemaleCountsForFree: femaleCountsBackup,
+		NextSymbolGrid:      nil, // 新回合开始，清空网格
+		SymbolRollers:       nil, // 新回合开始，清空滚轴
+		RoundFirstStep:      1,
+	}
 
-	// 恢复场景
-	s.scene = sceneBackup
-	s.spin.femaleCountsForFree = sceneBackup.FemaleCountsForFree
-	s.spin.nextFemaleCountsForFree = sceneBackup.FemaleCountsForFree
+	// 初始化 spin 的女性符号计数
+	s.spin.femaleCountsForFree = femaleCountsBackup
+	s.spin.nextFemaleCountsForFree = femaleCountsBackup
 }
 
 // ========== 调试输出函数 ==========

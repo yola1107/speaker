@@ -53,11 +53,11 @@ func (s *betOrderService) initStepForFirstStep() error {
 // updateBetAmount 计算下注金额
 func (s *betOrderService) updateBetAmount() bool {
 	// 校验参数
-	if !_cnf.validateBetSize(s.req.BaseMoney) {
+	if !contains(_cnf.BetSizeSlice, s.req.BaseMoney) {
 		global.GVA_LOG.Warn("invalid baseMoney", zap.Float64("value", s.req.BaseMoney))
 		return false
 	}
-	if !_cnf.validateBetLevel(s.req.Multiple) {
+	if !contains(_cnf.BetLevelSlice, s.req.Multiple) {
 		global.GVA_LOG.Warn("invalid multiple", zap.Int64("value", s.req.Multiple))
 		return false
 	}

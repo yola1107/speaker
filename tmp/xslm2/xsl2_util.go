@@ -90,16 +90,6 @@ func mergeWinGrids(target *int64Grid, sources []int64Grid) {
 	}
 }
 
-// checkAllFemaleCountsFull 检查所有女性符号计数是否都达到阈值
-func checkAllFemaleCountsFull(counts [_femaleC - _femaleA + 1]int64) bool {
-	for _, c := range counts {
-		if c < _femaleSymbolCountForFullElimination {
-			return false
-		}
-	}
-	return true
-}
-
 // isFemaleSymbol 判断是否为女性符号（7-9）
 func isFemaleSymbol(symbol int64) bool {
 	return symbol >= _femaleA && symbol <= _femaleC
@@ -108,4 +98,17 @@ func isFemaleSymbol(symbol int64) bool {
 // isWildSymbol 判断是否为Wild相关符号（10-13）
 func isWildSymbol(symbol int64) bool {
 	return symbol >= _wildFemaleA && symbol <= _wild
+}
+
+// getFemaleCountsKey 生成配置key（"000"~"111"）
+func getFemaleCountsKey(counts [3]int64) string {
+	var result [3]byte
+	for i := 0; i < 3; i++ {
+		if counts[i] >= _femaleSymbolCountForFullElimination {
+			result[i] = '1'
+		} else {
+			result[i] = '0'
+		}
+	}
+	return string(result[:])
 }
