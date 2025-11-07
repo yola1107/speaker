@@ -95,6 +95,11 @@ func isFemaleSymbol(symbol int64) bool {
 	return symbol >= _femaleA && symbol <= _femaleC
 }
 
+// isFemaleWinSymbol 判断是否为触发女性连消的符号（含女性百搭）
+func isFemaleWinSymbol(symbol int64) bool {
+	return (symbol >= _femaleA && symbol <= _femaleC) || (symbol >= _wildFemaleA && symbol <= _wildFemaleC)
+}
+
 // isWildSymbol 判断是否为Wild相关符号（10-13）
 func isWildSymbol(symbol int64) bool {
 	return symbol >= _wildFemaleA && symbol <= _wild

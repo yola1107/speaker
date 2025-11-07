@@ -46,37 +46,18 @@ func (s *spin) baseSpin(isFreeRound bool, isFirst bool, nextGrid *int64Grid, rol
 		s.processStepForBase()
 	}
 
-	// 如果回合未结束，消除下落填充
-	if s.isRoundOver {
-		s.nextSymbolGrid = nil
-		return
-	}
-
-	newGrid, eliminatedCount := s.applyEliminationAndDrop(s.symbolGrid, s.winGrid, isFreeRound)
-
-	// 防止死循环：0个符号被消除则强制结束
-	if eliminatedCount == 0 {
-		global.GVA_LOG.Warn("no symbols eliminated, forcing round end")
-		s.forceRoundEnd()
-		return
-	}
-
-	s.nextSymbolGrid = &newGrid
+	s.finalizeStep(isFreeRound)
 }
 
 func (s *spin) loadStepData(isFreeRound bool, isFirst bool, nextGrid *int64Grid, rollers *[_colCount]SymbolRoller) {
 	if isFirst {
-		symbolGrid, newRollers := _cnf.initSpinSymbol(isFreeRound, s.femaleCountsForFree)
-		s.symbolGrid = &symbolGrid
-		s.rollers = newRollers
+		s.initSpinSymbol(isFreeRound)
 		return
 	}
 
 	if nextGrid == nil || rollers == nil {
 		global.GVA_LOG.Error("loadStepData: nil data in non-first step")
-		symbolGrid, newRollers := _cnf.initSpinSymbol(isFreeRound, s.femaleCountsForFree)
-		s.symbolGrid = &symbolGrid
-		s.rollers = newRollers
+		s.initSpinSymbol(isFreeRound)
 		return
 	}
 
@@ -84,9 +65,18 @@ func (s *spin) loadStepData(isFreeRound bool, isFirst bool, nextGrid *int64Grid,
 	s.rollers = *rollers
 }
 
+// initSpinSymbol 重新初始化当前step的网格与滚轴
+func (s *spin) initSpinSymbol(isFreeRound bool) {
+	symbolGrid, newRollers := _cnf.initSpinSymbol(isFreeRound, s.femaleCountsForFree)
+	clearBlockedCells(&symbolGrid)
+	s.symbolGrid = &symbolGrid
+	s.rollers = newRollers
+}
+
 // findWinInfos 查找所有中奖组合（Ways玩法）
 func (s *spin) findWinInfos() {
 	var winInfos []*winInfo
+	s.hasFemaleWin = false
 
 	// 查找普通符号中奖（1-9）
 	for symbol := _blank + 1; symbol < _wildFemaleA; symbol++ {
@@ -122,7 +112,7 @@ func (s *spin) findNormalSymbolWinInfo(symbol int64) (*winInfo, bool) {
 			match := curr == symbol || curr == _wild
 			if !match && isFemaleSymbol(symbol) {
 				correspondingWild := symbol - _femaleA + _wildFemaleA
-				match = (curr == correspondingWild)
+				match = curr == correspondingWild
 			}
 
 			if match {
@@ -184,6 +174,10 @@ func (s *spin) findWildSymbolWinInfo(symbol int64) (*winInfo, bool) {
 func (s *spin) processStepForBase() {
 	if s.hasFemaleWin && hasWildSymbol(s.symbolGrid) {
 		s.updateStepResults(true)
+		if len(s.winResults) == 0 {
+			s.forceRoundEnd()
+			return
+		}
 		s.isRoundOver = false
 		return
 	}
@@ -193,17 +187,21 @@ func (s *spin) processStepForBase() {
 
 // processStepForFree 免费模式：全屏消除/女性中奖 → 连消
 func (s *spin) processStepForFree() {
-	switch {
-	case s.enableFullElimination:
+	if s.enableFullElimination {
 		s.updateStepResults(false)
 		s.collectFemaleSymbols()
 		s.isRoundOver = len(s.winResults) == 0
-	case s.hasFemaleWin:
+	} else if s.hasFemaleWin {
 		s.updateStepResults(true)
+		if len(s.winResults) == 0 {
+			s.collectFemaleSymbols()
+			s.forceRoundEnd()
+			return
+		}
 		s.collectFemaleSymbols()
 		s.isRoundOver = false
 		return
-	default:
+	} else {
 		s.updateStepResults(false)
 		s.forceRoundEnd()
 	}
@@ -237,6 +235,9 @@ func (s *spin) eliminateSymbols(grid *int64Grid, winGrid *int64Grid, isFreeRound
 		return 0
 	}
 
+	clearBlockedCells(grid)
+	clearBlockedCells(winGrid)
+
 	hasTreasure := getTreasureCount(grid) > 0
 	count := 0
 
@@ -265,6 +266,8 @@ func (s *spin) dropSymbols(grid *int64Grid) {
 		return
 	}
 
+	clearBlockedCells(grid)
+
 	for c := int64(0); c < _colCount; c++ {
 		writePos := _rowCount - 1
 		for r := _rowCount - 1; r >= 0; r-- {
@@ -284,6 +287,8 @@ func (s *spin) fillNewSymbols(grid *int64Grid) {
 	if grid == nil {
 		return
 	}
+
+	clearBlockedCells(grid)
 
 	for c := int64(0); c < _colCount; c++ {
 		for r := int64(_rowCount - 1); r >= 0; r-- {
@@ -322,7 +327,8 @@ func (s *spin) collectFemaleSymbols() {
 	}
 }
 
-// updateStepResults 计算中奖结果（partialElimination=true时只计算女性符号）
+// updateStepResults 计算中奖结果
+// partialElimination 为 true 表示“只结算女性符号的中奖”（用于基础/免费模式连消中，保留其它符号供后续消除使用）
 func (s *spin) updateStepResults(partialElimination bool) {
 	var winResults []*winResult
 	var winGrid int64Grid
@@ -353,4 +359,31 @@ func (s *spin) updateStepResults(partialElimination bool) {
 	mergeWinGrids(&winGrid, winGrids)
 	s.stepMultiplier = totalMultiplier
 	s.winResults, s.winGrid = winResults, &winGrid
+}
+
+// finalizeStep 根据连消结果准备下一步或结束本回合
+func (s *spin) finalizeStep(isFreeRound bool) {
+	if s.isRoundOver {
+		s.nextSymbolGrid = nil
+		return
+	}
+
+	newGrid, eliminatedCount := s.applyEliminationAndDrop(s.symbolGrid, s.winGrid, isFreeRound)
+	if eliminatedCount == 0 {
+		global.GVA_LOG.Error("no symbols eliminated, forcing round end")
+		s.forceRoundEnd()
+		return
+	}
+
+	clearBlockedCells(&newGrid)
+	s.nextSymbolGrid = &newGrid
+}
+
+// clearBlockedCells 将网格中的墙格（最后一行左右角）置为 _blank
+func clearBlockedCells(grid *int64Grid) {
+	if grid == nil {
+		return
+	}
+	(*grid)[_rowCount-1][0] = _blank
+	(*grid)[_rowCount-1][_colCount-1] = _blank
 }

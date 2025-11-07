@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	testRounds       = 1e8   // 测试局数 (1000万局)
+	testRounds       = 1e7   // 测试局数 (1000万局)
 	progressInterval = 1e5   // 进度输出间隔
 	debugFileOpen    = false // 调试文件开关（true=输出详细信息到文件）
 )
