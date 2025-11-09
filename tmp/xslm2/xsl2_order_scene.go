@@ -13,10 +13,11 @@ import (
 
 // SpinSceneData 场景数据（需要持久化的状态）
 type SpinSceneData struct {
-	FemaleCountsForFree [_femaleC - _femaleA + 1]int64 `json:"femaleCounts"`   // 女性符号计数
-	NextSymbolGrid      *int64Grid                     `json:"nextGrid"`       // 下一step的符号网格（已消除下落填充）
-	SymbolRollers       *[_colCount]SymbolRoller       `json:"rollers"`        // 滚轴状态（保存Start位置）
-	RoundFirstStep      int                            `json:"roundFirstStep"` // round首次step标志（0=首次，>0=非首次）
+	FemaleCountsForFree [_femaleC - _femaleA + 1]int64 `json:"femaleCounts"`       // 女性符号计数
+	NextSymbolGrid      *int64Grid                     `json:"nextGrid"`           // 下一step的符号网格（已消除下落填充）
+	SymbolRollers       *[_colCount]SymbolRoller       `json:"rollers"`            // 滚轴状态（保存Start位置）
+	RollerKey           string                         `json:"rollerKey"`          // 滚轴配置key（基础=base / 免费=收集状态）
+	RoundStartTreasure  int64                          `json:"roundStartTreasure"` // 回合开始时的夺宝数量（免费模式使用）
 }
 
 // getSceneKey 获取场景数据的Redis key
@@ -46,15 +47,7 @@ func (s *betOrderService) reloadScene() error {
 		return err
 	}
 
-	// 恢复女性符号计数到 spin 结构
-	s.restoreFemaleCountsToSpin()
 	return nil
-}
-
-// restoreFemaleCountsToSpin 恢复女性符号计数到spin结构
-func (s *betOrderService) restoreFemaleCountsToSpin() {
-	s.spin.femaleCountsForFree = s.scene.FemaleCountsForFree
-	s.spin.nextFemaleCountsForFree = s.scene.FemaleCountsForFree
 }
 
 // loadCacheSceneData 从Redis加载场景数据
@@ -84,21 +77,8 @@ func (s *betOrderService) saveScene() error {
 		return nil
 	}
 
-	// 更新场景数据
-	s.scene.FemaleCountsForFree = s.spin.nextFemaleCountsForFree
-
-	// 保存下一step的网格和滚轴（已经消除下落填充完成）
-	if !s.spin.isRoundOver {
-		// 回合未结束，保存下落后的网格和滚轴状态供下一step使用
-		s.scene.NextSymbolGrid = s.spin.nextSymbolGrid
-		s.scene.SymbolRollers = &s.spin.rollers // 保存滚轴状态
-		s.scene.RoundFirstStep = 1              // 标记非首次
-	} else {
-		// 回合结束，清空网格和滚轴数据
-		s.scene.NextSymbolGrid = nil
-		s.scene.SymbolRollers = nil // 清空滚轴
-		s.scene.RoundFirstStep = 0  // 重置为首次
-	}
+	// spin > scene
+	s.syncSceneFromSpin()
 
 	return s.saveCacheSceneData()
 }
@@ -118,4 +98,61 @@ func (s *betOrderService) saveCacheSceneData() error {
 	}
 
 	return nil
+}
+
+// prepareSpinFromScene 加载场景数据到spin
+func (s *betOrderService) prepareSpinFromScene() (*int64Grid, *[_colCount]SymbolRoller) {
+	if s.scene == nil {
+		s.scene = &SpinSceneData{}
+	}
+
+	scene := s.scene
+
+	s.spin.femaleCountsForFree = scene.FemaleCountsForFree
+	s.spin.nextFemaleCountsForFree = scene.FemaleCountsForFree
+	s.spin.rollerKey = scene.RollerKey
+	s.spin.roundStartTreasure = scene.RoundStartTreasure
+
+	pending := scene.NextSymbolGrid != nil && scene.SymbolRollers != nil
+	if pending {
+		s.spin.isRoundOver = false
+		s.isFirst = false
+		s.isFreeRound = s.lastOrder != nil && s.lastOrder.IsFree > 0
+		return scene.NextSymbolGrid, scene.SymbolRollers
+	}
+
+	s.spin.isRoundOver = true
+	s.isFirst = true
+	s.isFreeRound = s.client != nil && s.client.ClientOfFreeGame.GetFreeNum() > 0
+	return nil, nil
+}
+
+// syncSceneFromSpin spin数据写入到scene
+func (s *betOrderService) syncSceneFromSpin() {
+	if s.scene == nil {
+		s.scene = &SpinSceneData{}
+	}
+
+	scene := s.scene
+	scene.FemaleCountsForFree = s.spin.nextFemaleCountsForFree
+	scene.RoundStartTreasure = s.spin.roundStartTreasure
+	if s.spin.isRoundOver {
+		scene.NextSymbolGrid = nil
+		scene.SymbolRollers = nil
+		scene.RollerKey = ""
+		return
+	}
+
+	if s.spin.nextSymbolGrid != nil {
+		copyGrid := *s.spin.nextSymbolGrid
+		scene.NextSymbolGrid = &copyGrid
+	} else {
+		scene.NextSymbolGrid = nil
+	}
+
+	if scene.SymbolRollers == nil {
+		scene.SymbolRollers = new([_colCount]SymbolRoller)
+	}
+	*scene.SymbolRollers = s.spin.rollers
+	scene.RollerKey = s.spin.rollerKey
 }

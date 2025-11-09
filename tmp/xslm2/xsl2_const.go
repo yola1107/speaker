@@ -28,6 +28,12 @@ const (
 	_treasure    int64 = 14 // 夺宝(血月)
 )
 
+// 特殊符号
+const (
+	_eliminated int64 = -1 // 消除标识（用于展示日志/调试）
+	_blocked    int64 = 99 // 墙格标记（左下角和右下角）
+)
+
 // 游戏规则配置
 const (
 	_minMatchCount                       = 3  // 最少匹配列数

@@ -3,6 +3,7 @@ package xslm2
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"egame-grpc/global"
 	"egame-grpc/global/client"
@@ -81,17 +82,20 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 		return nil, InternalServerError
 	}
 
-	return s.doBetOrder()
+	// scene -> spin
+	nextGrid, rollers := s.prepareSpinFromScene()
+
+	return s.doBetOrder(nextGrid, rollers)
 }
 
 // doBetOrder 执行下注流程
-func (s *betOrderService) doBetOrder() (map[string]any, error) {
+func (s *betOrderService) doBetOrder(nextGrid *int64Grid, rollers *[_colCount]SymbolRoller) (map[string]any, error) {
 	if err := s.initialize(); err != nil {
 		return nil, err
 	}
 
 	// 调用 baseSpin 执行核心逻辑（传递网格和滚轴）
-	s.spin.baseSpin(s.isFreeRound, s.isFirst, s.scene.NextSymbolGrid, s.scene.SymbolRollers)
+	s.spin.baseSpin(s.isFreeRound, s.isFirst, nextGrid, rollers)
 
 	// 更新状态
 	s.updateStepResult()
@@ -117,7 +121,7 @@ func (s *betOrderService) doBetOrder() (map[string]any, error) {
 
 // buildResultMap 构建下注结果（返回给前端，复用于订单详情）
 func (s *betOrderService) buildResultMap() map[string]any {
-	return map[string]any{
+	ret := map[string]any{
 		"orderSN":                 s.gameOrder.OrderSn,
 		"currentBalance":          s.gameOrder.CurBalance,
 		"baseBet":                 s.req.BaseMoney,
@@ -142,4 +146,69 @@ func (s *betOrderService) buildResultMap() map[string]any {
 		"freeBonusAmount":         s.client.ClientOfFreeGame.GetFreeTotalMoney(),
 		"roundBonus":              s.client.ClientOfFreeGame.RoundBonus,
 	}
+	if true {
+		s.printResultLog(ret)
+	}
+	return ret
+}
+
+// printResultLog 调试日志输出
+func (s *betOrderService) printResultLog(ret map[string]any) {
+	WGrid := func(grid *int64Grid) string {
+		if grid == nil {
+			return ""
+		}
+		b := strings.Builder{}
+		b.WriteString("\n")
+		for r := int64(0); r < _rowCount; r++ {
+			for c := int64(0); c < _colCount; c++ {
+				sym := grid[r][c]
+				b.WriteString(fmt.Sprintf("%3d", sym))
+				if c < _colCount-1 {
+					b.WriteString("| ")
+				}
+			}
+			b.WriteString("\n")
+		}
+		return b.String()
+	}
+
+	// 提取累加值
+	stepBonus := s.bonusAmount.Round(2).InexactFloat64()
+	spinBonusTotal := s.client.ClientOfFreeGame.GetGeneralWinTotal()
+	freeBonusTotal := s.client.ClientOfFreeGame.GetFreeTotalMoney()
+	roundBonusTotal := s.client.ClientOfFreeGame.RoundBonus
+
+	global.GVA_LOG.Sugar().Debugf(
+		"\n"+
+			"========== Step结算信息 ==========\n"+
+			"本步奖金: %.2f\n"+
+			"累计总奖金(spinBonusAmount): %.2f\n"+
+			"累计免费奖金(freeBonusAmount): %.2f\n"+
+			"累计回合奖金(roundBonus): %.2f\n"+
+			"是否回合结束: %v\n"+
+			"是否免费回合: %v\n"+
+			"========== 网格信息 ==========\n"+
+			"srollers=%v\n"+
+			"ABC=%v\n"+
+			"nextABC=%v\n"+
+			"symbol=%v\n"+
+			"winGrid=%v\n"+
+			"nextSymbol=%v\n"+
+			"========== 完整结果 ==========\n"+
+			"ret=%v\n",
+		stepBonus,
+		spinBonusTotal,
+		freeBonusTotal,
+		roundBonusTotal,
+		s.spin.isRoundOver,
+		s.isFreeRound,
+		ToJSON(s.spin.rollers),
+		ToJSON(s.spin.femaleCountsForFree),
+		ToJSON(s.spin.nextFemaleCountsForFree),
+		WGrid(s.spin.symbolGrid),
+		WGrid(s.spin.winGrid),
+		WGrid(s.spin.nextSymbolGrid),
+		ToJSON(ret),
+	)
 }

@@ -37,16 +37,25 @@ func (s *betOrderService) initStepForFirstStep() error {
 	if !s.updateBetAmount() {
 		return InvalidRequestParams
 	}
-	if !s.checkBalance() {
-		return InsufficientBalance
-	}
 	s.client.IsRoundOver = false
-	s.client.SetLastMaxFreeNum(0)
-	s.client.ClientOfFreeGame.Reset()
-	s.client.ClientOfFreeGame.ResetGeneralWinTotal()
-	s.client.ClientOfFreeGame.ResetRoundBonus()
-	s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
-	s.amount = s.betAmount
+
+	// 如果是免费回合，不扣费且不重置免费游戏状态
+	if s.isFreeRound {
+		s.amount = decimal.Zero
+		s.client.ClientOfFreeGame.ResetRoundBonus()
+		s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
+	} else {
+		// 基础回合：扣费并重置状态
+		if !s.checkBalance() {
+			return InsufficientBalance
+		}
+		s.client.SetLastMaxFreeNum(0)
+		s.client.ClientOfFreeGame.Reset()
+		s.client.ClientOfFreeGame.ResetGeneralWinTotal()
+		s.client.ClientOfFreeGame.ResetRoundBonus()
+		s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
+		s.amount = s.betAmount
+	}
 	return nil
 }
 
@@ -84,6 +93,7 @@ func (s *betOrderService) initStepForNextStep() error {
 	s.req.Multiple = s.lastOrder.Multiple
 	s.betAmount = decimal.NewFromFloat(s.client.ClientOfFreeGame.GetBetAmount())
 	s.amount = decimal.Zero
+
 	if s.client.IsRoundOver {
 		s.isFreeRound = true
 		s.client.ClientOfFreeGame.ResetRoundBonus()
@@ -113,7 +123,13 @@ func (s *betOrderService) updateStepResult() {
 
 	// 更新奖金和余额
 	if s.spin.stepMultiplier > 0 {
-		s.updateBonusAndBalance()
+		s.updateBonusAmount()
+		bonus := s.bonusAmount.Round(2).InexactFloat64()
+		s.client.ClientOfFreeGame.IncrGeneralWinTotal(bonus)
+		if s.isFreeRound {
+			s.client.ClientOfFreeGame.IncrFreeTotalMoney(bonus)
+		}
+		s.client.ClientOfFreeGame.IncRoundBonus(bonus)
 	}
 
 	// 免费回合结束处理
@@ -123,35 +139,17 @@ func (s *betOrderService) updateStepResult() {
 	}
 
 	// 处理新增免费次数
-	if s.spin.newFreeRoundCount > 0 {
-		s.updateFreeRoundCount(uint64(s.spin.newFreeRoundCount))
+	if s.client.IsRoundOver && s.spin.newFreeRoundCount > 0 {
+		if !s.isFreeRound {
+			s.client.ClientOfFreeGame.SetFreeNum(uint64(s.spin.newFreeRoundCount))
+			s.client.SetLastMaxFreeNum(uint64(s.spin.newFreeRoundCount))
+		} else {
+			s.client.ClientOfFreeGame.Incr(uint64(s.spin.newFreeRoundCount))
+			s.client.IncLastMaxFreeNum(uint64(s.spin.newFreeRoundCount))
+		}
 	}
 
-	s.updateCurrentBalance()
-}
-
-// updateBonusAndBalance 更新奖金和余额
-func (s *betOrderService) updateBonusAndBalance() {
-	s.updateBonusAmount()
-	bonus := s.bonusAmount.Round(2).InexactFloat64()
-	s.client.ClientOfFreeGame.IncrGeneralWinTotal(bonus)
-
-	if s.isFreeRound {
-		s.client.ClientOfFreeGame.IncrFreeTotalMoney(bonus)
-	}
-
-	s.client.ClientOfFreeGame.IncRoundBonus(bonus)
-}
-
-// updateFreeRoundCount 更新免费次数
-func (s *betOrderService) updateFreeRoundCount(count uint64) {
-	if !s.isFreeRound {
-		s.client.ClientOfFreeGame.SetFreeNum(count)
-		s.client.SetLastMaxFreeNum(count)
-	} else {
-		s.client.ClientOfFreeGame.Incr(count)
-		s.client.IncLastMaxFreeNum(count)
-	}
+	s.currBalance = decimal.NewFromFloat(s.member.Balance).Sub(s.amount).Add(s.bonusAmount)
 }
 
 // updateBonusAmount 计算奖金
@@ -161,11 +159,6 @@ func (s *betOrderService) updateBonusAmount() {
 		return
 	}
 	s.bonusAmount = s.betAmount.Div(decimal.NewFromInt(_cnf.BaseBat)).Mul(decimal.NewFromInt(s.spin.stepMultiplier))
-}
-
-// updateCurrentBalance 更新当前余额
-func (s *betOrderService) updateCurrentBalance() {
-	s.currBalance = decimal.NewFromFloat(s.member.Balance).Sub(s.amount).Add(s.bonusAmount)
 }
 
 // ========== 订单更新和结算 ==========

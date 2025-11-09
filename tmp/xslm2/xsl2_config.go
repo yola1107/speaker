@@ -3,6 +3,8 @@ package xslm2
 import (
 	mathRand "math/rand"
 
+	"egame-grpc/global"
+
 	jsoniter "github.com/json-iterator/go"
 )
 
@@ -76,15 +78,27 @@ func initGameConfigs() {
 }
 
 // initSpinSymbol 生成滚轴符号网格
-func (c *gameConfig) initSpinSymbol(isFreeRound bool, femaleCounts [3]int64) (int64Grid, [_colCount]SymbolRoller) {
+func (c *gameConfig) initSpinSymbol(isFreeRound bool, femaleCounts [3]int64) (int64Grid, [_colCount]SymbolRoller, string) {
 	// 选择配置
 	var cfg rollConfig
+	cfgKey := "base"
 	if isFreeRound {
-		key := getFemaleCountsKey(femaleCounts)
+		key := ""
+		for i := 0; i < 3; i++ {
+			if femaleCounts[i] >= _femaleSymbolCountForFullElimination {
+				key += "1"
+			} else {
+				key += "0"
+			}
+		}
+		global.GVA_LOG.Sugar().Debugf("=================> key: %s", key)
+
 		if freeCfg, ok := c.RollCfg.Free[key]; ok {
 			cfg = freeCfg
+			cfgKey = "free-" + key
 		} else {
-			cfg = c.RollCfg.Free["000"] // 默认配置
+			panic("free roll weight sum <= 0 for key: " + key)
+			//cfg = c.RollCfg.Free["000"] // 默认配置
 		}
 	} else {
 		cfg = c.RollCfg.Base
@@ -127,7 +141,18 @@ func (c *gameConfig) initSpinSymbol(isFreeRound bool, femaleCounts [3]int64) (in
 		}
 	}
 
-	return symbolGrid, rollers
+	return symbolGrid, rollers, cfgKey
+}
+
+// getReelLength 获取转轮长度（用于调试输出）
+func GetReelLength(realIdx, col int) int {
+	if _cnf == nil || realIdx < 0 || realIdx >= len(_cnf.RealData) {
+		return 0
+	}
+	if col < 0 || col >= len(_cnf.RealData[realIdx]) {
+		return 0
+	}
+	return len(_cnf.RealData[realIdx][col])
 }
 
 // getFallSymbol 从滚轴获取下一个符号（Start递减）
