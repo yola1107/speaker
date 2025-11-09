@@ -420,7 +420,7 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 	))
 
 	startRound := svc.spin.roundStartFemaleCounts
-	stepStart := svc.spin.femaleCountsForFree
+	stepStart := svc.spin.stepStartFemaleCounts
 	final := svc.spin.nextFemaleCountsForFree
 	stepDelta := [3]int64{
 		final[0] - stepStart[0],

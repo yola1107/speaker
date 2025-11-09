@@ -112,6 +112,7 @@ func (s *betOrderService) prepareSpinFromScene() (*int64Grid, *[_colCount]Symbol
 	s.spin.nextFemaleCountsForFree = scene.FemaleCountsForFree
 	s.spin.rollerKey = scene.RollerKey
 	s.spin.roundStartTreasure = scene.RoundStartTreasure
+	s.spin.roundStartFemaleCounts = scene.FemaleCountsForFree
 
 	pending := scene.NextSymbolGrid != nil && scene.SymbolRollers != nil
 	if pending {
@@ -124,6 +125,8 @@ func (s *betOrderService) prepareSpinFromScene() (*int64Grid, *[_colCount]Symbol
 	s.spin.isRoundOver = true
 	s.isFirst = true
 	s.isFreeRound = s.client != nil && s.client.ClientOfFreeGame.GetFreeNum() > 0
+	s.scene.RoundStartTreasure = 0
+	s.spin.roundStartTreasure = 0
 	return nil, nil
 }
 
@@ -140,6 +143,7 @@ func (s *betOrderService) syncSceneFromSpin() {
 		scene.NextSymbolGrid = nil
 		scene.SymbolRollers = nil
 		scene.RollerKey = ""
+		scene.RoundStartTreasure = 0
 		return
 	}
 

@@ -1,9 +1,9 @@
 package xslm2
 
 import (
-	"fmt"
-
 	"egame-grpc/global"
+
+	"go.uber.org/zap"
 )
 
 type spin struct {
@@ -22,12 +22,14 @@ type spin struct {
 	winGrid                *int64Grid   // 中奖标记网格
 	winInfos               []*winInfo   // 中奖信息（原始）
 	winResults             []*winResult // 中奖结果（计算后）
+	stepStartFemaleCounts  [3]int64     // 当前step开始时女性收集快照
 	stepMultiplier         int64        // step总倍数
 	hasFemaleWin           bool         // 本step女性符号中奖标志（触发连消）
 	// 回合状态
 	isRoundOver       bool  // 回合结束标志（false=继续连消）
 	treasureCount     int64 // 夺宝符号数量
 	newFreeRoundCount int64 // 新增免费次数
+	protectWild       bool  // 当前步是否需要保护普通百搭
 }
 
 func (s *spin) desc() string {
@@ -37,7 +39,9 @@ func (s *spin) desc() string {
 // baseSpin 核心逻辑：生成网格 → 查找中奖 → 判断连消 → 消除下落填充
 func (s *spin) baseSpin(isFreeRound bool, isFirst bool, nextGrid *int64Grid, rollers *[_colCount]SymbolRoller) {
 	// 加载网格和滚轴
+	s.protectWild = false
 	s.loadStepData(isFreeRound, isFirst, nextGrid, rollers)
+	s.captureFemaleSnapshots(isFirst)
 
 	// 检查全屏消除（仅免费模式）
 	s.checkFullElimination(isFreeRound)
@@ -63,15 +67,58 @@ func (s *spin) loadStepData(isFreeRound bool, isFirst bool, nextGrid *int64Grid,
 	if isFirst {
 		s.initSpinSymbol(isFreeRound)
 		s.roundStartTreasure = getTreasureCount(s.symbolGrid)
+		s.nextFemaleCountsForFree = s.femaleCountsForFree
 		return
 	}
 
 	if nextGrid == nil || rollers == nil {
-		panic(fmt.Errorf("=====================\n loadStepData: nil data in non-first step, s=%v", s.desc()))
+		global.GVA_LOG.Error("loadStepData", zap.String("reason", "missing cascade data, fallback"), zap.Bool("isFreeRound", isFreeRound))
+		s.initSpinSymbol(isFreeRound)
+		s.roundStartTreasure = getTreasureCount(s.symbolGrid)
+		s.nextFemaleCountsForFree = s.femaleCountsForFree
+		s.roundStartFemaleCounts = s.femaleCountsForFree
+		return
 	}
 
 	s.symbolGrid = nextGrid
 	s.rollers = *rollers
+}
+
+func (s *spin) captureFemaleSnapshots(isFirst bool) {
+	if isFirst {
+		s.roundStartFemaleCounts = s.femaleCountsForFree
+	}
+	s.stepStartFemaleCounts = s.femaleCountsForFree
+}
+
+func (s *spin) refreshFreeRollersIfNeeded() {
+	newKey := buildFreeRollerKey(s.nextFemaleCountsForFree)
+	if newKey == "" {
+		return
+	}
+	expected := "free-" + newKey
+	if s.rollerKey == expected {
+		return
+	}
+	if _, ok := _cnf.RollCfg.Free[newKey]; !ok {
+		global.GVA_LOG.Error("refreshFreeRollersIfNeeded", zap.String("reason", "free key missing"), zap.String("key", newKey))
+		return
+	}
+	_, rollers, key := _cnf.initSpinSymbol(true, s.nextFemaleCountsForFree)
+	s.rollers = rollers
+	s.rollerKey = key
+}
+
+func buildFreeRollerKey(counts [3]int64) string {
+	var key [3]byte
+	for i := 0; i < 3; i++ {
+		if counts[i] >= _femaleSymbolCountForFullElimination {
+			key[i] = '1'
+		} else {
+			key[i] = '0'
+		}
+	}
+	return string(key[:])
 }
 
 // initSpinSymbol 重新初始化当前step的网格与滚轴
@@ -192,8 +239,10 @@ func (s *spin) processStepForBase() {
 		s.updateStepResults(true)
 		if len(s.winResults) == 0 {
 			s.finishRound(false)
-			panic("processStepForBase: expected cascade result")
+			global.GVA_LOG.Error("processStepForBase", zap.String("reason", "partial elimination but no winResults"))
+			return
 		}
+		s.protectWild = true
 		s.isRoundOver = false
 		return
 	}
@@ -211,8 +260,10 @@ func (s *spin) processStepForFree() {
 			s.finishRound(true)
 			return
 		}
+		s.protectWild = true
 		s.isRoundOver = false
 		s.collectFemaleSymbols()
+		s.refreshFreeRollersIfNeeded()
 		return
 	}
 
@@ -220,10 +271,13 @@ func (s *spin) processStepForFree() {
 		s.updateStepResults(true)
 		if len(s.winResults) == 0 {
 			s.finishRound(true)
+			global.GVA_LOG.Error("processStepForFree", zap.String("reason", "partial elimination but no winResults"))
 			return
 		}
+		s.protectWild = true
 		s.isRoundOver = false
 		s.collectFemaleSymbols()
+		s.refreshFreeRollersIfNeeded()
 		return
 	}
 
@@ -240,6 +294,8 @@ func (s *spin) processStepForFree() {
 func (s *spin) finishRound(isFreeRound bool) {
 	s.isRoundOver = true
 	s.nextSymbolGrid = nil
+	s.femaleCountsForFree = s.nextFemaleCountsForFree
+	s.protectWild = false
 	/*
 		s.treasureCount = getTreasureCount(s.symbolGrid)
 		if isFreeRound {
@@ -311,39 +367,6 @@ func (s *spin) updateStepResults(partialElimination bool) {
 		}
 		lineMultiplier += totalMultiplier
 
-		/*
-			effectiveLineCount := info.LineCount
-			if partialElimination && (info.Symbol >= _femaleA && info.Symbol <= _femaleC || info.Symbol >= _wildFemaleA && info.Symbol <= _wildFemaleC) {
-				effectiveLineCount = computeFemalePartialLineCount(info)
-				if effectiveLineCount == 0 {
-					continue
-				}
-			}
-			baseLineMultiplier := _cnf.getSymbolMultiplier(info.Symbol, info.SymbolCount)
-			totalMultiplier := baseLineMultiplier * effectiveLineCount
-			if partialElimination && (info.Symbol >= _femaleA && info.Symbol <= _femaleC || info.Symbol >= _wildFemaleA && info.Symbol <= _wildFemaleC) {
-				fmt.Printf("[RTP-TRACE] partial=%v symbol=%d count=%d lines=%d base=%d total=%d\n",
-					partialElimination, info.Symbol, info.SymbolCount, effectiveLineCount, baseLineMultiplier, totalMultiplier)
-			}
-			result := winResult{
-				Symbol:             info.Symbol,
-				SymbolCount:        info.SymbolCount,
-				LineCount:          effectiveLineCount,
-				BaseLineMultiplier: baseLineMultiplier,
-				TotalMultiplier:    totalMultiplier,
-				WinGrid:            info.WinGrid,
-			}
-			winResults = append(winResults, &result)
-			for r := int64(0); r < _rowCount; r++ {
-				for c := int64(0); c < _colCount; c++ {
-					if info.WinGrid[r][c] != _blank {
-						winGrid[r][c] = info.WinGrid[r][c]
-					}
-				}
-			}
-			lineMultiplier += totalMultiplier
-		*/
-
 	}
 	s.stepMultiplier = lineMultiplier
 	s.winResults = winResults
@@ -361,8 +384,6 @@ func (s *spin) checkAddFreeCount(isFreeRound bool) {
 				newTreasure = 0
 			}
 			s.newFreeRoundCount = newTreasure
-
-			// s.newFreeRoundCount = s.treasureCount
 		} else {
 			s.newFreeRoundCount = _cnf.getFreeRoundCount(s.treasureCount)
 		}
@@ -386,10 +407,6 @@ func (s *spin) finalizeStep(isFreeRound bool) {
 		return
 	}
 
-	// if isFreeRound {
-	// 	s.resetFemaleCollectionIfEliminated()
-	// }
-
 	// 消除 → 下落 → 填充
 	newGrid := *s.symbolGrid
 	clearBlockedCells(&newGrid)
@@ -408,7 +425,7 @@ func (s *spin) finalizeStep(isFreeRound bool) {
 			if isBlockedCell(r, c) {
 				continue
 			}
-			if symbol == _treasure || (symbol == _wild && (isFreeRound || hasTreasure)) {
+			if symbol == _treasure || (symbol == _wild && (isFreeRound || hasTreasure || s.protectWild)) {
 				continue
 			}
 			newGrid[r][c] = _eliminated
@@ -467,6 +484,7 @@ func (s *spin) finalizeStep(isFreeRound bool) {
 
 	clearBlockedCells(&newGrid)
 	s.nextSymbolGrid = &newGrid
+	s.femaleCountsForFree = s.nextFemaleCountsForFree
 }
 
 // clearBlockedCells 将网格中的墙格（最后一行左右角）置为 _blocked
@@ -491,117 +509,3 @@ func isMatchingFemaleWild(target, candidate int64) bool {
 	}
 	return (candidate - _wildFemaleA) == (target - _femaleA)
 }
-
-/*func (s *spin) resetFemaleCollectionIfEliminated() {
-	if s.winGrid == nil || s.symbolGrid == nil {
-		return
-	}
-	var resetFlags [3]bool
-	for r := int64(0); r < _rowCount; r++ {
-		for c := int64(0); c < _colCount; c++ {
-			if s.winGrid[r][c] == _blank {
-				continue
-			}
-			symbol := s.symbolGrid[r][c]
-			switch {
-			case symbol >= _femaleA && symbol <= _femaleC:
-				resetFlags[symbol-_femaleA] = true
-			case symbol >= _wildFemaleA && symbol <= _wildFemaleC:
-				resetFlags[symbol-_wildFemaleA] = true
-			}
-		}
-	}
-	for i, reset := range resetFlags {
-		if reset {
-			s.femaleCountsForFree[i] = 0
-			s.nextFemaleCountsForFree[i] = 0
-		}
-	}
-}*/
-
-/*
-func isSubstituteForSymbol(target, candidate int64) bool {
-	if candidate == _wild {
-		return true
-	}
-	if candidate < _wildFemaleA || candidate > _wildFemaleC {
-		return false
-	}
-	if target < _femaleA || target > _femaleC {
-		return false
-	}
-	return (candidate - _wildFemaleA) == (target - _femaleA)
-}
-
-func minInt64(a, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func computeFemalePartialLineCount(info *winInfo) int64 {
-	var baseSymbol int64
-	var femaleWildSymbol int64
-	switch {
-	case info.Symbol >= _femaleA && info.Symbol <= _femaleC:
-		baseSymbol = info.Symbol
-		femaleWildSymbol = _wildFemaleA + (info.Symbol - _femaleA)
-	case info.Symbol >= _wildFemaleA && info.Symbol <= _wildFemaleC:
-		baseSymbol = _femaleA + (info.Symbol - _wildFemaleA)
-		femaleWildSymbol = info.Symbol
-	default:
-		return info.LineCount
-	}
-
-	total := int64(1)
-	for c := int64(0); c < info.SymbolCount; c++ {
-		var primary, femaleWild, wild int64
-		for r := int64(0); r < _rowCount; r++ {
-			val := info.WinGrid[r][c]
-			if val == _blank || val == _blocked {
-				continue
-			}
-			if val == baseSymbol {
-				primary++
-				continue
-			}
-			if val == femaleWildSymbol {
-				femaleWild++
-				continue
-			}
-			if val == _wild {
-				wild++
-			}
-		}
-
-		var columnCount int64
-		if info.Symbol >= _wildFemaleA && info.Symbol <= _wildFemaleC {
-			if femaleWild > 0 {
-				columnCount = femaleWild
-			} else if primary > 0 {
-				columnCount = primary
-			} else if wild > 0 {
-				columnCount = 1
-			} else {
-				return 0
-			}
-		} else {
-			if primary > 0 {
-				columnCount = primary
-			} else if femaleWild > 0 {
-				columnCount = femaleWild
-			} else if wild > 0 {
-				columnCount = 1
-			} else {
-				return 0
-			}
-		}
-		if columnCount == 0 {
-			return 0
-		}
-		total *= columnCount
-	}
-	return total
-}
-*/
