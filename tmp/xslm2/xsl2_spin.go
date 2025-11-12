@@ -107,30 +107,50 @@ func (s *spin) findWinInfos() bool {
 	return len(wins) > 0
 }
 
+/*
+1.“女性百搭居首时，非第一列甚至连续百搭之后的那一列都会中奖”
+	当中奖线路的第一列是女性百搭时，只要后面各列（第二列起）在同一列上有可匹配的符号（包括普通女性符号、对应的女性百搭以及通用百搭），这条线路就算成立。
+	不像普通符号一定要第一列是本体才能继续，相当于女性百搭在起始列也能充当“起点”，后续列照样可以连成中奖。
+2.“女性百搭不能相互替换，但是百搭可以替换女性百搭，因此普通中奖和女性百搭中奖需要分开考虑”
+	女性百搭（10/11/12）只能各自对应自己的女性符号（7/8/9），它们之间不能互相充当对方。例如 10 不能等价于 11。
+	通用百搭（wild，例如 13）既能替换普通女性符号，也能替换女性百搭的位置。
+	因此在寻找中奖时需要区分“纯普通符号的中奖”和“女性百搭参与的中奖”：
+	普通中奖线路只依赖普通符号和通用百搭；
+	女性百搭中奖线路除了通用百搭外，还会涉及特定的女性百搭（例如 10 对应 7），要单独处理。
+*/
+
 func (s *spin) findNormalWin(sym int64) (*winInfo, bool) {
 	lineCnt := int64(1)
 	var wg int64Grid
-	exist := false
+	foundBase := false
 	for c := int64(0); c < _colCount; c++ {
 		cnt := int64(0)
 		for r := int64(0); r < _rowCount; r++ {
 			curr := s.symbolGrid[r][c]
 			if curr == sym || curr == _wild || isMatchingFemaleWild(sym, curr) {
 				if curr == sym {
-					exist = true
+					foundBase = true
 				}
 				cnt++
 				wg[r][c] = curr
 			}
 		}
+
 		if cnt == 0 {
-			if c >= _minMatchCount && exist {
+			if c >= _minMatchCount && foundBase {
 				return &winInfo{Symbol: sym, SymbolCount: c, LineCount: lineCnt, WinGrid: wg}, true
 			}
 			break
 		}
+
+		// 女性百搭可作为首列起点，此时 foundBase 会在后续列被设置
+		if c == 0 && !foundBase && cnt > 0 {
+			foundBase = true
+		}
+
 		lineCnt *= cnt
-		if c == _colCount-1 && exist {
+
+		if c == _colCount-1 && foundBase {
 			return &winInfo{Symbol: sym, SymbolCount: _colCount, LineCount: lineCnt, WinGrid: wg}, true
 		}
 	}
