@@ -3,7 +3,6 @@ package xslm2
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"egame-grpc/global"
 	"egame-grpc/global/client"
@@ -142,6 +141,7 @@ func (s *betOrderService) buildResultMap() map[string]any {
 		"femaleCountsForFree":     s.spin.femaleCountsForFree,
 		"nextFemaleCountsForFree": s.spin.nextFemaleCountsForFree,
 		"enableFullElimination":   s.spin.enableFullElimination,
+		"treasureCount":           s.spin.treasureCount,
 		"spinBonusAmount":         s.client.ClientOfFreeGame.GetGeneralWinTotal(),
 		"freeBonusAmount":         s.client.ClientOfFreeGame.GetFreeTotalMoney(),
 		"roundBonus":              s.client.ClientOfFreeGame.RoundBonus,
@@ -154,61 +154,74 @@ func (s *betOrderService) buildResultMap() map[string]any {
 
 // printResultLog 调试日志输出
 func (s *betOrderService) printResultLog(ret map[string]any) {
-	WGrid := func(grid *int64Grid) string {
-		if grid == nil {
-			return ""
-		}
-		b := strings.Builder{}
-		b.WriteString("\n")
-		for r := int64(0); r < _rowCount; r++ {
-			for c := int64(0); c < _colCount; c++ {
-				sym := grid[r][c]
-				b.WriteString(fmt.Sprintf("%3d", sym))
-				if c < _colCount-1 {
-					b.WriteString("| ")
-				}
-			}
-			b.WriteString("\n")
-		}
-		return b.String()
-	}
-
-	// 提取累加值
-	stepBonus := s.bonusAmount.Round(2).InexactFloat64()
-	spinBonusTotal := s.client.ClientOfFreeGame.GetGeneralWinTotal()
-	freeBonusTotal := s.client.ClientOfFreeGame.GetFreeTotalMoney()
-	roundBonusTotal := s.client.ClientOfFreeGame.RoundBonus
+	//WGrid := func(grid *int64Grid) string {
+	//	if grid == nil {
+	//		return ""
+	//	}
+	//	b := strings.Builder{}
+	//	b.WriteString("\n")
+	//	for r := int64(0); r < _rowCount; r++ {
+	//		for c := int64(0); c < _colCount; c++ {
+	//			sym := grid[r][c]
+	//			b.WriteString(fmt.Sprintf("%3d", sym))
+	//			if c < _colCount-1 {
+	//				b.WriteString("| ")
+	//			}
+	//		}
+	//		b.WriteString("\n")
+	//	}
+	//	return b.String()
+	//}
 
 	global.GVA_LOG.Sugar().Debugf(
-		"\n"+
-			"========== Step结算信息 ==========\n"+
-			"本步奖金: %.2f\n"+
-			"累计总奖金(spinBonusAmount): %.2f\n"+
-			"累计免费奖金(freeBonusAmount): %.2f\n"+
-			"累计回合奖金(roundBonus): %.2f\n"+
-			"是否回合结束: %v\n"+
-			"是否免费回合: %v\n"+
-			"========== 网格信息 ==========\n"+
-			"srollers=%v\n"+
-			"ABC=%v\n"+
-			"nextABC=%v\n"+
-			"symbol=%v\n"+
-			"winGrid=%v\n"+
-			"nextSymbol=%v\n"+
-			"========== 完整结果 ==========\n"+
-			"ret=%v\n",
-		stepBonus,
-		spinBonusTotal,
-		freeBonusTotal,
-		roundBonusTotal,
+		"\nisRoundOver=%v, IsFreeRound=%v, freeCountLeft=%d, isFullEls=%v, hasFemaleWin=%v, hasWildFemaleWin=%v, ABC=%v, nextABC=%v, newFree=%d, treasure=%d"+
+			"\nsymbolGrid:%v\nwinGrid:%v\nwinResults:%v\nnextGrid:%v\n",
 		s.spin.isRoundOver,
 		s.isFreeRound,
-		ToJSON(s.spin.rollers),
-		ToJSON(s.spin.femaleCountsForFree),
-		ToJSON(s.spin.nextFemaleCountsForFree),
-		WGrid(s.spin.symbolGrid),
-		WGrid(s.spin.winGrid),
-		WGrid(s.spin.nextSymbolGrid),
-		ToJSON(ret),
+		s.client.ClientOfFreeGame.GetFreeNum(),
+		s.spin.enableFullElimination,
+		s.spin.hasFemaleWin,
+		s.spin.hasFemaleWildWin,
+		s.spin.femaleCountsForFree,
+		s.spin.nextFemaleCountsForFree,
+		s.spin.newFreeRoundCount,
+		s.spin.treasureCount,
+		s.spin.symbolGrid,
+		s.spin.winGrid,
+		ToJSON(s.spin.winResults),
+		s.spin.nextSymbolGrid,
 	)
+
+	//global.GVA_LOG.Sugar().Debugf(
+	//	"\n"+
+	//		"========== Step结算信息 ==========\n"+
+	//		"本步奖金: %.2f\n"+
+	//		"累计总奖金(spinBonusAmount): %.2f\n"+
+	//		"累计免费奖金(freeBonusAmount): %.2f\n"+
+	//		"累计回合奖金(roundBonus): %.2f\n"+
+	//		"是否回合结束: %v\n"+
+	//		"是否免费回合: %v\n"+
+	//		"========== 网格信息 ==========\n"+
+	//		"srollers=%v\n"+
+	//		"ABC=%v\n"+
+	//		"nextABC=%v\n"+
+	//		"symbol=%v\n"+
+	//		"winGrid=%v\n"+
+	//		"nextSymbol=%v\n"+
+	//		"========== 完整结果 ==========\n"+
+	//		"ret=%v\n",
+	//	stepBonus,
+	//	spinBonusTotal,
+	//	freeBonusTotal,
+	//	roundBonusTotal,
+	//	s.spin.isRoundOver,
+	//	s.isFreeRound,
+	//	ToJSON(s.spin.rollers),
+	//	ToJSON(s.spin.femaleCountsForFree),
+	//	ToJSON(s.spin.nextFemaleCountsForFree),
+	//	WGrid(s.spin.symbolGrid),
+	//	WGrid(s.spin.winGrid),
+	//	WGrid(s.spin.nextSymbolGrid),
+	//	ToJSON(ret),
+	//)
 }

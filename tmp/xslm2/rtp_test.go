@@ -2,7 +2,6 @@ package xslm2
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"strings"
 	"testing"
@@ -21,40 +20,58 @@ import (
 )
 
 const (
-	testRounds       = 10000000 // 测试局数
-	progressInterval = 1000000  // 进度输出间隔（调试用，每1000局输出一次）
-	debugFileOpen    = false    // 调试文件开关（true=输出详细信息到文件）
+	testRounds       = 10000   // 测试局数
+	progressInterval = 1000000 // 进度输出间隔（调试用，每1000局输出一次）
+	debugFileOpen    = true    // 调试文件开关（true=输出详细信息到文件）
+	freeModeLogOnly  = true    // 只打印免费模式日志开关（true=只打印免费模式日志，false=打印所有日志）
 )
 
 func init() {
 	cfg := zap.NewDevelopmentConfig()
 	cfg.Level = zap.NewAtomicLevelAt(zapcore.ErrorLevel)
+	cfg.DisableStacktrace = true                               // 禁用堆栈跟踪，减少输出信息
+	cfg.EncoderConfig.EncodeCaller = zapcore.FullCallerEncoder // 使用完整调用者信息
 	logger, _ := cfg.Build()
 	global.GVA_LOG = logger
 }
 
+// getFemaleStateKey 根据女性符号收集数量计算状态key（000-111）
+// 返回 0-7 的索引，对应状态：000,001,010,011,100,101,110,111
+// 规则：A>=10为1，B>=10为1，C>=10为1，状态 = A*4 + B*2 + C*1
+func getFemaleStateKey(counts [3]int64) int {
+	state := 0
+	if counts[0] >= _femaleSymbolCountForFullElimination {
+		state += 4 // A位
+	}
+	if counts[1] >= _femaleSymbolCountForFullElimination {
+		state += 2 // B位
+	}
+	if counts[2] >= _femaleSymbolCountForFullElimination {
+		state += 1 // C位
+	}
+	return state
+}
+
 type rtpStats struct {
-	rounds           int64     // 游戏局数
-	totalWin         float64   // 总奖金
-	winRounds        int64     // 中奖局数
-	femaleSymbolWin  float64   // 女性符号中奖贡献
-	femaleWildWin    float64   // 女性百搭中奖贡献
-	cascadeSteps     int64     // 总连消步数
-	maxCascadeSteps  int       // 单局最大连消步数
-	cascadeDistrib   [20]int64 // 连消步数分布
-	treasureCount    [6]int64  // 夺宝统计 [1..5]
-	freeTriggered    int64     // 基础模式触发免费次数
-	totalFreeGiven   int64     // 基础模式获得的免费总次数
-	fullElimination  int64     // 免费模式全屏消除次数
-	femaleCollect    [3]int64  // 免费模式女性收集总量
-	treasureInFree   int64     // 免费模式中出现夺宝的次数
-	extraFreeRounds  int64     // 免费模式新增的额外次数
-	freeWithCascade  int64     // 免费模式有连消的局数
-	freeNoCascade    int64     // 免费模式无连消的局数
-	maxFreeStreak    int64     // 免费模式单次触发的最长连续局数
-	multiplier20Plus int64     // 20倍及以上中奖次数
-	multiplier30Plus int64     // 30倍及以上中奖次数
-	multiplier50Plus int64     // 50倍及以上中奖次数
+	rounds               int64     // 游戏局数
+	totalWin             float64   // 总奖金
+	winRounds            int64     // 中奖局数
+	femaleSymbolWin      float64   // 女性符号中奖贡献
+	femaleWildWin        float64   // 女性百搭中奖贡献
+	cascadeSteps         int64     // 总连消步数
+	maxCascadeSteps      int       // 单局最大连消步数
+	cascadeDistrib       [20]int64 // 连消步数分布
+	treasureCount        [6]int64  // 夺宝统计 [1..5]
+	freeTriggered        int64     // 基础模式触发免费次数
+	totalFreeGiven       int64     // 基础模式获得的免费总次数
+	fullElimination      int64     // 免费模式全屏消除次数
+	femaleCollect        [3]int64  // 免费模式女性收集总量
+	treasureInFree       int64     // 免费模式中出现夺宝的次数
+	extraFreeRounds      int64     // 免费模式新增的额外次数
+	freeWithCascade      int64     // 免费模式有连消的局数
+	freeNoCascade        int64     // 免费模式无连消的局数
+	maxFreeStreak        int64     // 免费模式单次触发的最长连续局数
+	freeFemaleStateCount [8]int64  // 免费模式女性符号状态统计 [000,001,010,011,100,101,110,111]
 }
 
 func TestRtp(t *testing.T) {
@@ -72,10 +89,11 @@ func TestRtp(t *testing.T) {
 	sharedClient := svc.client
 	sharedScene := svc.scene
 	tmpInterval := int64(min(progressInterval, testRounds))
-	baseGameCount, freeGameCount := 0, 0
+	baseGameCount := 0
 	triggeringBaseRound := 0
 	inFreeSession := false
 	currentFreePeak := int64(0)
+	currentFreeRoundIdx := 0
 
 	initRound := func(isNewRound bool) {
 		if isNewRound {
@@ -99,6 +117,7 @@ func TestRtp(t *testing.T) {
 				if currentFreePeak > free.maxFreeStreak {
 					free.maxFreeStreak = currentFreePeak
 				}
+				currentFreeRoundIdx = 0
 			}
 		}
 
@@ -108,17 +127,24 @@ func TestRtp(t *testing.T) {
 		var nextGrid *int64Grid
 		var rollers *[_colCount]SymbolRoller
 
+		roundDisplayIdx := 0
 		for {
 			isFirst := cascadeCount == 0
 			if isFirst {
 				if isFree {
 					svc.spin.roundStartFemaleCounts = svc.scene.FemaleCountsForFree
+					// 首次step：从scene恢复女性符号计数
+					svc.spin.femaleCountsForFree = svc.scene.FemaleCountsForFree
+					svc.spin.nextFemaleCountsForFree = svc.scene.FemaleCountsForFree
+					// 统计免费模式女性符号状态（000-111）- 使用本局开始时的状态（使用spin的数据，因为已经恢复了）
+					state := getFemaleStateKey(svc.spin.femaleCountsForFree)
+					free.freeFemaleStateCount[state]++
 				} else {
 					svc.spin.roundStartFemaleCounts = [3]int64{}
+					// 首次step：从scene恢复女性符号计数
+					svc.spin.femaleCountsForFree = svc.scene.FemaleCountsForFree
+					svc.spin.nextFemaleCountsForFree = svc.scene.FemaleCountsForFree
 				}
-				// 首次step：从scene恢复女性符号计数
-				svc.spin.femaleCountsForFree = svc.scene.FemaleCountsForFree
-				svc.spin.nextFemaleCountsForFree = svc.scene.FemaleCountsForFree
 			} else {
 				// 后续step：使用上次更新后的女性符号计数
 				svc.spin.femaleCountsForFree = svc.spin.nextFemaleCountsForFree
@@ -135,6 +161,16 @@ func TestRtp(t *testing.T) {
 			rollers = svc.scene.SymbolRollers
 
 			cascadeCount++
+			if cascadeCount == 1 {
+				if isFree {
+					currentFreeRoundIdx++
+					roundDisplayIdx = currentFreeRoundIdx
+				} else {
+					baseGameCount++
+					roundDisplayIdx = baseGameCount
+				}
+			}
+
 			stepWin := float64(svc.spin.stepMultiplier)
 			roundWin += stepWin
 
@@ -149,26 +185,26 @@ func TestRtp(t *testing.T) {
 			}
 
 			if debugFileOpen && fileBuf != nil {
-				if cascadeCount == 1 {
-					if isFree {
-						freeGameCount++
-					} else {
-						baseGameCount++
+				// 如果开启了只打印免费模式日志，且当前不是免费模式，则跳过
+				if freeModeLogOnly && !isFree {
+					// 跳过基础模式的日志
+				} else {
+					if roundDisplayIdx == 0 {
+						if isFree {
+							roundDisplayIdx = currentFreeRoundIdx
+						} else {
+							roundDisplayIdx = baseGameCount
+						}
 					}
+					triggerRound := 0
+					if isFree {
+						triggerRound = triggeringBaseRound
+					}
+					writeSpinDetail(fileBuf, svc, roundDisplayIdx, cascadeCount, isFree, triggerRound, stepStartFemaleCounts, stepWin, roundWin)
 				}
-				gameNum := baseGameCount
-				triggerRound := 0
-				if isFree {
-					gameNum = freeGameCount
-					triggerRound = triggeringBaseRound
-				}
-				writeSpinDetail(fileBuf, svc, gameNum, cascadeCount, isFree, triggerRound, stepStartFemaleCounts)
 			}
 
 			stats.totalWin += stepWin
-			if isFree && svc.spin.treasureCount > 0 {
-				free.extraFreeRounds += svc.spin.newFreeRoundCount
-			}
 
 			for _, wr := range svc.spin.winResults {
 				gain := float64(wr.TotalMultiplier)
@@ -192,17 +228,9 @@ func TestRtp(t *testing.T) {
 					stats.cascadeDistrib[19]++
 				}
 
-				// 统计倍数概率（基于回合总倍数）
-				// 注意：roundWin 是 float64，需要四舍五入转换为 int64
-				totalMultiplier := int64(math.Round(roundWin))
-				if totalMultiplier >= 50 {
-					stats.multiplier50Plus++
-				}
-				if totalMultiplier >= 30 {
-					stats.multiplier30Plus++
-				}
-				if totalMultiplier >= 20 {
-					stats.multiplier20Plus++
+				// 免费模式下，回合结束时统计新增的免费次数
+				if isFree && svc.spin.newFreeRoundCount > 0 {
+					free.extraFreeRounds += svc.spin.newFreeRoundCount
 				}
 
 				// 注意：winRounds 在回合结束后的 if isFree/else 块中统计，这里不重复统计
@@ -228,6 +256,7 @@ func TestRtp(t *testing.T) {
 				triggeringBaseRound = 0
 				inFreeSession = false
 				currentFreePeak = 0
+				currentFreeRoundIdx = 0
 			}
 		} else {
 			base.rounds++
@@ -307,11 +336,6 @@ func printFinalStats(buf *strings.Builder, base, free *rtpStats, totalBet float6
 		w("基础模式中奖率: %.2f%%\n", float64(base.winRounds)*100/float64(base.rounds))
 	}
 	w("基础模式中奖局数: %d\n", base.winRounds)
-	if base.rounds > 0 {
-		w("基础模式20倍及以上概率: %.4f%% (%d次)\n", float64(base.multiplier20Plus)*100/float64(base.rounds), base.multiplier20Plus)
-		w("基础模式30倍及以上概率: %.4f%% (%d次)\n", float64(base.multiplier30Plus)*100/float64(base.rounds), base.multiplier30Plus)
-		w("基础模式50倍及以上概率: %.4f%% (%d次)\n", float64(base.multiplier50Plus)*100/float64(base.rounds), base.multiplier50Plus)
-	}
 
 	w("\n【免费模式统计】\n")
 	w("免费模式总游戏局数: %d\n", free.rounds)
@@ -324,12 +348,28 @@ func printFinalStats(buf *strings.Builder, base, free *rtpStats, totalBet float6
 	w("免费模式中奖局数: %d\n", free.winRounds)
 	if free.rounds > 0 {
 		w("免费模式中奖率: %.2f%%\n", float64(free.winRounds)*100/float64(free.rounds))
-		w("免费模式20倍及以上概率: %.4f%% (%d次)\n", float64(free.multiplier20Plus)*100/float64(free.rounds), free.multiplier20Plus)
-		w("免费模式30倍及以上概率: %.4f%% (%d次)\n", float64(free.multiplier30Plus)*100/float64(free.rounds), free.multiplier30Plus)
-		w("免费模式50倍及以上概率: %.4f%% (%d次)\n", float64(free.multiplier50Plus)*100/float64(free.rounds), free.multiplier50Plus)
+		w("\n【免费模式女性符号状态统计】\n")
+		stateNames := []string{"000", "001", "010", "011", "100", "101", "110", "111"}
+		totalStateCount := int64(0)
+		for i := 0; i < 8; i++ {
+			totalStateCount += free.freeFemaleStateCount[i]
+		}
+		w("  总统计次数: %d (应该等于免费模式总游戏局数: %d)\n", totalStateCount, free.rounds)
+		for i := 0; i < 8; i++ {
+			count := free.freeFemaleStateCount[i]
+			percentage := float64(count) * 100 / float64(free.rounds)
+			w("  状态 %s: %.4f%% (%d次)\n", stateNames[i], percentage, count)
+		}
 	}
 
 	totalWin := base.totalWin + free.totalWin
+	w("\n【免费触发效率】\n")
+	w("  实际免费总局数: %d | 触发次数: %d\n", free.rounds, base.freeTriggered)
+	if base.freeTriggered > 0 {
+		w("  平均每次触发获得免费次数: %.2f\n", float64(free.rounds)/float64(base.freeTriggered))
+	} else {
+		w("  平均每次触发获得免费次数: 0 (未触发)\n")
+	}
 	w("\n【总计】\n")
 	w("  总投注(倍数): %.2f (仅基础模式投注，免费模式不投注)\n", totalBet)
 	w("  总奖金: %.2f (基础模式奖金 + 免费模式奖金)\n", totalWin)
@@ -396,9 +436,10 @@ func (s *betOrderService) updateScene(isFree bool) {
 // 保存每个回合的初始滚轴状态（用于显示）
 var roundInitialRollers = make(map[int][_colCount]SymbolRoller)
 
-func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum, step int, isFree bool, triggeringBaseRound int, stepStartFemaleCounts [3]int64) {
+func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum, step int, isFree bool, triggeringBaseRound int, stepStartFemaleCounts [3]int64, stepWin float64, roundWin float64) {
 	if step == 1 {
-		writeRoundHeader(buf, svc, gameNum, isFree, triggeringBaseRound)
+		initialTreasure := getTreasureCount(svc.spin.symbolGrid)
+		writeRoundHeader(buf, svc, gameNum, isFree, triggeringBaseRound, initialTreasure)
 	}
 
 	buf.WriteString(fmt.Sprintf("Step%d 初始盘面:\n", step))
@@ -415,7 +456,7 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum, step i
 		printGrid(buf, svc.spin.nextSymbolGrid, nil)
 	}
 
-	writeStepSummary(buf, svc, step, isFree, stepStartFemaleCounts)
+	writeStepSummary(buf, svc, step, isFree, stepStartFemaleCounts, stepWin, roundWin)
 
 	buf.WriteString("\n")
 }
@@ -465,7 +506,7 @@ func getInitialStart(symbolGrid *int64Grid, roller SymbolRoller, col int) int {
 	return roller.Start
 }
 
-func writeRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggeringBaseRound int) {
+func writeRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggeringBaseRound int, initialTreasure int64) {
 	if isFree {
 		buf.WriteString(fmt.Sprintf("\n=============[基础模式] 第%d局 - 免费第%d局 =============\n", triggeringBaseRound, gameNum))
 	} else {
@@ -493,16 +534,34 @@ func writeRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, i
 	}
 	buf.WriteString("\n")
 	if isFree {
-		buf.WriteString(fmt.Sprintf("女性收集状态: A=%d | B=%d | C=%d\n",
-			svc.spin.femaleCountsForFree[0], svc.spin.femaleCountsForFree[1], svc.spin.femaleCountsForFree[2]))
+		buf.WriteString(fmt.Sprintf("女性收集状态: %v\n", svc.spin.femaleCountsForFree))
 		if svc.spin.enableFullElimination {
 			buf.WriteString("🎯 全屏消除模式已激活（三种女性符号均>=10）\n")
 		}
-		buf.WriteString(fmt.Sprintf("剩余免费次数: %d\n", svc.client.ClientOfFreeGame.GetFreeNum()))
+		// 先打印初始盘面夺宝数量，再打印免费次数信息（本轮总次数=已玩+剩余）
+		buf.WriteString(fmt.Sprintf("初始盘面夺宝数量: %d\n", initialTreasure))
+		remain := sameAsZeroIfNeg(int64(svc.client.ClientOfFreeGame.GetFreeNum()))
+		totalThisRound := sameAsZeroIfNeg(int64(svc.client.ClientOfFreeGame.GetFreeTimes())) + remain
+		if totalThisRound == 0 && remain > 0 {
+			totalThisRound = remain
+		}
+		buf.WriteString(fmt.Sprintf("本轮免费总次数: %d\n", totalThisRound))
+	}
+	// 基础模式：在回合头打印初始盘面夺宝数量
+	if !isFree {
+		buf.WriteString(fmt.Sprintf("初始盘面夺宝数量: %d\n", initialTreasure))
 	}
 }
 
-func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFree bool, stepStartFemaleCounts [3]int64) {
+// sameAsZeroIfNeg ensures non-negative display values
+func sameAsZeroIfNeg(v int64) int64 {
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
+func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFree bool, stepStartFemaleCounts [3]int64, stepWin float64, roundWin float64) {
 	buf.WriteString(fmt.Sprintf("Step%d 中奖详情:\n", step))
 	if len(svc.spin.winResults) == 0 {
 		buf.WriteString("\t未中奖\n")
@@ -513,12 +572,11 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 	actualTreasureCount := getTreasureCount(svc.spin.symbolGrid)
 
 	// 格式化输出，便于搜索：添加特殊标记用于grep搜索
-	triggerInfo := fmt.Sprintf("\t触发: 女性中奖=%v, 有百搭=%v, 全屏=%v, 有夺宝=%v, 夺宝数量=%d",
+	triggerInfo := fmt.Sprintf("\t触发: 女性中奖=%v, 有百搭=%v, 全屏=%v, 有夺宝=%v",
 		svc.spin.hasFemaleWin,
 		hasWildSymbol(svc.spin.symbolGrid),
 		svc.spin.enableFullElimination,
 		actualTreasureCount > 0,
-		actualTreasureCount,
 	)
 
 	// 如果是目标组合（女性中奖=true, 有百搭=true, 夺宝>0），添加特殊标记
@@ -542,14 +600,16 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 		final[2] - startRound[2],
 	}
 
-	buf.WriteString(fmt.Sprintf("\t当前免费次数=%d | 新增免费=%d | 女性收集: 起始=%v → 结束=%v (本步=%v, 回合累计=%v)\n",
-		svc.client.ClientOfFreeGame.GetFreeNum(),
-		svc.spin.newFreeRoundCount,
+	buf.WriteString(fmt.Sprintf("\t女性收集: 起始=%v → 结束=%v (本步=%v, 回合累计=%v)\n",
 		startRound,
 		final,
 		stepDelta,
 		roundDelta,
 	))
+	//// 免费模式：打印本回合截至当前step累计新增的夺宝数量
+	//if isFree {
+	//	buf.WriteString(fmt.Sprintf("\t本回合新增夺宝累计=%d\n", svc.spin.treasureGainedThisRound))
+	//}
 
 	if !svc.spin.isRoundOver {
 		reason := "无女性中奖"
@@ -563,11 +623,11 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 			}
 		}
 		// 使用实际的夺宝数量
-		buf.WriteString(fmt.Sprintf("\t🔁 连消继续 → Step%d (%s，夺宝=%d)\n\n",
-			step+1,
-			reason,
-			actualTreasureCount,
-		))
+		extra := ""
+		if isFree && svc.spin.treasureGainedThisRound > 0 {
+			extra = fmt.Sprintf(" | 新增夺宝=%d ⭐", svc.spin.treasureGainedThisRound)
+		}
+		buf.WriteString(fmt.Sprintf("\t🔁 连消继续 → Step%d (%s)%s\n\n", step+1, reason, extra))
 	} else {
 		stopReason := "无后续可消除"
 		if svc.spin.hasFemaleWin && svc.spin.enableFullElimination {
@@ -575,7 +635,22 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 		} else if svc.spin.hasFemaleWin {
 			stopReason = "女性连消在本步结束"
 		}
-		buf.WriteString(fmt.Sprintf("\t🛑 连消结束（%s）\n\n", stopReason))
+		newTreasure := int64(0)
+		if isFree {
+			newTreasure = svc.spin.newFreeRoundCount
+		}
+		extra := ""
+		if newTreasure > 0 {
+			extra = fmt.Sprintf(" | 新增夺宝=%d ⭐", newTreasure)
+		}
+		buf.WriteString(fmt.Sprintf("\t🛑 连消结束（%s）%s\n\n", stopReason, extra))
+		// 仅在回合结束时打印免费次数信息
+		if isFree {
+			buf.WriteString(fmt.Sprintf("\t剩余免费次数=%d | 本回合新增=%d\n",
+				svc.client.ClientOfFreeGame.GetFreeNum(),
+				svc.spin.newFreeRoundCount,
+			))
+		}
 	}
 
 	lineBet := svc.betAmount.Div(decimal.NewFromInt(_cnf.BaseBat))
@@ -593,7 +668,8 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 			amount,
 		))
 	}
-	buf.WriteString(fmt.Sprintf("\t累计中奖: %.2f\n", svc.bonusAmount.Round(2).InexactFloat64()))
+	// 使用真实的累计中奖值（roundWin），而不是bonusAmount（bonusAmount只是当前step的奖金）
+	buf.WriteString(fmt.Sprintf("\t累计中奖: %.2f\n", roundWin))
 }
 
 func printGrid(buf *strings.Builder, grid *int64Grid, winGrid *int64Grid) {

@@ -142,6 +142,7 @@ func (s *betOrderService) updateStepResult() {
 	if s.client.IsRoundOver && s.spin.newFreeRoundCount > 0 {
 		if !s.isFreeRound {
 			s.client.ClientOfFreeGame.SetFreeNum(uint64(s.spin.newFreeRoundCount))
+			s.client.ClientOfFreeGame.SetFreeTimes(0) // +++
 			s.client.SetLastMaxFreeNum(uint64(s.spin.newFreeRoundCount))
 		} else {
 			s.client.ClientOfFreeGame.Incr(uint64(s.spin.newFreeRoundCount))

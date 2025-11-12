@@ -3,8 +3,6 @@ package xslm2
 import (
 	mathRand "math/rand"
 
-	"egame-grpc/global"
-
 	jsoniter "github.com/json-iterator/go"
 )
 
@@ -92,12 +90,13 @@ func (c *gameConfig) initSpinSymbol(isFreeRound bool, femaleCounts [3]int64) (in
 				key += "0"
 			}
 		}
-		global.GVA_LOG.Sugar().Debugf("=================> key: %s", key)
+		//global.GVA_LOG.Sugar().Debugf("=================> key: %s", key)
 
 		if freeCfg, ok := c.RollCfg.Free[key]; ok {
 			cfg = freeCfg
 			cfgKey = "free-" + key
 		} else {
+			// 容错/panic？
 			panic("free roll weight sum <= 0 for key: " + key)
 			//cfg = c.RollCfg.Free["000"] // 默认配置
 		}
@@ -163,22 +162,6 @@ func GetReelLength(realIdx, col int) int {
 // 注意：Start 不应该被修改，因为它是初始网格的起始位置
 func (r *SymbolRoller) getFallSymbol() int64 {
 	data := _cnf.RealData[r.Real][r.Col]
-	// 计算下一个位置：Start+rowCount（第一次填充的位置）
-	// 使用一个临时变量来跟踪填充位置，而不是修改 Start
-	// 但是，我们需要知道这是第几次调用 getFallSymbol
-	// 由于无法知道调用次数，我们需要修改 Start 来跟踪填充进度
-	// 但是，Start 应该表示"下一个要填充的位置相对于初始 Start 的偏移"
-	// 实际上，我们应该使用一个计数器，但为了简单，我们修改 Start
-	// 关键是要确保 Start 的语义：Start 表示"当前网格的起始位置"
-
-	// 如果 Start 还没有被修改过（即第一次填充），从 Start+rowCount 开始
-	// 如果 Start 已经被修改过，从 Start 开始（因为 Start 已经更新为下一个位置）
-	// 但是，我们无法区分这两种情况
-
-	// 更好的方法：使用 End 字段来跟踪填充位置
-	// End 表示"当前网格的结束位置"
-	// 填充时，从 End+1 开始取符号
-
 	nextPos := (r.End + 1) % len(data)
 	r.End = nextPos
 	return data[nextPos]
