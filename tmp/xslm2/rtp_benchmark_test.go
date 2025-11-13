@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	_benchmarkRounds           int64 = 1e5
+	_benchmarkRounds           int64 = 1e7
 	_benchmarkProgressInterval int64 = 1e4
 )
 

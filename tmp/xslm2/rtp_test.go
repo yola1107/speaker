@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	testRounds       = 10000   // 测试局数
-	progressInterval = 1000000 // 进度输出间隔（调试用，每1000局输出一次）
-	debugFileOpen    = true    // 调试文件开关（true=输出详细信息到文件）
-	freeModeLogOnly  = true    // 只打印免费模式日志开关（true=只打印免费模式日志，false=打印所有日志）
+	testRounds       = 1e4 // 测试局数
+	progressInterval = 1e5 // 进度输出间隔（调试用，每1000局输出一次）
+	debugFileOpen    = 1   // 调试文件开关（0=关闭，非0=开启详细日志文件）
+	freeModeLogOnly  = 1   // 免费模式日志开关（0=全部输出，非0=仅输出免费模式）
 )
 
 func init() {
@@ -81,7 +81,7 @@ func TestRtp(t *testing.T) {
 	buf := &strings.Builder{}
 
 	var fileBuf *strings.Builder
-	if debugFileOpen {
+	if debugFileOpen > 0 {
 		fileBuf = &strings.Builder{}
 	}
 
@@ -184,9 +184,9 @@ func TestRtp(t *testing.T) {
 				}
 			}
 
-			if debugFileOpen && fileBuf != nil {
+			if debugFileOpen > 0 && fileBuf != nil {
 				// 如果开启了只打印免费模式日志，且当前不是免费模式，则跳过
-				if freeModeLogOnly && !isFree {
+				if freeModeLogOnly > 0 && !isFree {
 					// 跳过基础模式的日志
 				} else {
 					if roundDisplayIdx == 0 {
@@ -291,7 +291,7 @@ func TestRtp(t *testing.T) {
 	fmt.Print(result)
 
 	// 保存调试文件
-	if debugFileOpen && fileBuf != nil {
+	if debugFileOpen > 0 && fileBuf != nil {
 		saveDebugFile(result, fileBuf.String(), start)
 	}
 }
@@ -461,51 +461,6 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum, step i
 	buf.WriteString("\n")
 }
 
-// getInitialStart 根据当前网格反推初始的起始位置
-// 注意：这个方法假设 symbolGrid 是初始网格（未被修改），且是从 start 位置连续取4个符号生成的
-func getInitialStart(symbolGrid *int64Grid, roller SymbolRoller, col int) int {
-	if symbolGrid == nil || _cnf == nil {
-		return roller.Start
-	}
-	data := _cnf.RealData[roller.Real][col]
-	if len(data) == 0 {
-		return roller.Start
-	}
-	// 根据网格的 row 0 反推初始 start
-	// 网格的 row 0 对应 data[(start+0)%len(data)] = data[start]
-	// 网格的 row 1 对应 data[(start+1)%len(data)]
-	// 网格的 row 2 对应 data[(start+2)%len(data)]
-	// 网格的 row 3 对应 data[(start+3)%len(data)]
-
-	// 在 data 中查找所有可能的起始位置
-	var candidates []int
-	for i := 0; i < len(data); i++ {
-		if data[i] == (*symbolGrid)[0][col] {
-			candidates = append(candidates, i)
-		}
-	}
-
-	// 如果有多个候选位置，检查后续3个位置是否匹配
-	for _, i := range candidates {
-		match := true
-		for row := int64(1); row < _rowCount; row++ {
-			expectedSymbol := (*symbolGrid)[row][col]
-			actualSymbol := data[(i+int(row))%len(data)]
-			if expectedSymbol != actualSymbol {
-				match = false
-				break
-			}
-		}
-		if match {
-			return i
-		}
-	}
-
-	// 如果无法反推（网格可能被修改过），返回当前的 Start（可能已经被修改）
-	// 这种情况下，显示的起始位置可能不准确，但至少不会崩溃
-	return roller.Start
-}
-
 func writeRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggeringBaseRound int, initialTreasure int64) {
 	if isFree {
 		buf.WriteString(fmt.Sprintf("\n=============[基础模式] 第%d局 - 免费第%d局 =============\n", triggeringBaseRound, gameNum))
@@ -572,17 +527,18 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 	actualTreasureCount := getTreasureCount(svc.spin.symbolGrid)
 
 	// 格式化输出，便于搜索：添加特殊标记用于grep搜索
-	triggerInfo := fmt.Sprintf("\t触发: 女性中奖=%v, 有百搭=%v, 全屏=%v, 有夺宝=%v",
+	triggerInfo := fmt.Sprintf("\t触发: 女性中奖=%v, 女性百搭参与=%v, 有百搭=%v, 全屏=%v, 有夺宝=%v",
 		svc.spin.hasFemaleWin,
+		svc.spin.hasFemaleWildWin,
 		hasWildSymbol(svc.spin.symbolGrid),
 		svc.spin.enableFullElimination,
 		actualTreasureCount > 0,
 	)
 
-	// 如果是目标组合（女性中奖=true, 有百搭=true, 夺宝>0），添加特殊标记
-	if svc.spin.hasFemaleWin && hasWildSymbol(svc.spin.symbolGrid) && actualTreasureCount > 0 {
-		triggerInfo += " ⭐【目标组合】"
-	}
+	//// 如果是目标组合（女性中奖=true, 有百搭=true, 夺宝>0），添加特殊标记
+	//if svc.spin.hasFemaleWin && hasWildSymbol(svc.spin.symbolGrid) && actualTreasureCount > 0 {
+	//	triggerInfo += " ⭐【目标组合】"
+	//}
 
 	buf.WriteString(triggerInfo + "\n")
 

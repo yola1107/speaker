@@ -108,49 +108,35 @@ func (s *spin) findWinInfos() bool {
 }
 
 /*
-1.“女性百搭居首时，非第一列甚至连续百搭之后的那一列都会中奖”
-	当中奖线路的第一列是女性百搭时，只要后面各列（第二列起）在同一列上有可匹配的符号（包括普通女性符号、对应的女性百搭以及通用百搭），这条线路就算成立。
-	不像普通符号一定要第一列是本体才能继续，相当于女性百搭在起始列也能充当“起点”，后续列照样可以连成中奖。
-2.“女性百搭不能相互替换，但是百搭可以替换女性百搭，因此普通中奖和女性百搭中奖需要分开考虑”
-	女性百搭（10/11/12）只能各自对应自己的女性符号（7/8/9），它们之间不能互相充当对方。例如 10 不能等价于 11。
-	通用百搭（wild，例如 13）既能替换普通女性符号，也能替换女性百搭的位置。
-	因此在寻找中奖时需要区分“纯普通符号的中奖”和“女性百搭参与的中奖”：
-	普通中奖线路只依赖普通符号和通用百搭；
-	女性百搭中奖线路除了通用百搭外，还会涉及特定的女性百搭（例如 10 对应 7），要单独处理。
+3. 特殊规则：
+	算分时任意百搭女性（10、11、12）可以替换任意普通符号（1-9），
+	但百搭女性之间不可互换（例如 10 不能视作 11）。
 */
 
 func (s *spin) findNormalWin(sym int64) (*winInfo, bool) {
 	lineCnt := int64(1)
 	var wg int64Grid
-	foundBase := false
+	exist := false
 	for c := int64(0); c < _colCount; c++ {
 		cnt := int64(0)
 		for r := int64(0); r < _rowCount; r++ {
 			curr := s.symbolGrid[r][c]
 			if curr == sym || curr == _wild || isMatchingFemaleWild(sym, curr) {
 				if curr == sym {
-					foundBase = true
+					exist = true
 				}
 				cnt++
 				wg[r][c] = curr
 			}
 		}
-
 		if cnt == 0 {
-			if c >= _minMatchCount && foundBase {
+			if c >= _minMatchCount && exist {
 				return &winInfo{Symbol: sym, SymbolCount: c, LineCount: lineCnt, WinGrid: wg}, true
 			}
 			break
 		}
-
-		// 女性百搭可作为首列起点，此时 foundBase 会在后续列被设置
-		if c == 0 && !foundBase && cnt > 0 {
-			foundBase = true
-		}
-
 		lineCnt *= cnt
-
-		if c == _colCount-1 && foundBase {
+		if c == _colCount-1 && exist {
 			return &winInfo{Symbol: sym, SymbolCount: _colCount, LineCount: lineCnt, WinGrid: wg}, true
 		}
 	}
@@ -199,14 +185,7 @@ func (s *spin) processStep(isFree bool) {
 		s.collectFemaleSymbols()
 	}
 
-	elimGrid := s.winGrid
-	/*
-		// TODO 可能网格不一样，做补充
-			当前 elimGrid 一直等于 winGrid。
-			原先的设计是：免费且 enableFullElimination && hasFemaleWildWin 时，只消含女性百搭的那些位置；这一段现在缺失，业务行为会变成“总是按普通网格消除”。
-			如果这是暂时的，请补上或确保不会遗漏预期玩法。
-	*/
-	nextGrid := s.executeCascade(elimGrid, isFree)
+	nextGrid := s.executeCascade(isFree)
 	if nextGrid == nil {
 		s.finishRound(isFree)
 		return
@@ -257,7 +236,11 @@ func (s *spin) finishRound(isFree bool) {
 
 func (s *spin) shouldCascade(isFree bool) (bool, bool) {
 	if isFree {
-		return s.hasFemaleWin, s.hasFemaleWin
+		collect := s.hasFemaleWin
+		if s.enableFullElimination && s.hasFemaleWildWin {
+			return true, collect
+		}
+		return s.hasFemaleWin, collect
 	}
 	return s.hasFemaleWin && hasWildSymbol(s.symbolGrid), false
 }
@@ -298,7 +281,15 @@ func (s *spin) finalizeRound(isFree bool) {
 	}
 }
 
-func (s *spin) executeCascade(elimGrid *int64Grid, isFree bool) *int64Grid {
+func (s *spin) executeCascade(isFree bool) *int64Grid {
+	elimGrid := s.winGrid
+	/*
+		// TODO 可能网格不一样，做补充
+			当前 elimGrid 一直等于 winGrid。
+			原先的设计是：免费且 enableFullElimination && hasFemaleWildWin 时，只消含女性百搭的那些位置；这一段现在缺失，业务行为会变成“总是按普通网格消除”。
+			如果这是暂时的，请补上或确保不会遗漏预期玩法。
+	*/
+
 	grid := *s.symbolGrid
 	clearBlockedCells(&grid)
 	hasTreasure := getTreasureCount(&grid) > 0
@@ -335,8 +326,13 @@ type eliminationRule func(symbol int64, hasTreasure bool) bool
 
 func (s *spin) selectEliminationRule(isFree, hasTreasure bool) eliminationRule {
 	if isFree {
+		if s.enableFullElimination {
+			return func(sym int64, _ bool) bool {
+				return sym >= (_blank+1) && sym <= _wildFemaleC && sym != _wild && sym != _treasure
+			}
+		}
 		return func(sym int64, _ bool) bool {
-			return sym != _wild && ((sym >= _femaleA && sym <= _femaleC) || (sym >= _wildFemaleA && sym <= _wildFemaleC))
+			return sym >= _femaleA && sym <= _wildFemaleC
 		}
 	}
 	return func(sym int64, hasTreasure bool) bool {
@@ -411,10 +407,11 @@ func clearBlockedCells(grid *int64Grid) {
 
 func isBlockedCell(r, c int64) bool { return r == 0 && (c == 0 || c == _colCount-1) }
 
-func isMatchingFemaleWild(target, cand int64) bool {
-	return (cand >= _wildFemaleA && cand <= _wildFemaleC) &&
-		(target >= _femaleA && target <= _femaleC) &&
-		(cand-_wildFemaleA) == (target-_femaleA)
+func isMatchingFemaleWild(target, curr int64) bool {
+	if curr < _wildFemaleA || curr > _wildFemaleC {
+		return false
+	}
+	return target >= (_blank+1) && target <= _femaleC
 }
 
 func infoHasFemaleWild(grid int64Grid) bool {
@@ -427,3 +424,112 @@ func infoHasFemaleWild(grid int64Grid) bool {
 	}
 	return false
 }
+
+//
+//func (s *spin) fullEliminationGrid() *int64Grid {
+//	var g int64Grid
+//	has := false
+//	if s.symbolGrid == nil {
+//		return nil
+//	}
+//	for _, result := range s.winResults {
+//		if result == nil || !infoHasFemaleWild(result.WinGrid) {
+//			continue
+//		}
+//		for r := int64(0); r < _rowCount; r++ {
+//			for c := int64(0); c < _colCount; c++ {
+//				if result.WinGrid[r][c] == _blank || isBlockedCell(r, c) {
+//					continue
+//				}
+//				val := s.symbolGrid[r][c]
+//				if val >= (_blank+1) && val <= _wildFemaleC && val != _wild && val != _treasure {
+//					g[r][c] = val
+//					has = true
+//				}
+//			}
+//		}
+//	}
+//	if !has {
+//		return nil
+//	}
+//	return &g
+//}
+//
+//func (s *spin) buildEliminationGrid(isFree bool) *int64Grid {
+//	if s.symbolGrid == nil {
+//		return s.winGrid
+//	}
+//
+//	if !isFree {
+//		hasTreasure := getTreasureCount(s.symbolGrid) > 0
+//		var g int64Grid
+//		has := false
+//		for _, result := range s.winResults {
+//			if result == nil {
+//				continue
+//			}
+//			for r := int64(0); r < _rowCount; r++ {
+//				for c := int64(0); c < _colCount; c++ {
+//					if result.WinGrid[r][c] == _blank || isBlockedCell(r, c) {
+//						continue
+//					}
+//					val := s.symbolGrid[r][c]
+//					if (val >= _femaleA && val <= _femaleC) || (!hasTreasure && val == _wild) {
+//						g[r][c] = val
+//						has = true
+//					}
+//				}
+//			}
+//		}
+//		if has {
+//			return &g
+//		}
+//		return nil
+//	}
+//
+//	if s.enableFullElimination {
+//		return s.fullEliminationGrid()
+//	}
+//
+//	var g int64Grid
+//	has := false
+//
+//	for _, result := range s.winResults {
+//		if result == nil {
+//			continue
+//		}
+//		hasFemale := false
+//		for r := int64(0); r < _rowCount && !hasFemale; r++ {
+//			for c := int64(0); c < _colCount; c++ {
+//				if result.WinGrid[r][c] == _blank || isBlockedCell(r, c) {
+//					continue
+//				}
+//				val := s.symbolGrid[r][c]
+//				if val >= _femaleA && val <= _femaleC {
+//					hasFemale = true
+//					break
+//				}
+//			}
+//		}
+//		if !hasFemale {
+//			continue
+//		}
+//		for r := int64(0); r < _rowCount; r++ {
+//			for c := int64(0); c < _colCount; c++ {
+//				if result.WinGrid[r][c] == _blank || isBlockedCell(r, c) {
+//					continue
+//				}
+//				val := s.symbolGrid[r][c]
+//				if val >= _femaleA && val <= _wildFemaleC {
+//					g[r][c] = val
+//					has = true
+//				}
+//			}
+//		}
+//	}
+//
+//	if has {
+//		return &g
+//	}
+//	return nil
+//}
