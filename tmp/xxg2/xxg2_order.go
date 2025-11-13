@@ -3,7 +3,6 @@ package xxg2
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"egame-grpc/global"
 	"egame-grpc/global/client"
@@ -119,10 +118,10 @@ func (s *betOrderService) doBetOrder() (map[string]any, error) {
 func (s *betOrderService) buildResultMap(currentIsFree bool) map[string]any {
 	ret := map[string]any{
 		"orderSN":            s.gameOrder.OrderSn,
-		"symbolGrid":         reverseGridRows(s.symbolGrid), // symbolGrid行序反转
+		"symbolGrid":         s.symbolGrid,
 		"treasureCount":      s.stepMap.TreatCount,
-		"winGrid":            reverseGridRows(s.winGrid),      // winGrid行序反转
-		"winResults":         reverseWinResults(s.winResults), // WinPositions行序反转
+		"winGrid":            s.winGrid,
+		"winResults":         s.winResults,
 		"baseBet":            s.req.BaseMoney,
 		"multiplier":         s.req.Multiple,
 		"betAmount":          s.betAmount.Round(2).InexactFloat64(),
@@ -131,7 +130,7 @@ func (s *betOrderService) buildResultMap(currentIsFree bool) map[string]any {
 		"freeBonusAmount":    s.client.ClientOfFreeGame.GetFreeTotalMoney(),
 		"roundBonus":         s.client.ClientOfFreeGame.RoundBonus,
 		"currentBalance":     s.gameOrder.CurBalance,
-		"isFree":             currentIsFree, // 使用保存的状态，不受 saveScene 影响
+		"isFree":             currentIsFree,
 		"step":               s.stepMap.ID,
 		"newFreeCount":       s.stepMap.New,
 		"totalFreeCount":     s.client.GetLastMaxFreeNum(),
@@ -140,41 +139,5 @@ func (s *betOrderService) buildResultMap(currentIsFree bool) map[string]any {
 		"stepMultiplier":     s.stepMultiplier,
 		"bat":                reverseBats(s.stepMap.Bat), // X/Y坐标交换
 	}
-
-	if true {
-		s.printResultLog(ret)
-	}
-
 	return ret
-}
-
-// printResultLog 调试日志输出
-func (s *betOrderService) printResultLog(ret map[string]any) {
-	WGrid := func(grid *int64Grid) string {
-		b := strings.Builder{}
-		b.WriteString("\n")
-		for r := int64(0); r < _rowCount; r++ {
-			for c := int64(0); c < _colCount; c++ {
-				sym := grid[r][c]
-				b.WriteString(fmt.Sprintf("%3d", sym))
-				if c < _colCount-1 {
-					b.WriteString("| ")
-				}
-			}
-			b.WriteString("\n")
-		}
-		return b.String()
-	}
-
-	global.GVA_LOG.Sugar().Debugf("\norigin=%v symbol=%v winGrid=%vbat=%v"+
-		"\nret['bat']=%v\nret['symbolGrid']=%v\nret['winResults']=%v\n",
-		WGrid(s.debug.originalGrid),
-		WGrid(s.symbolGrid),
-		WGrid(s.winGrid),
-		ToJSON(s.stepMap.Bat),
-		// ret结算结果
-		ToJSON(ret["bat"]),
-		ToJSON(ret["symbolGrid"]),
-		ToJSON(ret["winResults"]),
-	)
 }

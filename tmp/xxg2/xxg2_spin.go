@@ -103,15 +103,19 @@ func (s *betOrderService) transformToWildBaseMode() []*Bat {
 
 // transformToWildFreeMode 免费模式：蝙蝠持续移动并转换Wind为Wild
 func (s *betOrderService) transformToWildFreeMode() []*Bat {
+	// 加载已有蝙蝠，限制数量
 	allBats := append([]*position{}, s.scene.BatPositions...)
-	remainingSlots := int(_cnf.MaxBatPositions) - len(allBats)
+	if len(allBats) > int(_cnf.MaxBatPositions) {
+		allBats = allBats[:int(_cnf.MaxBatPositions)]
+	}
 
 	// 添加新treasure（如果有空位）
+	remainingSlots := int(_cnf.MaxBatPositions) - len(allBats)
 	if remainingSlots > 0 && len(s.stepMap.TreatPos) > 0 {
 		r := randPool.Get().(*mathRand.Rand)
 		defer randPool.Put(r)
 
-		newTreasures := s.stepMap.TreatPos
+		newTreasures := append([]*position{}, s.stepMap.TreatPos...)
 		if len(newTreasures) > remainingSlots {
 			r.Shuffle(len(newTreasures), func(i, j int) {
 				newTreasures[i], newTreasures[j] = newTreasures[j], newTreasures[i]
@@ -124,21 +128,16 @@ func (s *betOrderService) transformToWildFreeMode() []*Bat {
 	// 移动蝙蝠并检查Wind转换
 	bats := make([]*Bat, 0, len(allBats))
 	visited := make(map[int64]int64, len(allBats))
-
 	for _, oldPos := range allBats {
 		newPos := s.moveBat(oldPos)
 		targetSymbol := s.getCachedSymbol(newPos, visited)
-
 		if isHumanSymbol(targetSymbol) {
-			// 降落到人物符号：转换为wild
 			s.symbolGrid[newPos.Row][newPos.Col] = _wild
 			bats = append(bats, newBat(oldPos, newPos, targetSymbol, _wild))
 		} else {
-			// 降落到非人物符号：不转换，只记录移动信息
 			bats = append(bats, newBat(oldPos, newPos, targetSymbol, targetSymbol))
 		}
 	}
-
 	return bats
 }
 
@@ -208,8 +207,13 @@ func (s *betOrderService) updateBaseStepResult(result *BaseSpinResult) {
 		s.client.ClientOfFreeGame.SetFreeNum(uint64(s.newFreeCount))
 		s.client.SetLastMaxFreeNum(uint64(s.newFreeCount))
 
-		s.scene.BatPositions = s.stepMap.TreatPos
-		s.scene.InitialBatCount = s.stepMap.TreatCount
+		// 限制蝙蝠位置数量不超过 MaxBatPositions
+		batPositions := s.stepMap.TreatPos
+		if len(batPositions) > int(_cnf.MaxBatPositions) {
+			batPositions = batPositions[:int(_cnf.MaxBatPositions)]
+		}
+		s.scene.BatPositions = batPositions
+		s.scene.InitialBatCount = int64(len(batPositions))
 		s.scene.AccumulatedNewBat = 0
 		s.scene.NextStage = _spinTypeFree
 	}
@@ -222,7 +226,6 @@ func (s *betOrderService) updateBaseStepResult(result *BaseSpinResult) {
 func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
 	if s.debug.open {
 		s.debug.initialBatCount = s.scene.InitialBatCount
-		s.debug.accumulatedNewBat = s.scene.AccumulatedNewBat
 	}
 
 	s.client.ClientOfFreeGame.IncrFreeTimes()
@@ -235,20 +238,33 @@ func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
 		s.client.ClientOfFreeGame.IncRoundBonus(bonusFloat)
 	}
 
-	// 保存蝙蝠新位置
+	// 保存蝙蝠新位置（限制数量，保持顺序）
 	batCount := len(s.stepMap.Bat)
-	actualAddedCount := 0
+	prevCount := len(s.scene.BatPositions)
 	if batCount > 0 {
-		newBatPositions := make([]*position, batCount)
-		for i, bat := range s.stepMap.Bat {
-			newBatPositions[i] = &position{Row: bat.TransX, Col: bat.TransY}
-			if bat.TransX == bat.X && bat.TransY == bat.Y && bat.Syb == _treasure {
-				actualAddedCount++
-			}
+		newBatPositions := make([]*position, 0, batCount)
+		for _, bat := range s.stepMap.Bat {
+			newBatPositions = append(newBatPositions, &position{Row: bat.TransX, Col: bat.TransY})
+		}
+		// 限制数量不超过 MaxBatPositions
+		if len(newBatPositions) > int(_cnf.MaxBatPositions) {
+			newBatPositions = newBatPositions[:int(_cnf.MaxBatPositions)]
 		}
 		s.scene.BatPositions = newBatPositions
 	} else {
 		s.scene.BatPositions = nil
+	}
+
+	newCount := len(s.scene.BatPositions)
+	prevCap := prevCount
+	if prevCap > int(_cnf.MaxBatPositions) {
+		prevCap = int(_cnf.MaxBatPositions)
+	}
+	if newCount > prevCap {
+		s.scene.AccumulatedNewBat += int64(newCount - prevCap)
+	}
+	if s.debug.open {
+		s.debug.accumulatedNewBat = s.scene.AccumulatedNewBat
 	}
 
 	// 计算新增免费次数（每个treasure+1次）
@@ -257,7 +273,6 @@ func (s *betOrderService) updateFreeStepResult(result *BaseSpinResult) {
 	if s.stepMap.TreatCount > 0 {
 		s.newFreeCount = s.stepMap.TreatCount
 		s.stepMap.New = s.newFreeCount
-		s.scene.AccumulatedNewBat += int64(actualAddedCount)
 
 		newTotal := s.client.ClientOfFreeGame.GetFreeNum() + uint64(s.newFreeCount)
 		s.stepMap.FreeNum = int64(newTotal)

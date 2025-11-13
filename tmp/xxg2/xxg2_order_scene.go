@@ -26,7 +26,7 @@ func (s *betOrderService) isFreeRound() bool {
 }
 
 func (s *betOrderService) getSceneKey() string {
-	return fmt.Sprintf("%s:scene-%d:%d", global.GVA_CONFIG.System.Site, GameID, s.member.ID)
+	return fmt.Sprintf("%s:scene-%d:%d", global.GVA_CONFIG.System.Site, _gameID, s.member.ID)
 }
 
 // cleanScene 清理场景数据

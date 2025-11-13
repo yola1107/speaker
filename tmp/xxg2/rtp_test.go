@@ -121,6 +121,7 @@ func TestRtp(t *testing.T) {
 				base.freeCount++
 				base.freeTotalInitial += svc.newFreeCount
 				triggeringBaseRound = baseGameCount
+				freeGameCount = 0
 			}
 		}
 
@@ -512,13 +513,13 @@ func newBetService() *betOrderService {
 		req: &request.BetOrderReq{
 			MerchantId: 20020,
 			MemberId:   1,
-			GameId:     GameID,
+			GameId:     _gameID,
 			BaseMoney:  1,
 			Multiple:   1,
 		},
 		merchant: &merchant.Merchant{ID: 20020, Merchant: "Jack23"},
 		member:   &member.Member{ID: 1, MemberName: "Jack23", Balance: 10000000, Currency: "USD"},
-		game:     &game.Game{ID: GameID, GameName: "XXG2"},
+		game:     &game.Game{ID: _gameID, GameName: "XXG2"},
 		client: &client.Client{
 			ClientOfFreeGame: &client.ClientOfFreeGame{},
 			ClientGameCache:  &client.ClientGameCache{},

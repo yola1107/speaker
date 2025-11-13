@@ -60,13 +60,13 @@ func (s *memberLoginService) memberLogin(req *pb.LoginStreamReq, c *client.Clien
 }
 
 func (s *memberLoginService) selectOrderRedis() {
-	index := GameID % int64(len(global.GVA_ORDER_LIST))
+	index := _gameID % int64(len(global.GVA_ORDER_LIST))
 	s.orderRedis = global.GVA_ORDER_LIST[index]
 }
 
 func (s *memberLoginService) doMemberLogin() (string, error) {
 	key := fmt.Sprintf("%v:%v:%v:%v:lastBetRecord",
-		global.GVA_CONFIG.System.Site, s.req.MerchantId, s.req.MemberId, GameID)
+		global.GVA_CONFIG.System.Site, s.req.MerchantId, s.req.MemberId, _gameID)
 
 	orderBytes, err := s.orderRedis.Get(context.Background(), key).Result()
 	if err != nil {

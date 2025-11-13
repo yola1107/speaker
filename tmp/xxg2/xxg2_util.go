@@ -29,6 +29,25 @@ func contains[T comparable](slice []T, val T) bool {
 	return false
 }
 
+// ToJSON json string
+func ToJSON(v any) string {
+	j, err := json.Marshal(v)
+	if err != nil {
+		return err.Error()
+	}
+	return string(j)
+}
+
+// ToJSONPretty converts any value to a pretty-printed JSON string.
+// If encoding fails, it returns the error string.
+func ToJSONPretty(v any) string {
+	j, err := json.MarshalIndent(v, "", "  ") // 使用两个空格缩进
+	if err != nil {
+		return err.Error()
+	}
+	return string(j)
+}
+
 // gridToString 网格转字符串
 func gridToString(grid *int64Grid) string {
 	if grid == nil {
@@ -51,18 +70,6 @@ func gridToString(grid *int64Grid) string {
 	return b.String()
 }
 
-// reverseGridRows 网格行序反转
-func reverseGridRows(grid *int64Grid) int64Grid {
-	if grid == nil {
-		return int64Grid{}
-	}
-	var reversed int64Grid
-	for i := int64(0); i < _rowCount; i++ {
-		reversed[i] = grid[_rowCount-1-i]
-	}
-	return reversed
-}
-
 // reverseBats 交换bat的X/Y坐标(服务器行列→客户端列行)
 func reverseBats(bats []*Bat) []*Bat {
 	if len(bats) == 0 {
@@ -77,25 +84,6 @@ func reverseBats(bats []*Bat) []*Bat {
 			TransY: bat.TransX,
 			Syb:    bat.Syb,
 			Sybn:   bat.Sybn,
-		}
-	}
-	return reversed
-}
-
-// reverseWinResults 反转WinPositions的行序
-func reverseWinResults(winResults []*winResult) []*winResult {
-	if len(winResults) == 0 {
-		return winResults
-	}
-	reversed := make([]*winResult, len(winResults))
-	for i, wr := range winResults {
-		reversed[i] = &winResult{
-			Symbol:             wr.Symbol,
-			SymbolCount:        wr.SymbolCount,
-			LineCount:          wr.LineCount,
-			BaseLineMultiplier: wr.BaseLineMultiplier,
-			TotalMultiplier:    wr.TotalMultiplier,
-			WinPositions:       reverseGridRows(&wr.WinPositions),
 		}
 	}
 	return reversed
@@ -116,23 +104,4 @@ func newBat(from, to *position, oldSym, newSym int64) *Bat {
 		Syb:    oldSym,
 		Sybn:   newSym,
 	}
-}
-
-// ToJSON json string
-func ToJSON(v any) string {
-	j, err := json.Marshal(v)
-	if err != nil {
-		return err.Error()
-	}
-	return string(j)
-}
-
-// ToJSONPretty converts any value to a pretty-printed JSON string.
-// If encoding fails, it returns the error string.
-func ToJSONPretty(v any) string {
-	j, err := json.MarshalIndent(v, "", "  ") // 使用两个空格缩进
-	if err != nil {
-		return err.Error()
-	}
-	return string(j)
 }

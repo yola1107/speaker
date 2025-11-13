@@ -43,13 +43,14 @@
 ## 🔄 baseSpin 流程
 
 ```
-1. initSpinSymbol()    - 生成符号
-2. loadStepData()      - 加载网格，扫描treasure
-3. collectBat()        - Wind转换（基础=射线，免费=移动）
-4. findWinInfos()      - 查找Ways中奖
-5. processWinInfos()   - 计算倍率
-6. updateBonusAmount() - 计算奖金
-7. updateResult()      - 更新状态（基础/免费）
+1. initialize()        - 初始化step数据
+2. initSpinSymbol()    - 生成符号网格
+3. loadStepData()      - 加载网格，扫描treasure
+4. collectBat()        - Wind转换（基础=射线，免费=移动）
+5. findWinInfos()      - 查找Ways中奖
+6. processWinInfos()   - 计算倍率
+7. updateBonusAmount() - 计算奖金
+8. updateBaseStepResult() / updateFreeStepResult() - 更新状态（基础/免费）
 ```
 
 ---
@@ -58,19 +59,18 @@
 
 ```
 xxg2/
-├── xxg2_bet_order.go      - betOrder主逻辑
+├── xxg2_order.go          - betOrder主逻辑
 ├── xxg2_spin.go           - baseSpin核心逻辑
 ├── xxg2_order_step.go     - 中奖计算、订单处理
-├── xxg2_spin_helper.go    - 辅助函数、坐标转换
+├── xxg2_util.go           - 辅助函数、坐标转换
 ├── xxg2_order_scene.go    - 场景数据持久化
-├── xxg2_order_next_step.go - 免费模式初始化
 ├── xxg2_order_mdb.go      - 数据库操作
 ├── xxg2_types.go          - 类型定义
 ├── xxg2_const.go          - 常量定义
-├── xxg2_configs.go        - 配置加载
-├── xxg2_configs_json.go   - JSON配置
-├── xxg2_exported.go       - 对外接口
-├── xxg2_helpers.go        - 蝙蝠数据说明
+├── xxg2_config.go         - 配置加载
+├── xxg2_config_json.go    - JSON配置
+├── xxg2_exported.go        - 对外接口
+├── xxg2_login.go          - 登录接口
 └── rtp_test.go            - RTP测试
 ```
 
@@ -95,9 +95,9 @@ go test -v -run TestRtp
 ```
 
 ### 配置修改
-- 倍率：`xxg2_configs_json.go` 的 `pay_table`
+- 倍率：`xxg2_config_json.go` 的 `pay_table`
 - 免费次数：`free_game_init_times`
-- 蝙蝠数量：`xxg2_configs.go` 的 `MaxBatPositions`
+- 蝙蝠数量：`xxg2_config.go` 的 `MaxBatPositions`
 
 ---
 
@@ -118,20 +118,22 @@ go test -v -run TestRtp
 | 字段 | 转换规则 |
 |------|---------|
 | **bat** | 交换X/Y（服务器X=行/Y=列 → 客户端x=列/y=行） |
-| **winResults.WinPositions** | 行序反转（[0,1,2,3] → [3,2,1,0]） |
 
 ### 不转换的数据
 
-- **symbolGrid**：服务器和客户端格式一致
-- **winGrid**：从symbolGrid派生，格式一致
+- **symbolGrid**：服务器和客户端格式一致（已注释掉行序反转）
+- **winGrid**：从symbolGrid派生，格式一致（已注释掉行序反转）
+- **winResults**：服务器和客户端格式一致（已注释掉行序反转）
 
 ### 转换函数
 
 ```go
-// game/xxg2/xxg2_spin_helper.go
-reverseBats()        - 交换bat的X/Y坐标
-reverseWinResults()  - 反转WinPositions行序
-reverseGridRows()    - 通用网格行序反转
+// game/xxg2/xxg2_util.go
+reverseBats()  - 交换bat的X/Y坐标（服务器行列→客户端列行）
+
+// 已注释的函数（当前未使用）：
+// reverseGridRows()    - 通用网格行序反转
+// reverseWinResults()  - 反转WinPositions行序
 ```
 
 ---

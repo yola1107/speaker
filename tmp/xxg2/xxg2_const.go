@@ -1,7 +1,7 @@
 package xxg2
 
-const GameID = 18891 // 吸血鬼
-// const _gameID = 18891 // 吸血鬼
+const GameID = 18891  // 吸血鬼
+const _gameID = 18891 // 吸血鬼
 
 const (
 	_rowCount int64 = 4 // 行数
