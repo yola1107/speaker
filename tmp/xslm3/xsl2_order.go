@@ -120,8 +120,10 @@ func (s *betOrderService) doBetOrder(nextGrid *int64Grid, rollers *[_colCount]Sy
 
 // buildResultMap 构建下注结果（返回给前端，复用于订单详情）
 func (s *betOrderService) buildResultMap() map[string]any {
-	// 使用 spin 中当前 step 结束时的夺宝总数，避免与场景统计不一致
-	treasureCount := s.spin.stepTreasureCount
+	treasureCount := int64(0)
+	if s.spin.symbolGrid != nil {
+		treasureCount = getTreasureCount(s.spin.symbolGrid)
+	}
 	ret := map[string]any{
 		"orderSN":                 s.gameOrder.OrderSn,
 		"currentBalance":          s.gameOrder.CurBalance,

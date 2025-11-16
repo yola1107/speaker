@@ -17,7 +17,6 @@ type SpinSceneData struct {
 	NextSymbolGrid      *int64Grid                     `json:"nextGrid"`     // 下一step的符号网格（已消除下落填充）
 	SymbolRollers       *[_colCount]SymbolRoller       `json:"rollers"`      // 滚轴状态（保存Start位置）
 	RollerKey           string                         `json:"rollerKey"`    // 滚轴配置key（基础=base / 免费=收集状态）
-	TreasureNum         int64                          `json:"treasureNum"`  // 上一step结束时盘面上夺宝符号总数
 }
 
 // getSceneKey 获取场景数据的Redis key
@@ -111,8 +110,6 @@ func (s *betOrderService) prepareSpinFromScene() (*int64Grid, *[_colCount]Symbol
 	s.spin.femaleCountsForFree = scene.FemaleCountsForFree
 	s.spin.nextFemaleCountsForFree = scene.FemaleCountsForFree
 	s.spin.rollerKey = scene.RollerKey
-	// 从场景恢复上一 step 的夺宝总数，用于计算本 step 的新增量
-	s.spin.prevStepTreasureCount = scene.TreasureNum
 
 	pending := scene.NextSymbolGrid != nil && scene.SymbolRollers != nil
 	if pending {
@@ -136,10 +133,7 @@ func (s *betOrderService) syncSceneFromSpin() {
 
 	scene := s.scene
 	scene.FemaleCountsForFree = s.spin.nextFemaleCountsForFree
-	// 每个 step 结束时，把当前盘面夺宝总数写回场景
-	scene.TreasureNum = s.spin.stepTreasureCount
 	if s.spin.isRoundOver {
-		// 回合结束后，下一局重新开始时，从0开始统计
 		scene.NextSymbolGrid = nil
 		scene.SymbolRollers = nil
 		scene.RollerKey = ""

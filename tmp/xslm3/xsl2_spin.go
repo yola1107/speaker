@@ -26,9 +26,9 @@ type spin struct {
 	isRoundOver           bool
 	newFreeRoundCount     int64
 
-	// 夺宝统计：上一 step 结束时的总数 + 当前 step 结束时的总数
-	prevStepTreasureCount int64
-	stepTreasureCount     int64
+	// 免费局夺宝累计（按步增量累加，避免净差值漏计）
+	freeTreasuresGained int64
+	lastTreasureCount   int64
 }
 
 type cascadeMode int
@@ -58,17 +58,32 @@ func (s *spin) loadStepData(isFree, isFirst bool, nextGrid *int64Grid, rollers *
 		s.initSpin(isFree)
 		s.nextFemaleCountsForFree = s.femaleCountsForFree
 	} else {
+		// 优先使用 nextGrid（向后兼容）
 		s.symbolGrid = nextGrid
 		s.rollers = *rollers
 		// 验证从 BoardSymbol 恢复的网格与 nextGrid 是否一致
 		if !verifyGridConsistencyWithLog(*rollers, nextGrid) {
 			panic("BoardSymbol 恢复的网格与 nextGrid 不一致")
+			//global.GVA_LOG.Sugar().Warnf("网格不一致：从 BoardSymbol 恢复的网格与 nextGrid 不匹配，已更新 BoardSymbol")
+			//// 如果 nextGrid 存在但不一致，使用 nextGrid（向后兼容）
+			//// 但应该更新 BoardSymbol 以保持一致
 			//fallingWinSymbols(&s.rollers, *nextGrid)
 		}
 	}
 
+	var currTreasure int64
 	if isFree {
 		convertFemaleToWild(s.symbolGrid, s.femaleCountsForFree)
+		currTreasure = getTreasureCount(s.symbolGrid)
+		if isFirst {
+			s.freeTreasuresGained = 0
+		} else if diff := currTreasure - s.lastTreasureCount; diff > 0 {
+			s.freeTreasuresGained += diff
+		}
+		s.lastTreasureCount = currTreasure
+	} else {
+		currTreasure = getTreasureCount(s.symbolGrid)
+		s.freeTreasuresGained, s.lastTreasureCount = 0, 0
 	}
 
 	s.enableFullElimination = isFree &&
@@ -228,24 +243,23 @@ func (s *spin) finishRound(isFree bool) {
 
 func (s *spin) finalizeRound(isFree bool) {
 	if !s.isRoundOver {
+		s.newFreeRoundCount = 0
 		return
 	}
 
-	// 统计当前 step 结束时盘面上的夺宝总数
-	var treasureCount int64
+	treasureCount := int64(0)
 	if s.symbolGrid != nil {
 		treasureCount = getTreasureCount(s.symbolGrid)
 	}
-	s.stepTreasureCount = treasureCount
-
-	if !isFree {
-		// 基础模式：根据本局最终盘面上的夺宝数量计算免费次数
-		s.newFreeRoundCount = _cnf.getFreeRoundCount(treasureCount)
+	if isFree {
+		if s.freeTreasuresGained < 0 {
+			s.freeTreasuresGained = 0
+		}
+		s.newFreeRoundCount = s.freeTreasuresGained
+		s.freeTreasuresGained = 0
+		s.lastTreasureCount = 0
 	} else {
-		// 免费模式：新增免费次数由外层根据
-		// delta := stepTreasureCount - prevStepTreasureCount
-		// 来计算，这里不再直接设置 newFreeRoundCount
-		s.newFreeRoundCount = 0
+		s.newFreeRoundCount = _cnf.getFreeRoundCount(treasureCount)
 	}
 }
 

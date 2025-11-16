@@ -1,6 +1,7 @@
 package xslm2
 
 import (
+	"fmt"
 	mathRand "math/rand"
 
 	jsoniter "github.com/json-iterator/go"
@@ -33,10 +34,10 @@ type rollConfig struct {
 // SymbolRoller 符号滚轴（每列一个滚轴）
 type SymbolRoller struct {
 	Real        int              `json:"real"`  // 使用的 RealData 索引
-	Start       int              `json:"start"` // 当前起始位置（会递减）
-	End         int              `json:"end"`   // 当前最后一个符号的位置（用于获取下一个符号）
+	Start       int              `json:"start"` // 当前起始位置
+	Fall        int              `json:"fall"`  // 当前最后一个符号的位置（用于获取下一个符号）
 	Col         int              `json:"col"`   // 列索引 (0-4)
-	BoardSymbol [_rowCount]int64 `json:"board"` // 当前网格的符号（从下往上存储） // 目前无实际作用，调试用
+	BoardSymbol [_rowCount]int64 `json:"board"` // 当前网格的符号（从下往上存储）
 }
 
 func init() {
@@ -134,12 +135,16 @@ func (c *gameConfig) initSpinSymbol(isFreeRound bool, femaleCounts [3]int64) (in
 		}
 
 		start := r.Intn(len(data))
-		end := (start + int(_rowCount) - 1) % len(data)
-		roller := SymbolRoller{Real: realIdx, Start: start, End: end, Col: col}
+		fall := (start + int(_rowCount) - 1) % len(data)
+		roller := SymbolRoller{Real: realIdx, Start: start, Fall: fall, Col: col}
 
+		// 生成符号网格（连续取4个）并设置 BoardSymbol
+		// 注意：BoardSymbol 的坐标系统与 symbolGrid 相反（从下往上）
+		// symbolGrid[0][col] 对应 BoardSymbol[3]，symbolGrid[3][col] 对应 BoardSymbol[0]
 		for row := 0; row < int(_rowCount); row++ {
 			symbol := data[(start+row)%len(data)]
 			symbolGrid[row][col] = symbol
+			// BoardSymbol 从下往上存储，所以需要反转索引
 			roller.BoardSymbol[int(_rowCount)-1-row] = symbol
 		}
 		rollers[col] = roller
@@ -160,15 +165,18 @@ func GetReelLength(realIdx, col int) int {
 }
 
 // getFallSymbol 从滚轴获取下一个符号
-// 逻辑：End 指向当前最后一个符号的位置，下一个符号是 (End + 1) % len
+// 逻辑：Fall 指向当前最后一个符号的位置，下一个符号是 (Fall + 1) % len
 func (r *SymbolRoller) getFallSymbol() int64 {
 	data := _cnf.RealData[r.Real][r.Col]
-	nextPos := (r.End + 1) % len(data)
-	r.End = nextPos
+	if len(data) == 0 {
+		panic(fmt.Sprintf("getFallSymbol: empty data for Real=%d Col=%d", r.Real, r.Col))
+	}
+	nextPos := (r.Fall + 1) % len(data)
+	r.Fall = nextPos
 	return data[nextPos]
 }
 
-// ringSymbol 补充掉下来导致的空缺位置 (废弃，调试用)
+// ringSymbol 补充掉下来导致的空缺位置
 func (r *SymbolRoller) ringSymbol() {
 	var newBoard [_rowCount]int64
 	var zeroIndex []int

@@ -143,30 +143,15 @@ func (s *betOrderService) updateStepResult() {
 	}
 
 	// 处理新增免费次数
-	if s.client.IsRoundOver {
-		if !s.isFreeRound && s.spin.stepTreasureCount > 0 {
-			// 基础模式：根据当前 step 的夺宝总数计算新免费次数
-			newFree := _cnf.getFreeRoundCount(s.spin.stepTreasureCount)
-			if newFree > 0 {
-				s.spin.newFreeRoundCount = newFree
-				s.client.ClientOfFreeGame.SetFreeNum(uint64(newFree))
-				s.client.ClientOfFreeGame.SetFreeTimes(0)
-				s.client.SetLastMaxFreeNum(uint64(newFree))
-			}
-		} else if s.isFreeRound {
-			// 免费模式：按“当前step与上一step的差值”统计新增夺宝 → 新增免费次数
-			delta := s.spin.stepTreasureCount - s.spin.prevStepTreasureCount
-			if delta < 0 {
-				delta = 0
-			}
-			if delta > 0 {
-				s.spin.newFreeRoundCount = delta
-				s.client.ClientOfFreeGame.Incr(uint64(delta))
-				s.client.IncLastMaxFreeNum(uint64(delta))
-			}
+	if s.client.IsRoundOver && s.spin.newFreeRoundCount > 0 {
+		if !s.isFreeRound {
+			s.client.ClientOfFreeGame.SetFreeNum(uint64(s.spin.newFreeRoundCount))
+			s.client.ClientOfFreeGame.SetFreeTimes(0) // +++
+			s.client.SetLastMaxFreeNum(uint64(s.spin.newFreeRoundCount))
+		} else {
+			s.client.ClientOfFreeGame.Incr(uint64(s.spin.newFreeRoundCount))
+			s.client.IncLastMaxFreeNum(uint64(s.spin.newFreeRoundCount))
 		}
-		// 本 step 结束后，将当前总数作为下一 step 的“上一step总数”
-		s.spin.prevStepTreasureCount = s.spin.stepTreasureCount
 	}
 
 	s.currBalance = decimal.NewFromFloat(s.member.Balance).Sub(s.amount).Add(s.bonusAmount)
@@ -207,10 +192,9 @@ func (s *betOrderService) updateGameOrder() bool {
 		FreeOrderSn:       s.freeOrderSN,
 		State:             1,
 		BonusTimes:        0,
-		// HuNum 使用当前 step 结束时的夺宝总数，保证与场景中的统计一致
-		HuNum:     s.spin.stepTreasureCount,
-		FreeNum:   s.spin.newFreeRoundCount,
-		FreeTimes: int64(s.client.ClientOfFreeGame.GetFreeTimes()),
+		HuNum:             getTreasureCount(s.spin.symbolGrid),
+		FreeNum:           s.spin.newFreeRoundCount,
+		FreeTimes:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
 	}
 	if s.isFreeRound {
 		gameOrder.IsFree = 1
