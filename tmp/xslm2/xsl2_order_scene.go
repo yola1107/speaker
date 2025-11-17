@@ -143,7 +143,12 @@ func (s *betOrderService) syncSceneFromSpin() {
 		scene.NextSymbolGrid = nil
 		scene.SymbolRollers = nil
 		scene.RollerKey = ""
+		scene.TreasureNum = 0
 		return
+	}
+
+	if !s.isFreeRound {
+		scene.TreasureNum = 0
 	}
 
 	if s.spin.nextSymbolGrid != nil {

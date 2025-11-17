@@ -232,21 +232,20 @@ func (s *spin) finalizeRound(isFree bool) {
 	}
 
 	// 统计当前 step 结束时盘面上的夺宝总数
-	var treasureCount int64
-	if s.symbolGrid != nil {
-		treasureCount = getTreasureCount(s.symbolGrid)
-	}
+	treasureCount := getTreasureCount(s.symbolGrid)
 	s.stepTreasureCount = treasureCount
 
-	if !isFree {
-		// 基础模式：根据本局最终盘面上的夺宝数量计算免费次数
-		s.newFreeRoundCount = _cnf.getFreeRoundCount(treasureCount)
-	} else {
-		// 免费模式：新增免费次数由外层根据
-		// delta := stepTreasureCount - prevStepTreasureCount
-		// 来计算，这里不再直接设置 newFreeRoundCount
-		s.newFreeRoundCount = 0
-	}
+	/*
+	   if !isFree {
+	   		// 基础模式：根据本局最终盘面上的夺宝数量计算免费次数
+	   		s.newFreeRoundCount = _cnf.getFreeRoundCount(treasureCount)
+	   	} else {
+	   		// 免费模式：新增免费次数由外层根据
+	   		// delta := stepTreasureCount - prevStepTreasureCount
+	   		// 来计算，这里不再直接设置 newFreeRoundCount
+	   		s.newFreeRoundCount = 0
+	   	}
+	*/
 }
 
 func (s *spin) dropSymbols(grid *int64Grid) {

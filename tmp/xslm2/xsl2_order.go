@@ -120,8 +120,6 @@ func (s *betOrderService) doBetOrder(nextGrid *int64Grid, rollers *[_colCount]Sy
 
 // buildResultMap 构建下注结果（返回给前端，复用于订单详情）
 func (s *betOrderService) buildResultMap() map[string]any {
-	// 使用 spin 中当前 step 结束时的夺宝总数，避免与场景统计不一致
-	treasureCount := s.spin.stepTreasureCount
 	ret := map[string]any{
 		"orderSN":                 s.gameOrder.OrderSn,
 		"currentBalance":          s.gameOrder.CurBalance,
@@ -143,7 +141,7 @@ func (s *betOrderService) buildResultMap() map[string]any {
 		"femaleCountsForFree":     s.spin.femaleCountsForFree,
 		"nextFemaleCountsForFree": s.spin.nextFemaleCountsForFree,
 		"enableFullElimination":   s.spin.enableFullElimination,
-		"treasureCount":           treasureCount,
+		"treasureCount":           s.spin.stepTreasureCount,
 		"spinBonusAmount":         s.client.ClientOfFreeGame.GetGeneralWinTotal(),
 		"freeBonusAmount":         s.client.ClientOfFreeGame.GetFreeTotalMoney(),
 		"roundBonus":              s.client.ClientOfFreeGame.RoundBonus,
