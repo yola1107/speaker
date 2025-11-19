@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/shopspring/decimal"
-	"go.uber.org/zap"
-
 	"egame-grpc/gamelogic"
 	"egame-grpc/global"
+
+	"github.com/shopspring/decimal"
+	"go.uber.org/zap"
 )
 
 func (s *betOrderService) getRequestContext() bool {
@@ -104,4 +104,53 @@ func (s *betOrderService) showPostUpdateErrorLog() {
 		zap.String("parentOrderSN", s.parentOrderSN),
 		zap.String("freeOrderSN", s.freeOrderSN),
 	)
+}
+
+// ___________________________________________________________________________
+// getTreasureCount 获取符号网格中的夺宝符号数量
+func getTreasureCount(grid *int64Grid) int64 {
+	if grid == nil {
+		return 0
+	}
+	count := int64(0)
+	for _, row := range grid {
+		for _, symbol := range row {
+			if symbol == _treasure {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func isBlockedCell(r, c int64) bool { return r == 0 && (c == 0 || c == _colCount-1) }
+
+func isMatchingFemaleWild(target, curr int64) bool {
+	if curr < _wildFemaleA || curr > _wildFemaleC {
+		return false
+	}
+	return target >= (_blank+1) && target <= _femaleC
+}
+
+func infoHasFemaleWild(grid int64Grid) bool {
+	return infoHas(grid, func(symbol int64) bool { return symbol >= _wildFemaleA && symbol <= _wildFemaleC })
+}
+
+func infoHasFemale(grid int64Grid) bool {
+	return infoHas(grid, func(symbol int64) bool { return symbol >= _femaleA && symbol <= _femaleC })
+}
+
+func infoHasBaseWild(grid int64Grid) bool {
+	return infoHas(grid, func(symbol int64) bool { return symbol == _wild })
+}
+
+func infoHas(grid int64Grid, match func(symbol int64) bool) bool {
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			if match(grid[r][c]) {
+				return true
+			}
+		}
+	}
+	return false
 }

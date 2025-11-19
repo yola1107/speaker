@@ -34,7 +34,12 @@ func (s *betOrderService) processStepForBase() {
 		s.isRoundOver = true
 		s.treasureCount = s.getTreasureCount()
 		if s.treasureCount >= _triggerTreasureCount {
-			s.newFreeRoundCount = _freeRounds[s.treasureCount-_triggerTreasureCount]
+			//s.newFreeRoundCount = _freeRounds[s.treasureCount-_triggerTreasureCount]
+			idx := int(s.treasureCount - 1)
+			if idx >= len(s.gameConfig.FreeSpinCount) {
+				idx = len(s.gameConfig.FreeSpinCount) - 1
+			}
+			s.newFreeRoundCount = s.gameConfig.FreeSpinCount[idx]
 		}
 	}
 }
@@ -76,17 +81,17 @@ func (s *betOrderService) processStepForFree() {
 func (s *betOrderService) updateFemaleCountForFree(symbol int64) {
 	switch symbol {
 	case _femaleA:
-		if s.nextFemaleCountsForFree[_femaleA-_femaleA] > _femaleSymbolCountForFullElimination {
+		if s.nextFemaleCountsForFree[_femaleA-_femaleA] > _femaleFullCount {
 			return
 		}
 		s.nextFemaleCountsForFree[_femaleA-_femaleA]++
 	case _femaleB:
-		if s.nextFemaleCountsForFree[_femaleB-_femaleA] > _femaleSymbolCountForFullElimination {
+		if s.nextFemaleCountsForFree[_femaleB-_femaleA] > _femaleFullCount {
 			return
 		}
 		s.nextFemaleCountsForFree[_femaleB-_femaleA]++
 	case _femaleC:
-		if s.nextFemaleCountsForFree[_femaleC-_femaleA] > _femaleSymbolCountForFullElimination {
+		if s.nextFemaleCountsForFree[_femaleC-_femaleA] > _femaleFullCount {
 			return
 		}
 		s.nextFemaleCountsForFree[_femaleC-_femaleA]++
@@ -128,7 +133,7 @@ func (s *betOrderService) updateStepData() {
 		return
 	}
 	for _, c := range s.stepMap.FemaleCountsForFree {
-		if c < _femaleSymbolCountForFullElimination {
+		if c < _femaleFullCount {
 			return
 		}
 	}
@@ -165,12 +170,16 @@ func (s *betOrderService) findWinInfos() bool {
 			if symbol >= _femaleA {
 				s.hasFemaleWin = true
 			}
+			if infoHasFemaleWild(info.WinGrid) {
+				s.hasFemaleWildWin = true
+			}
 			winInfos = append(winInfos, info)
 		}
 	}
 	for symbol := _wildFemaleA; symbol < _wild; symbol++ {
 		if info, ok := s.findWildSymbolWinInfo(symbol); ok {
-			s.hasFemaleWin = true
+			//s.hasFemaleWin = true
+			s.hasFemaleWildWin = true
 			winInfos = append(winInfos, info)
 		}
 	}
@@ -186,7 +195,8 @@ func (s *betOrderService) findNormalSymbolWinInfo(symbol int64) (*winInfo, bool)
 		count := int64(0)
 		for r := int64(0); r < _rowCount; r++ {
 			currSymbol := s.symbolGrid[r][c]
-			if currSymbol == symbol || (currSymbol >= _wildFemaleA && currSymbol <= _wild) {
+			//if currSymbol == symbol || (currSymbol >= _wildFemaleA && currSymbol <= _wild) {
+			if currSymbol == symbol || currSymbol == _wild || isMatchingFemaleWild(symbol, currSymbol) {
 				if currSymbol == symbol {
 					exist = true
 				}
@@ -246,7 +256,8 @@ func (s *betOrderService) updateStepResults(partialElimination bool) {
 		if partialElimination && info.Symbol < _femaleA {
 			continue
 		}
-		baseLineMultiplier := _symbolMultiplierGroups[info.Symbol-1][info.SymbolCount-_minMatchCount]
+		//baseLineMultiplier := _symbolMultiplierGroups[info.Symbol-1][info.SymbolCount-_minMatchCount]
+		baseLineMultiplier := s.gameConfig.PayTable[info.Symbol-1][info.SymbolCount-1]
 		totalMultiplier := baseLineMultiplier * info.LineCount
 		result := winResult{
 			Symbol:             info.Symbol,
