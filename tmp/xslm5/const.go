@@ -1,4 +1,4 @@
-package xslm
+package xslm3
 
 const _gameID = 18892
 const _baseMultiplier = 20
@@ -43,10 +43,10 @@ const _presetIDKeyTpl = "%s:slot_xslm_id:%d:%d"
 const _presetID = int64(0)
 
 const (
-	_spinTypeBase    = 1  //普通
-	_spinTypeBaseEli = 11 //普通消除
-	_spinTypeFree    = 21 //免费
-	_spinTypeFreeEli = 22 //免费消除
+	_spinTypeBase    = 1 //普通
+	_spinTypeBaseEli = 2 //普通消除
+	_spinTypeFree    = 3 //免费
+	_spinTypeFreeEli = 4 //免费消除
 )
 
 // 特殊符号

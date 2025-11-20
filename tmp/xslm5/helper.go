@@ -1,4 +1,4 @@
-package xslm
+package xslm3
 
 import (
 	cryptorand "crypto/rand"

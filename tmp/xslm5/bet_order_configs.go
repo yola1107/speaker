@@ -1,4 +1,4 @@
-package xslm
+package xslm3
 
 import (
 	"math/rand/v2"

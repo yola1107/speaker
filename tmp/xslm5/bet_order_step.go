@@ -1,4 +1,4 @@
-package xslm
+package xslm3
 
 import (
 	"errors"
@@ -243,6 +243,16 @@ func (s *betOrderService) initStepForFirstStep() error {
 	s.client.ClientOfFreeGame.ResetRoundBonus()
 	s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
 	s.amount = s.betAmount
+
+	// 初始化场景状态
+	if s.scene == nil {
+		s.scene = &scene{}
+	}
+	s.scene.Stage = _spinTypeBase
+	s.scene.NextStage = 0
+	s.scene.Steps = 0
+	s.isFreeRound = false
+
 	return nil
 }
 

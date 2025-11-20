@@ -1,4 +1,4 @@
-package xslm
+package xslm3
 
 import (
 	"errors"
@@ -17,6 +17,8 @@ import (
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
+
+var _debugLogOpen = false
 
 type betOrderService struct {
 	req                *request.BetOrderReq
@@ -67,6 +69,7 @@ type betOrderService struct {
 
 	nextSymbolGrid   *int64Grid
 	hasFemaleWildWin bool
+	stepAddTreasure  int64
 }
 
 func newBetOrderService() *betOrderService {
@@ -90,20 +93,17 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 	defer c.BetLock.Unlock()
 
 	lastOrder, _, err := c.GetLastOrder()
-	switch {
-	case err != nil:
-		global.GVA_LOG.Error("betOrder", zap.Error(err))
+	if err != nil {
 		return nil, InternalServerError
-	case lastOrder == nil:
-		s.saveScene(0, 0)
 	}
 	s.lastOrder = lastOrder
-	s.selectGameRedis()
-	switch {
-	case s.lastOrder == nil:
-		s.isFirst = true
-	case s.client.ClientOfFreeGame.GetLastMapId() == 0:
-		s.isFirst = true
+
+	if s.lastOrder == nil {
+		s.cleanScene()
+	}
+
+	if err = s.reloadScene(); err != nil {
+		return nil, err
 	}
 	return s.doBetOrder()
 }
@@ -133,6 +133,31 @@ func (s *betOrderService) doBetOrder() (map[string]any, error) {
 		s.finalize()
 
 		return s.getBetResultMap(), nil
+	}
+
+	// 重构逻辑
+	if true {
+		if err := s.baseSpin(); err != nil {
+			global.GVA_LOG.Error("betOrder", zap.Error(err))
+			return nil, InternalServerError
+		}
+
+		// 更新订单
+		if !s.updateGameOrder() {
+			return nil, InternalServerError
+		}
+
+		// 结算
+		if !s.settleStep() {
+			return nil, InternalServerError
+		}
+
+		// 保存场景数据
+		if err := s.saveScene2(); err != nil {
+			global.GVA_LOG.Error("doBetOrder.saveScene", zap.Error(err))
+			return nil, InternalServerError
+
+		}
 	}
 
 	return s.getBetResultMap(), nil
@@ -168,89 +193,111 @@ func (s *betOrderService) getBetResultMap() map[string]any {
 
 // _____________________________________________________________________________________
 func (s *betOrderService) baseSpin() error {
-	if err := s.initialize(); err != nil {
-		return err
-	}
-	if false {
-		switch {
-		case !s.initPreset():
-			return InternalServerError
-		case !s.backupScene():
-			return InternalServerError
-		case !s.initStepMap():
-			return InternalServerError
-		case !s.updateStepResult():
-			s.restoreScene()
-			return InternalServerError
-		case !s.updateGameOrder():
-			s.restoreScene()
-			return InternalServerError
-		case !s.settleStep():
-			s.restoreScene()
-			return InternalServerError
+	/*	if false {
+			if err := s.initialize(); err != nil {
+				return err
+			}
+			switch {
+			case !s.initPreset():
+				return InternalServerError
+			case !s.backupScene():
+				return InternalServerError
+			case !s.initStepMap():
+				return InternalServerError
+			case !s.updateStepResult():
+				s.restoreScene()
+				return InternalServerError
+			case !s.updateGameOrder():
+				s.restoreScene()
+				return InternalServerError
+			case !s.settleStep():
+				s.restoreScene()
+				return InternalServerError
+			}
+			s.finalize()
+
+			return nil
 		}
-		s.finalize()
 
-		return nil
-	}
+		if false {
+			s.handleStageTransition() // 状态跳转
+			s.loadSceneFemaleCount()  // 加载女性符号计数
 
-	// 加载女性符号计数
-	s.loadSceneFemaleCount()
+			// 初始化符号网格（新回合开始时）
+			if s.scene.Steps == 0 && (s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeFree) {
+				s.scene.SymbolRoller = s.getSceneSymbol()
 
-	// 初始化符号网格
-	if s.scene.Steps == 0 && (s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeFree) {
-		s.scene.SymbolRoller = s.getSceneSymbol()
-	}
+				if _debugLogOpen {
+					global.GVA_LOG.Debug(
+						"新回合开始",
+						zap.Int8("Stage", s.scene.Stage),
+						zap.Int64("FreeNum", s.scene.FreeNum),
+						zap.Bool("isFreeRound", s.isFreeRound),
+						zap.Any("scene", s.scene),
+					)
+				}
+			}
 
-	s.handleSymbolGrid()
-	s.findWinInfos()
-	s.updateStepResults(false)
-	hasElimination := s.processElimination()
-	if s.isFreeRound {
-		s.eliminateResultForFree(hasElimination)
-	} else {
-		s.eliminateResultForBase(hasElimination)
-	}
-	s.updateCurrentBalance()
-	return nil
+			// 处理符号网格、查找中奖、更新结果
+			s.handleSymbolGrid()
+			s.findWinInfos()
+
+			// 免费模式全屏情况下，需要重新查找所有符号的中奖（包括只有女性百搭的way）
+			// 因为全屏消除会消除除百搭13之外的所有符号，需要先算分
+			if s.isFreeRound && s.enableFullElimination {
+				s.findAllWinInfosForFullElimination()
+			}
+
+			s.updateStepResults(false)
+
+			// 处理消除和结果
+			hasElimination := s.processElimination()
+			if s.isFreeRound {
+				s.eliminateResultForFree(hasElimination)
+			} else {
+				s.eliminateResultForBase(hasElimination)
+			}
+			s.updateCurrentBalance()
+			return nil
+		}*/
+
+	// 调用优化后的逻辑
+	return s.baseSpin2()
 }
 
 func (s *betOrderService) eliminateResultForBase(hasElimination bool) {
 	if hasElimination {
+		// 有消除，继续消除状态
 		s.isRoundOver = false
 		s.client.IsRoundOver = false
 		s.scene.Steps++
 		s.scene.NextStage = _spinTypeBaseEli
 		s.scene.FemaleCountsForFree = [3]int64{}
-
+		s.newFreeRoundCount = 0
 	} else {
-		// 没有消除，结束当前回合
+		// 没有消除，结束当前回合（roundOver）
 		s.isRoundOver = true
 		s.client.IsRoundOver = true
-
-		// 更新免费次数 （判断是否进入免费）
-		s.treasureCount = s.getTreasureCount()
-		if s.treasureCount >= _triggerTreasureCount {
-			//s.newFreeRoundCount = _freeRounds[s.treasureCount-_triggerTreasureCount]
-			idx := int(s.treasureCount - 1)
-			if idx >= len(s.gameConfig.FreeSpinCount) {
-				idx = len(s.gameConfig.FreeSpinCount) - 1
-			}
-			newFree := s.gameConfig.FreeSpinCount[idx]
-			s.newFreeRoundCount = newFree
-			s.scene.FreeNum = newFree
-			if s.newFreeRoundCount > 0 {
-				s.client.ClientOfFreeGame.SetFreeNum(uint64(s.newFreeRoundCount))
-				s.client.SetLastMaxFreeNum(uint64(s.newFreeRoundCount))
-			}
-		}
-
-		// 更新状态
 		s.scene.Steps = 0
-		s.scene.NextStage = _spinTypeFree
-		if s.scene.FreeNum <= 0 {
+		s.scene.FemaleCountsForFree = [3]int64{}
+
+		// 基础模式：只在 roundOver 时统计夺宝数量并判断是否进入免费
+		s.treasureCount = s.getTreasureCount()
+		s.newFreeRoundCount = s.getFreeRoundCountFromTreasure()
+
+		if s.newFreeRoundCount > 0 {
+			// 触发免费模式
+			s.scene.FreeNum = s.newFreeRoundCount
+			s.client.ClientOfFreeGame.SetFreeNum(uint64(s.newFreeRoundCount))
+			s.client.SetLastMaxFreeNum(uint64(s.newFreeRoundCount))
+			s.scene.NextStage = _spinTypeFree
+			// 进入免费模式时，重置 TreasureNum 为 0，避免将基础模式的夺宝数量计入免费模式
+			s.scene.TreasureNum = 0
+		} else {
+			// 不触发免费模式，继续基础模式
 			s.scene.NextStage = _spinTypeBase
-			s.scene.FemaleCountsForFree = [3]int64{}
+			// 不触发免费模式，重置 TreasureNum 为 0，开始新的基础模式计数
+			s.scene.TreasureNum = 0
 		}
 	}
 
@@ -260,28 +307,61 @@ func (s *betOrderService) eliminateResultForBase(hasElimination bool) {
 		s.client.ClientOfFreeGame.IncrGeneralWinTotal(s.bonusAmount.Round(2).InexactFloat64())
 		s.client.ClientOfFreeGame.IncRoundBonus(s.bonusAmount.Round(2).InexactFloat64())
 	}
+
+	if _debugLogOpen {
+		str := "\t->基础回合结束"
+		if s.isRoundOver {
+			str = "基础回合结束"
+		}
+		global.GVA_LOG.Debug(
+			str,
+			zap.Int8("Stage", s.scene.Stage),
+			zap.Int64("FreeNum", s.scene.FreeNum),
+			zap.Any("scene", s.scene),
+		)
+	}
+}
+
+// getFreeRoundCountFromTreasure 根据夺宝数量从配置获取免费次数
+func (s *betOrderService) getFreeRoundCountFromTreasure() int64 {
+	if s.treasureCount < _triggerTreasureCount {
+		return 0
+	}
+	idx := int(s.treasureCount - 1)
+	if idx >= len(s.gameConfig.FreeSpinCount) {
+		idx = len(s.gameConfig.FreeSpinCount) - 1
+	}
+	return s.gameConfig.FreeSpinCount[idx]
 }
 
 func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
-	// 免费模式
+	// 计算本步骤增加的夺宝数量
+	s.treasureCount = s.getTreasureCount()
+	s.stepAddTreasure = s.treasureCount - s.scene.TreasureNum
+	s.scene.TreasureNum = s.treasureCount
+
+	// 免费模式：每收集1个夺宝符号则免费游戏次数+1
+	// stepAddTreasure 就是本步骤增加的夺宝数量，也就是新增的免费次数
+	s.newFreeRoundCount = s.stepAddTreasure
+	if s.newFreeRoundCount > 0 {
+		s.client.ClientOfFreeGame.Incr(uint64(s.newFreeRoundCount))
+		s.client.IncLastMaxFreeNum(uint64(s.newFreeRoundCount))
+		s.scene.FreeNum += s.newFreeRoundCount
+	}
+
 	if hasElimination {
+		// 有消除，继续消除状态
 		s.isRoundOver = false
 		s.client.IsRoundOver = false
 		s.scene.Steps++
 		s.scene.NextStage = _spinTypeFreeEli
 		s.scene.FemaleCountsForFree = s.nextFemaleCountsForFree
-
 	} else {
 		// 没有消除，结束当前回合
 		s.isRoundOver = true
 		s.client.IsRoundOver = true
+		s.scene.Steps = 0
 
-		// 统计免费次数
-		if s.newFreeRoundCount = s.getTreasureCount(); s.newFreeRoundCount > 0 {
-			s.client.ClientOfFreeGame.Incr(uint64(s.newFreeRoundCount))
-			s.client.IncLastMaxFreeNum(uint64(s.newFreeRoundCount))
-			s.scene.FreeNum += s.newFreeRoundCount
-		}
 		s.client.ClientOfFreeGame.IncrFreeTimes()
 		s.client.ClientOfFreeGame.Decr()
 		s.scene.FreeNum--
@@ -290,12 +370,13 @@ func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
 		}
 
 		// 更新状态
-		s.scene.Steps = 0
-		s.scene.NextStage = _spinTypeFree
-		if s.scene.FreeNum <= 0 {
-			// 如果没有免费次数了，下一局应该是_spinTypeBase 状态
+		if s.scene.FreeNum > 0 {
+			s.scene.NextStage = _spinTypeFree
+		} else {
 			s.scene.NextStage = _spinTypeBase
 			s.scene.FemaleCountsForFree = [3]int64{}
+			// 从免费模式回到基础模式时，重置 TreasureNum 为 0，开始新的基础模式计数
+			s.scene.TreasureNum = 0
 		}
 	}
 
@@ -305,6 +386,19 @@ func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
 		s.client.ClientOfFreeGame.IncrGeneralWinTotal(s.bonusAmount.Round(2).InexactFloat64())
 		s.client.ClientOfFreeGame.IncrFreeTotalMoney(s.bonusAmount.Round(2).InexactFloat64())
 		s.client.ClientOfFreeGame.IncRoundBonus(s.bonusAmount.Round(2).InexactFloat64())
+	}
+
+	if _debugLogOpen {
+		str := "免费回合结束"
+		if !s.isRoundOver {
+			str = "->免费回合"
+		}
+		global.GVA_LOG.Debug(
+			str,
+			zap.Int8("Stage", s.scene.Stage),
+			zap.Int64("FreeNum", s.scene.FreeNum),
+			zap.Any("scene", s.scene),
+		)
 	}
 }
 
@@ -343,6 +437,7 @@ func (s *betOrderService) processElimination() bool {
 	}
 
 	// 有消除，执行掉落和填充
+	s.collectFemaleSymbol()       // 收集中奖女性符号
 	s.dropSymbols(&nextGrid)      // 消除后掉落
 	s.fallingWinSymbols(nextGrid) // 掉落后填充，设置 SymbolRoller
 	s.nextSymbolGrid = &nextGrid
@@ -387,7 +482,8 @@ func (s *betOrderService) fillElimFreeFull(grid *int64Grid) int {
 					continue
 				}
 				sym := s.symbolGrid[r][c]
-				if sym >= (_blank+1) && sym <= _wildFemaleC {
+				// 全屏情况：除百搭13之外的符号都全部消除（女性百搭符号会消失，但百搭符号不消失）
+				if sym >= (_blank+1) && sym <= _wildFemaleC && sym != _wild {
 					grid[r][c] = _eliminated
 					count++
 				}
@@ -456,7 +552,7 @@ func (s *betOrderService) fallingWinSymbols(nextSymbolGrid int64Grid) {
 				if symbol >= _femaleA && symbol <= _femaleC {
 					idx := symbol - _femaleA
 					if idx >= 0 && idx < 3 &&
-						s.femaleCountsForFree[idx] >= _femaleFullCount {
+						s.nextFemaleCountsForFree[idx] >= _femaleFullCount {
 						// 转换为对应的 wild 版本
 						s.scene.SymbolRoller[col].BoardSymbol[row] = _wildFemaleA + idx
 					}
@@ -512,14 +608,19 @@ func (s *betOrderService) loadSceneFemaleCount() {
 
 }
 
-func (s *betOrderService) tryCollectFemaleSymbol(sym int64) {
-	if sym < _femaleA || sym > _femaleC {
+func (s *betOrderService) collectFemaleSymbol() {
+	if !s.isFreeRound {
 		return
 	}
-	if idx := sym - _femaleA; idx >= 0 && idx < int64(len(s.nextFemaleCountsForFree)) {
-		i := int(idx)
-		if s.nextFemaleCountsForFree[i] < _femaleA {
-			s.nextFemaleCountsForFree[i]++
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			symbol := s.winGrid[r][c]
+			if symbol >= _femaleA && symbol <= _femaleC {
+				idx := symbol - _femaleA
+				if s.nextFemaleCountsForFree[idx] < _femaleFullCount {
+					s.nextFemaleCountsForFree[idx]++
+				}
+			}
 		}
 	}
 }

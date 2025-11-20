@@ -1,4 +1,13 @@
-package xslm
+package xslm3
+
+import (
+	"context"
+	"egame-grpc/global"
+	"fmt"
+	jsoniter "github.com/json-iterator/go"
+	"go.uber.org/zap"
+	"time"
+)
 
 type scene struct {
 	isRoundOver      bool
@@ -55,13 +64,13 @@ func (s *betOrderService) saveScene(lastSlotID uint64, lastMapID uint64) {
 }
 
 // -----------------------------------------------------------------------
-/*
+/**/
 
 var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", _gameID)
 
 // 加载场景数据
 func (s *betOrderService) reloadScene() error {
-	s.scene = new(SpinSceneData)
+	s.scene = new(scene)
 
 	if err := s.loadCacheSceneData(); err != nil {
 		global.GVA_LOG.Error("reloadScene", zap.Error(err))
@@ -69,17 +78,8 @@ func (s *betOrderService) reloadScene() error {
 		return nil
 	}
 
-	s.scene.Stage = _spinTypeBase
-	//新免费回合开始
-	if s.scene.NextStage > 0 && s.scene.NextStage != s.scene.Stage {
-		s.scene.Stage = s.scene.NextStage
-		s.scene.NextStage = 0
-	}
-
 	return nil
 }
-
-
 
 func (s *betOrderService) sceneKey() string {
 	return fmt.Sprintf("%s:%s:%d", global.GVA_CONFIG.System.Site, sceneDataKeyPrefix, s.member.ID)
@@ -90,20 +90,19 @@ func (s *betOrderService) cleanScene() {
 }
 
 // 保存场景
-func (s *betOrderService) saveScene() error {
+func (s *betOrderService) saveScene2() error {
 	sceneStr, _ := jsoniter.MarshalToString(s.scene)
 	if err := global.GVA_REDIS.Set(context.Background(), s.sceneKey(), sceneStr, time.Hour*24*90).Err(); err != nil {
 		global.GVA_LOG.Error("saveScene", zap.Error(err))
 		return err
 	}
 	return nil
-
 }
 
 func (s *betOrderService) loadCacheSceneData() error {
 	v := global.GVA_REDIS.Get(context.Background(), s.sceneKey()).Val()
 	if len(v) > 0 {
-		tmpSc := new(SpinSceneData)
+		tmpSc := new(scene)
 		if err := jsoniter.UnmarshalFromString(v, tmpSc); err != nil {
 			return err
 		}
@@ -111,4 +110,37 @@ func (s *betOrderService) loadCacheSceneData() error {
 	}
 	return nil
 }
-*/
+
+// handleStageTransition 处理状态跳转
+// handleStageTransition 处理状态跳转（参考 mahjong 的简化逻辑）
+func (s *betOrderService) handleStageTransition() {
+	// 1. 初始化 Stage
+	if s.scene.Stage == 0 {
+		if s.scene.FreeNum > 0 {
+			s.scene.Stage = _spinTypeFree
+		} else {
+			s.scene.Stage = _spinTypeBase
+		}
+	}
+
+	// 2. 处理 NextStage 切换（参考 mahjong：简单直接的状态切换）
+	if s.scene.NextStage > 0 {
+		if s.scene.NextStage != s.scene.Stage {
+			s.scene.Stage = s.scene.NextStage
+		}
+		s.scene.NextStage = 0
+	}
+
+	// 3. 根据 Stage 设置 isFreeRound
+	s.isFreeRound = s.isFreeRoundStage()
+}
+
+// isBaseRoundStage 判断是否为基础模式阶段
+func (s *betOrderService) isBaseRoundStage() bool {
+	return s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeBaseEli
+}
+
+// isFreeRoundStage 判断是否为免费模式阶段
+func (s *betOrderService) isFreeRoundStage() bool {
+	return s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeFreeEli
+}

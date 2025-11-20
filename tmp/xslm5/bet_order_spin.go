@@ -1,4 +1,4 @@
-package xslm
+package xslm3
 
 import (
 	"fmt"
@@ -187,6 +187,66 @@ func (s *betOrderService) findWinInfos() bool {
 	return len(winInfos) > 0
 }
 
+// findAllWinInfosForFullElimination 全屏消除时，查找所有可能中奖的符号（包括只有女性百搭的way）
+// 因为全屏消除会消除除百搭13之外的所有符号，需要先算分
+// 修复：在全屏情况下，即使某个way只有女性百搭，没有基础符号，也应该算分
+func (s *betOrderService) findAllWinInfosForFullElimination() {
+	// 保存已有的中奖信息（按符号索引）
+	existingWinInfos := make(map[int64]bool)
+	for _, info := range s.winInfos {
+		existingWinInfos[info.Symbol] = true
+	}
+
+	// 查找所有基础符号（1-9）的中奖，即使没有基础符号，只要有女性百搭也算
+	for symbol := _blank + 1; symbol < _wildFemaleA; symbol++ {
+		// 如果已经找到（有基础符号的way），跳过
+		if existingWinInfos[symbol] {
+			continue
+		}
+
+		// 查找只有女性百搭的way（没有基础符号，但可能有百搭13）
+		lineCount := int64(1)
+		var winGrid int64Grid
+		hasFemaleWild := false
+		hasBaseSymbol := false
+
+		for c := int64(0); c < _colCount; c++ {
+			count := int64(0)
+			for r := int64(0); r < _rowCount; r++ {
+				currSymbol := s.symbolGrid[r][c]
+				// 匹配基础符号、百搭或对应的女性百搭
+				if currSymbol == symbol || currSymbol == _wild || isMatchingFemaleWild(symbol, currSymbol) {
+					if currSymbol == symbol {
+						hasBaseSymbol = true
+					}
+					if isMatchingFemaleWild(symbol, currSymbol) {
+						hasFemaleWild = true
+					}
+					count++
+					winGrid[r][c] = currSymbol
+				}
+			}
+			if count == 0 {
+				// 如果已经有基础符号的way，不需要再查找只有女性百搭的way
+				if c >= _minMatchCount && hasFemaleWild && !hasBaseSymbol {
+					// 只有女性百搭的way也算分（全屏情况下）
+					info := winInfo{Symbol: symbol, SymbolCount: c, LineCount: lineCount, WinGrid: winGrid}
+					s.winInfos = append(s.winInfos, &info)
+					s.hasFemaleWildWin = true
+				}
+				break
+			}
+			lineCount *= count
+			if c == _colCount-1 && hasFemaleWild && !hasBaseSymbol {
+				// 只有女性百搭的way也算分（全屏情况下）
+				info := winInfo{Symbol: symbol, SymbolCount: _colCount, LineCount: lineCount, WinGrid: winGrid}
+				s.winInfos = append(s.winInfos, &info)
+				s.hasFemaleWildWin = true
+			}
+		}
+	}
+}
+
 func (s *betOrderService) findNormalSymbolWinInfo(symbol int64) (*winInfo, bool) {
 	exist := false
 	lineCount := int64(1)
@@ -256,8 +316,20 @@ func (s *betOrderService) updateStepResults(partialElimination bool) {
 		if partialElimination && info.Symbol < _femaleA {
 			continue
 		}
+		// 边界检查：确保 Symbol 和 SymbolCount 在有效范围内
+		if info.Symbol < 1 || info.Symbol > 12 {
+			continue
+		}
+		if info.SymbolCount < _minMatchCount || info.SymbolCount > _colCount {
+			continue
+		}
 		//baseLineMultiplier := _symbolMultiplierGroups[info.Symbol-1][info.SymbolCount-_minMatchCount]
-		baseLineMultiplier := s.gameConfig.PayTable[info.Symbol-1][info.SymbolCount-1]
+		symbolIdx := info.Symbol - 1
+		countIdx := info.SymbolCount - 1
+		if symbolIdx >= int64(len(s.gameConfig.PayTable)) || countIdx >= int64(len(s.gameConfig.PayTable[symbolIdx])) {
+			continue
+		}
+		baseLineMultiplier := s.gameConfig.PayTable[symbolIdx][countIdx]
 		totalMultiplier := baseLineMultiplier * info.LineCount
 		result := winResult{
 			Symbol:             info.Symbol,
