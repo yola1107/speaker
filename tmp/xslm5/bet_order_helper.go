@@ -82,6 +82,12 @@ func (s *betOrderService) winGridToString() string {
 }
 
 func (s *betOrderService) updateBonusAmount() {
+	if s.stepMultiplier <= 0 {
+		s.bonusAmount = decimal.Zero
+		return
+	}
+	// 统一使用正常模式的逻辑：bonusAmount = BaseMoney * Multiple * stepMultiplier
+	// 在RTP测试中，BaseMoney=1, Multiple=1，所以 bonusAmount = stepMultiplier
 	bonusAmount := decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
 		Mul(decimal.NewFromInt(s.stepMultiplier))
@@ -107,28 +113,18 @@ func (s *betOrderService) showPostUpdateErrorLog() {
 }
 
 // ___________________________________________________________________________
-// getTreasureCount 获取符号网格中的夺宝符号数量
-func getTreasureCount(grid *int64Grid) int64 {
-	if grid == nil {
-		return 0
-	}
-	count := int64(0)
-	for _, row := range grid {
-		for _, symbol := range row {
-			if symbol == _treasure {
-				count++
-			}
-		}
-	}
-	return count
-}
 
 func isBlockedCell(r, c int64) bool { return r == 0 && (c == 0 || c == _colCount-1) }
 
+// isMatchingFemaleWild 检查女性百搭符号是否可以匹配目标符号
+// 规则：女性百搭符号（10-12）可以替代除了夺宝、百搭外的所有符号（即基础符号1-9和女性符号7-9）
+// 注意：女性百搭之间不可以相互替换，但可以通过此函数匹配基础符号
 func isMatchingFemaleWild(target, curr int64) bool {
+	// 检查 curr 是否是女性百搭符号（10-12）
 	if curr < _wildFemaleA || curr > _wildFemaleC {
 		return false
 	}
+	// 女性百搭可以匹配基础符号（1-9），包括普通符号（1-6）和女性符号（7-9）
 	return target >= (_blank+1) && target <= _femaleC
 }
 

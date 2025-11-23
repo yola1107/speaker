@@ -1,17 +1,41 @@
-package xslm3
+package mahjong
 
 import (
-	"go.uber.org/zap"
-
 	"egame-grpc/global"
 	"egame-grpc/model/game"
 	"egame-grpc/model/member"
 	"egame-grpc/model/merchant"
+
+	"go.uber.org/zap"
 )
 
-// MongoDB operations
-
+// 获取商户信息
 func (s *betOrderService) mdbGetMerchant() bool {
+
+	if s.forRtpBench {
+		s.merchant = &merchant.Merchant{
+			ID:          20020,
+			Merchant:    "Jack23",
+			UserID:      0,
+			NickName:    "",
+			Fee:         0,
+			Balance:     0,
+			PlatformNum: 0,
+			Status:      0,
+			Secret:      "",
+			Qq:          "",
+			TelPrefix:   "",
+			Tel:         "",
+			GameNum:     0,
+			Email:       "",
+			Website:     "",
+			DoCode:      "",
+			CreatedAt:   0,
+			UpdatedAt:   0,
+		}
+		return true
+	}
+
 	var m merchant.Merchant
 	query := "id=?"
 	args := []any{s.req.MerchantId}
@@ -23,7 +47,38 @@ func (s *betOrderService) mdbGetMerchant() bool {
 	return true
 }
 
+// 获取用户信息
 func (s *betOrderService) mdbGetMember() bool {
+
+	if s.forRtpBench {
+		s.member = &member.Member{
+			ID:            3566020,
+			MemberName:    "Jack23",
+			Password:      "",
+			NickName:      "",
+			Balance:       10000000,
+			Currency:      "",
+			State:         0,
+			LastLoginTime: 0,
+			IP:            "",
+			MerchantID:    0,
+			Merchant:      "",
+			Remark:        "",
+			IsDelete:      0,
+			MemberType:    0,
+			TrueName:      "",
+			TelPrefix:     "",
+			VipLevel:      0,
+			Phone:         "",
+			ParentID:      "",
+			Email:         "",
+			CreatedAt:     0,
+			UpdatedAt:     0,
+			Version:       0,
+		}
+		return true
+	}
+
 	var m member.Member
 	query := "id=? and merchant=?"
 	args := []any{s.req.MemberId, s.merchant.Merchant}
@@ -40,7 +95,29 @@ func (s *betOrderService) mdbGetMember() bool {
 	return true
 }
 
+// 获取游戏信息
 func (s *betOrderService) mdbGetGame() bool {
+
+	if s.forRtpBench {
+		s.game = &game.Game{
+			ID:             _gameID,
+			GameType:       11,
+			GameName:       "Jztdmm",
+			Icon:           "",
+			HotTag:         0,
+			NewTag:         0,
+			ShowAndroid:    0,
+			ShowIos:        0,
+			Status:         0,
+			Sort:           0,
+			CreatedAt:      0,
+			UpdatedAt:      0,
+			DeletedAt:      0,
+			PurchaseStatus: 0,
+		}
+		return true
+	}
+
 	var g game.Game
 	query := "id=? and status=1"
 	args := []any{s.req.GameId}

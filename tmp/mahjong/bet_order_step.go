@@ -1,0 +1,151 @@
+package mahjong
+
+import (
+	"egame-grpc/gamelogic"
+	"egame-grpc/global"
+	"egame-grpc/model/game"
+	"egame-grpc/model/pool"
+	"egame-grpc/utils/json"
+	"egame-grpc/utils/snow"
+	"strconv"
+	"time"
+
+	"github.com/shopspring/decimal"
+	"go.uber.org/zap"
+)
+
+// 初始化
+func (s *betOrderService) initialize() error {
+	s.client.ClientOfFreeGame.ResetFreeClean()
+
+	if !s.forRtpBench {
+		s.orderSN = strconv.FormatInt(snow.GenarotorID(s.member.ID), 10)
+	}
+
+	if s.scene == nil || s.scene.Stage == _spinTypeBase || s.scene.Stage == 0 { //是否首次spin first round
+		err := s.initFirstStepForSpin()
+		if err != nil {
+			return err
+		}
+		s.scene.SpinMultiplier = 0
+		s.scene.FreeMultiplier = 0
+		s.isSpinFirstRound = false
+	} else {
+		s.initStepForNextStep()
+	}
+
+	if s.scene.Steps == 0 {
+		s.isRoundFirstStep = true
+	}
+
+	if s.isRoundFirstStep {
+		s.scene.RoundMultiplier = 0
+		s.client.ClientOfFreeGame.ResetRoundBonus()
+		s.client.ClientOfFreeGame.ResetRoundBonusStaging()
+	}
+
+	return nil
+}
+
+// 更新订单
+func (s *betOrderService) updateGameOrder(result *BaseSpinResult) (bool, error) {
+
+	gameOrder := game.GameOrder{
+		MerchantID:        s.merchant.ID,
+		Merchant:          s.merchant.Merchant,
+		MemberID:          s.member.ID,
+		Member:            s.member.MemberName,
+		GameID:            s.game.ID,
+		GameName:          s.game.GameName,
+		BaseMultiple:      _baseMultiplier,
+		Multiple:          s.req.Multiple,
+		LineMultiple:      result.lineMultiplier,
+		BonusHeadMultiple: result.bonusHeadMultiple,
+		BonusMultiple:     result.gameMultiple,
+		BaseAmount:        s.req.BaseMoney,
+		Amount:            s.amount.Round(2).InexactFloat64(),
+		ValidAmount:       s.amount.Round(2).InexactFloat64(),
+		BonusAmount:       s.bonusAmount.Round(2).InexactFloat64(),
+		CurBalance:        s.getCurrentBalance(),
+		OrderSn:           s.orderSN,
+		ParentOrderSn:     s.parentOrderSN,
+		FreeOrderSn:       s.freeOrderSN,
+		State:             1,
+		BonusTimes:        0,
+		HuNum:             int64(result.scatterCount),
+		FreeNum:           int64(s.client.ClientOfFreeGame.GetFreeNum()),
+		FreeTimes:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
+	}
+	if s.scene.IsFreeRound {
+		gameOrder.IsFree = 1
+	}
+
+	s.gameOrder = &gameOrder
+	return s.fillInGameOrderDetails(result)
+}
+
+// 结算step
+func (s *betOrderService) settleStep() error { // 94
+	poolRecord := pool.GamePoolRecord{
+		OrderId:      s.gameOrder.OrderSn,
+		MemberId:     s.gameOrder.MemberID,
+		GameType:     1,
+		GameId:       s.game.ID,
+		GameName:     s.game.GameName,
+		MerchantID:   s.merchant.ID,
+		Merchant:     s.merchant.Merchant,
+		Amount:       0,
+		BeforeAmount: 0,
+		AfterAmount:  0,
+		EventType:    1,
+		EventName:    "自然蓄水",
+		EventDesc:    "",
+		CreatedBy:    "SYSTEM",
+	}
+	s.gameOrder.CreatedAt = time.Now().Unix()
+	poolRecord.CreatedAt = time.Now().Unix()
+	saveParam := &gamelogic.SaveTransferParam{
+		Client:      s.client,
+		GameOrder:   s.gameOrder,
+		MerchantOne: s.merchant,
+		MemberOne:   s.member,
+		Ip:          s.req.Ip,
+	}
+	res := gamelogic.SaveTransfer(saveParam)
+	//res.CurBalance 当前余额，已兼容转账、单一
+
+	return res.Err
+}
+
+// 获取当前余额
+func (s *betOrderService) getCurrentBalance() float64 {
+	currBalance := decimal.NewFromFloat(s.member.Balance).
+		Sub(s.amount).
+		Add(s.bonusAmount).
+		Round(2).
+		InexactFloat64()
+	return currBalance
+}
+
+// 填充订单细节
+func (s *betOrderService) fillInGameOrderDetails(result *BaseSpinResult) (bool, error) { // 932
+	betRawDetail, err := json.CJSON.MarshalToString(result.cards)
+	if err != nil {
+		global.GVA_LOG.Error("fillInGameOrderDetails", zap.Error(err))
+		return false, err
+	}
+	s.gameOrder.BetRawDetail = betRawDetail
+	winRawDetail, err := json.CJSON.MarshalToString(result.winGrid)
+	if err != nil {
+		global.GVA_LOG.Error("fillInGameOrderDetails", zap.Error(err))
+		return false, err
+	}
+
+	s.gameOrder.BonusRawDetail = winRawDetail
+	s.gameOrder.BetDetail = s.symbolGridToString(result.cards)
+	s.gameOrder.BonusDetail = s.winGridToString(result)
+	winDetails := s.getWinDetail(result.winResult, result.stepMultiplier, result.scatterCount, result.freeTime, s.gameConfig.FreeGameMin)
+	s.gameOrder.WinDetails = winDetails
+
+	return true, nil
+}

@@ -26,31 +26,23 @@ const (
 	_treasure    int64 = 14 // 夺宝(血月)
 )
 
-const (
-	_presetKindNormalBase = 0
-	_presetKindNormalFree = 1
-)
-
 const _minMatchCount = 3
 const _triggerTreasureCount = 3
 const _femaleFullCount = 10
 
-const _maxMultiplierForBaseOnly = 5000
-
-const _presetDataKeyTpl = "%s:slot_xslm_data"
-const _presetIDKeyTpl = "%s:slot_xslm_id:%d:%d"
-
-const _presetID = int64(0)
-
 const (
-	_spinTypeBase    = 1 //普通
-	_spinTypeBaseEli = 2 //普通消除
-	_spinTypeFree    = 3 //免费
-	_spinTypeFreeEli = 4 //免费消除
+	_spinTypeBase    = 1  //普通
+	_spinTypeBaseEli = 11 //普通消除
+	_spinTypeFree    = 2  //免费
+	_spinTypeFreeEli = 22 //免费消除
 )
 
 // 特殊符号
 const (
 	_eliminated int64 = -1 // 消除标识（用于展示日志/调试）
 	_blocked    int64 = 99 // 墙格标记（左下角和右下角）
+)
+
+const (
+	_debugLogOpen = false
 )

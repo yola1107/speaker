@@ -1,5 +1,10 @@
 package xslm3
 
+import (
+	"fmt"
+	"strings"
+)
+
 type int64Grid = [_rowCount][_colCount]int64
 
 type winInfo struct {
@@ -9,12 +14,6 @@ type winInfo struct {
 	WinGrid     int64Grid
 }
 
-type stepMap struct {
-	ID                  int64                        `json:"id"`
-	FemaleCountsForFree []int64                      `json:"fc"`
-	Map                 [_rowCount * _colCount]int64 `json:"mp"`
-}
-
 type winResult struct {
 	Symbol             int64     `json:"symbol"`
 	SymbolCount        int64     `json:"symbolCount"`
@@ -22,6 +21,10 @@ type winResult struct {
 	BaseLineMultiplier int64     `json:"baseLineMultiplier"`
 	TotalMultiplier    int64     `json:"totalMultiplier"`
 	WinGrid            int64Grid `json:"winGrid"`
+}
+
+type rtpDebugData struct {
+	open bool // 是否开启调试模式
 }
 
 /*
@@ -64,3 +67,49 @@ _spinTypeBase (1) [重新开始]
 		1> 全屏情况：每个中奖Way找女性百搭，找到则改way除百搭13之外的符号都全部消除
 		2> 非全屏情况：每个中奖way找女性，找到该way女性及女性百搭都消除
 */
+
+func printGrid(grid *int64Grid, winGrid *int64Grid) string {
+	buf := &strings.Builder{}
+	if grid == nil {
+		buf.WriteString("(空)\n")
+		return ""
+	}
+	rGrid := reverseGridRows(grid)
+	rWinGrid := reverseGridRows(winGrid)
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			symbol := rGrid[r][c]
+			isWin := rWinGrid[r][c] != _blank && rWinGrid[r][c] != _blocked
+			if isWin {
+				if symbol == _blank {
+					buf.WriteString("   *|")
+				} else {
+					fmt.Fprintf(buf, " %2d*|", symbol)
+				}
+			} else {
+				if symbol == _blank {
+					buf.WriteString("    |")
+				} else {
+					fmt.Fprintf(buf, " %2d |", symbol)
+				}
+			}
+			if c < _colCount-1 {
+				buf.WriteString(" ")
+			}
+		}
+		buf.WriteString("\n")
+	}
+	return buf.String()
+}
+
+// reverseGridRows 网格行序反转
+func reverseGridRows(grid *int64Grid) int64Grid {
+	if grid == nil {
+		return int64Grid{}
+	}
+	var reversed int64Grid
+	for i := int64(0); i < _rowCount; i++ {
+		reversed[i] = grid[_rowCount-1-i]
+	}
+	return reversed
+}

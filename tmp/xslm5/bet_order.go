@@ -10,7 +10,6 @@ import (
 	"egame-grpc/model/game/request"
 	"egame-grpc/model/member"
 	"egame-grpc/model/merchant"
-	"egame-grpc/model/slot"
 	"egame-grpc/strategy"
 
 	"github.com/go-redis/redis/v8"
@@ -18,58 +17,49 @@ import (
 	"go.uber.org/zap"
 )
 
-var _debugLogOpen = false
-
 type betOrderService struct {
-	req                *request.BetOrderReq
-	merchant           *merchant.Merchant
-	member             *member.Member
-	game               *game.Game
-	client             *client.Client
-	lastOrder          *game.GameOrder
-	gameRedis          *redis.Client
-	isFirst            bool
-	betAmount          decimal.Decimal
-	amount             decimal.Decimal
-	strategy           *strategy.Strategy
-	gameType           int64
-	orderSN            string
-	parentOrderSN      string
-	freeOrderSN        string
-	isFreeRound        bool
-	presetID           int64
-	probMap            map[int64]game.GameDynamicProb
-	probMultipliers    []int64
-	probWeightSum      int64
-	presetKind         int64
-	expectedMultiplier int64
-	presetMultiplier   int64
-	gameOrder          *game.GameOrder
-	bonusAmount        decimal.Decimal
-	currBalance        decimal.Decimal
+	req           *request.BetOrderReq
+	merchant      *merchant.Merchant
+	member        *member.Member
+	game          *game.Game
+	client        *client.Client
+	lastOrder     *game.GameOrder
+	gameRedis     *redis.Client
+	isFirst       bool
+	betAmount     decimal.Decimal
+	amount        decimal.Decimal
+	strategy      *strategy.Strategy
+	gameType      int64
+	orderSN       string
+	parentOrderSN string
+	freeOrderSN   string
+	isFreeRound   bool
+	gameOrder     *game.GameOrder
+	bonusAmount   decimal.Decimal
+	currBalance   decimal.Decimal
+	gameConfig    *gameConfigJson
+	scene         *SpinSceneData
 
-	// Spin fields (extracted from spin struct)
-	gameConfig              *gameConfigJson
-	scene                   *scene
-	preset                  *slot.XSLM
-	stepMap                 *stepMap
+	// 原 spin 结构体的字段
+	// 持久化
 	femaleCountsForFree     [_femaleC - _femaleA + 1]int64
 	nextFemaleCountsForFree [_femaleC - _femaleA + 1]int64
-	enableFullElimination   bool
-	isRoundOver             bool
-	symbolGrid              *int64Grid
-	winInfos                []*winInfo
-	winResults              []*winResult
-	winGrid                 *int64Grid
-	hasFemaleWin            bool
-	lineMultiplier          int64
-	stepMultiplier          int64
-	treasureCount           int64
-	newFreeRoundCount       int64
+	nextSymbolGrid          *int64Grid
 
-	nextSymbolGrid   *int64Grid
-	hasFemaleWildWin bool
-	stepAddTreasure  int64
+	// 本 step
+	enableFullElimination bool
+	isRoundOver           bool
+	symbolGrid            *int64Grid
+	winGrid               *int64Grid
+	winInfos              []*winInfo
+	winResults            []*winResult
+	lineMultiplier        int64
+	stepMultiplier        int64
+	hasFemaleWin          bool
+	treasureCount         int64
+	newFreeRoundCount     int64
+	hasFemaleWildWin      bool
+	debug                 rtpDebugData // RTP压测调试
 }
 
 func newBetOrderService() *betOrderService {
@@ -109,55 +99,27 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 }
 
 func (s *betOrderService) doBetOrder() (map[string]any, error) {
-	if err := s.initialize(); err != nil {
-		return nil, err
-	}
-	if false {
-		switch {
-		case !s.initPreset():
-			return nil, InternalServerError
-		case !s.backupScene():
-			return nil, InternalServerError
-		case !s.initStepMap():
-			return nil, InternalServerError
-		case !s.updateStepResult():
-			s.restoreScene()
-			return nil, InternalServerError
-		case !s.updateGameOrder():
-			s.restoreScene()
-			return nil, InternalServerError
-		case !s.settleStep():
-			s.restoreScene()
-			return nil, InternalServerError
-		}
-		s.finalize()
-
-		return s.getBetResultMap(), nil
-	}
-
 	// 重构逻辑
-	if true {
-		if err := s.baseSpin(); err != nil {
-			global.GVA_LOG.Error("betOrder", zap.Error(err))
-			return nil, InternalServerError
-		}
+	if err := s.baseSpin(); err != nil {
+		global.GVA_LOG.Error("betOrder", zap.Error(err))
+		return nil, InternalServerError
+	}
 
-		// 更新订单
-		if !s.updateGameOrder() {
-			return nil, InternalServerError
-		}
+	// 更新订单
+	if !s.updateGameOrder() {
+		return nil, InternalServerError
+	}
 
-		// 结算
-		if !s.settleStep() {
-			return nil, InternalServerError
-		}
+	// 结算
+	if !s.settleStep() {
+		return nil, InternalServerError
+	}
 
-		// 保存场景数据
-		if err := s.saveScene2(); err != nil {
-			global.GVA_LOG.Error("doBetOrder.saveScene", zap.Error(err))
-			return nil, InternalServerError
+	// 保存场景数据
+	if err := s.saveScene(); err != nil {
+		global.GVA_LOG.Error("doBetOrder.saveScene", zap.Error(err))
+		return nil, InternalServerError
 
-		}
 	}
 
 	return s.getBetResultMap(), nil
@@ -193,76 +155,40 @@ func (s *betOrderService) getBetResultMap() map[string]any {
 
 // _____________________________________________________________________________________
 func (s *betOrderService) baseSpin() error {
-	/*	if false {
-			if err := s.initialize(); err != nil {
-				return err
-			}
-			switch {
-			case !s.initPreset():
-				return InternalServerError
-			case !s.backupScene():
-				return InternalServerError
-			case !s.initStepMap():
-				return InternalServerError
-			case !s.updateStepResult():
-				s.restoreScene()
-				return InternalServerError
-			case !s.updateGameOrder():
-				s.restoreScene()
-				return InternalServerError
-			case !s.settleStep():
-				s.restoreScene()
-				return InternalServerError
-			}
-			s.finalize()
+	if err := s.initialize(); err != nil {
+		return err
+	}
 
-			return nil
+	s.handleStageTransition() // 状态跳转
+	s.loadSceneFemaleCount()  // 加载女性符号计数
+
+	// 初始化符号网格（新回合开始时）
+	if s.scene.Steps == 0 && (s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeFree) {
+		s.scene.SymbolRoller = s.getSceneSymbol()
+		if _debugLogOpen {
+			global.GVA_LOG.Debug(
+				"新回合开始",
+				zap.Int8("Stage", s.scene.Stage),
+				zap.Int64("FreeNum", s.scene.FreeNum),
+				zap.Any("scene", s.scene),
+			)
 		}
+	}
 
-		if false {
-			s.handleStageTransition() // 状态跳转
-			s.loadSceneFemaleCount()  // 加载女性符号计数
+	// 处理符号网格、查找中奖、更新结果
+	s.handleSymbolGrid()
+	s.findWinInfos()
+	s.updateStepResults(false)
 
-			// 初始化符号网格（新回合开始时）
-			if s.scene.Steps == 0 && (s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeFree) {
-				s.scene.SymbolRoller = s.getSceneSymbol()
-
-				if _debugLogOpen {
-					global.GVA_LOG.Debug(
-						"新回合开始",
-						zap.Int8("Stage", s.scene.Stage),
-						zap.Int64("FreeNum", s.scene.FreeNum),
-						zap.Bool("isFreeRound", s.isFreeRound),
-						zap.Any("scene", s.scene),
-					)
-				}
-			}
-
-			// 处理符号网格、查找中奖、更新结果
-			s.handleSymbolGrid()
-			s.findWinInfos()
-
-			// 免费模式全屏情况下，需要重新查找所有符号的中奖（包括只有女性百搭的way）
-			// 因为全屏消除会消除除百搭13之外的所有符号，需要先算分
-			if s.isFreeRound && s.enableFullElimination {
-				s.findAllWinInfosForFullElimination()
-			}
-
-			s.updateStepResults(false)
-
-			// 处理消除和结果
-			hasElimination := s.processElimination()
-			if s.isFreeRound {
-				s.eliminateResultForFree(hasElimination)
-			} else {
-				s.eliminateResultForBase(hasElimination)
-			}
-			s.updateCurrentBalance()
-			return nil
-		}*/
-
-	// 调用优化后的逻辑
-	return s.baseSpin2()
+	// 处理消除和结果
+	hasElimination := s.processElimination()
+	if s.isFreeRound {
+		s.eliminateResultForFree(hasElimination)
+	} else {
+		s.eliminateResultForBase(hasElimination)
+	}
+	s.updateCurrentBalance()
+	return nil
 }
 
 func (s *betOrderService) eliminateResultForBase(hasElimination bool) {
@@ -309,9 +235,9 @@ func (s *betOrderService) eliminateResultForBase(hasElimination bool) {
 	}
 
 	if _debugLogOpen {
-		str := "\t->基础回合结束"
+		str := " 回合消除"
 		if s.isRoundOver {
-			str = "基础回合结束"
+			str = "回合结束 "
 		}
 		global.GVA_LOG.Debug(
 			str,
@@ -335,7 +261,7 @@ func (s *betOrderService) getFreeRoundCountFromTreasure() int64 {
 }
 
 func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
-	// 计算本步骤增加的夺宝数量
+	/*// 计算本步骤增加的夺宝数量
 	s.treasureCount = s.getTreasureCount()
 	s.stepAddTreasure = s.treasureCount - s.scene.TreasureNum
 	s.scene.TreasureNum = s.treasureCount
@@ -347,7 +273,7 @@ func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
 		s.client.ClientOfFreeGame.Incr(uint64(s.newFreeRoundCount))
 		s.client.IncLastMaxFreeNum(uint64(s.newFreeRoundCount))
 		s.scene.FreeNum += s.newFreeRoundCount
-	}
+	}*/
 
 	if hasElimination {
 		// 有消除，继续消除状态
@@ -356,11 +282,20 @@ func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
 		s.scene.Steps++
 		s.scene.NextStage = _spinTypeFreeEli
 		s.scene.FemaleCountsForFree = s.nextFemaleCountsForFree
+		s.newFreeRoundCount = 0 // 有消除时，不统计夺宝数量
 	} else {
 		// 没有消除，结束当前回合
 		s.isRoundOver = true
 		s.client.IsRoundOver = true
 		s.scene.Steps = 0
+
+		// 新增免费次数
+		s.newFreeRoundCount = s.getTreasureCount()
+		if s.newFreeRoundCount > 0 {
+			s.client.ClientOfFreeGame.Incr(uint64(s.newFreeRoundCount))
+			s.client.IncLastMaxFreeNum(uint64(s.newFreeRoundCount))
+			s.scene.FreeNum += s.newFreeRoundCount
+		}
 
 		s.client.ClientOfFreeGame.IncrFreeTimes()
 		s.client.ClientOfFreeGame.Decr()
@@ -389,9 +324,9 @@ func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
 	}
 
 	if _debugLogOpen {
-		str := "免费回合结束"
-		if !s.isRoundOver {
-			str = "->免费回合"
+		str := "   消除    "
+		if s.isRoundOver {
+			str = "回合结束 "
 		}
 		global.GVA_LOG.Debug(
 			str,
@@ -436,17 +371,26 @@ func (s *betOrderService) processElimination() bool {
 		return false
 	}
 
+	if _debugLogOpen {
+		fmt.Printf("Step%d 初始盘面：\n%s", s.scene.Steps, printGrid(s.symbolGrid, nil))
+		fmt.Printf("Step%d 中奖标记:\n%s", s.scene.Steps, printGrid(s.symbolGrid, s.winGrid))
+	}
+
 	// 有消除，执行掉落和填充
 	s.collectFemaleSymbol()       // 收集中奖女性符号
 	s.dropSymbols(&nextGrid)      // 消除后掉落
 	s.fallingWinSymbols(nextGrid) // 掉落后填充，设置 SymbolRoller
 	s.nextSymbolGrid = &nextGrid
+
+	if _debugLogOpen {
+		fmt.Printf("Step%d 下一盘面预览（实际消除+下落+填充结果）:\n%s", s.scene.Steps, printGrid(s.nextSymbolGrid, nil))
+	}
 	return cnt > 0
 }
 
 func (s *betOrderService) fillElimBase(grid *int64Grid) int {
 	count := 0
-	hasTreasure := getTreasureCount(s.symbolGrid) > 0
+	hasTreasure := s.getTreasureCount() > 0
 	for _, w := range s.winInfos {
 		if w == nil || w.Symbol < _femaleA || w.Symbol > _femaleC {
 			continue
