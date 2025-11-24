@@ -137,19 +137,22 @@ func (s *betOrderService) getSceneSymbol() [_colCount]SymbolRoller {
 }
 
 // ringSymbol 补充掉下来导致的空缺位置
+// 注意：BoardSymbol 从下往上存储（索引0=最下面，索引3=最上面）
+// 填充时应该从最上面（索引3）开始，按照索引从高到低（3→2→1→0）的顺序填充
 func (r *SymbolRoller) ringSymbol(c *gameConfigJson) {
 	var newBoard [_rowCount]int64
-	var zeroIndex []int
+	// 先复制非空白位置
 	for i, s := range r.BoardSymbol {
 		if s != 0 {
 			newBoard[i] = s
-		} else {
-			zeroIndex = append(zeroIndex, i)
 		}
 	}
-	for _, index := range zeroIndex {
-		newSymbol := r.getFallSymbol(c)
-		newBoard[index] = newSymbol
+	// 从高索引到低索引（3→2→1→0）遍历，遇到空白就填充
+	for i := int(_rowCount) - 1; i >= 0; i-- {
+		if newBoard[i] == 0 {
+			newSymbol := r.getFallSymbol(c)
+			newBoard[i] = newSymbol
+		}
 	}
 	r.BoardSymbol = newBoard
 }
@@ -161,4 +164,16 @@ func (r *SymbolRoller) getFallSymbol(c *gameConfigJson) int64 {
 	nextPos := (r.Fall + 1) % len(data)
 	r.Fall = nextPos
 	return data[nextPos]
+}
+
+// getFreeRoundCountFromTreasure 根据夺宝数量从配置获取免费次数
+func (s *betOrderService) getFreeRoundCountFromTreasure() int64 {
+	if s.treasureCount < _triggerTreasureCount {
+		return 0
+	}
+	idx := int(s.treasureCount - 1)
+	if idx >= len(s.gameConfig.FreeSpinCount) {
+		idx = len(s.gameConfig.FreeSpinCount) - 1
+	}
+	return s.gameConfig.FreeSpinCount[idx]
 }

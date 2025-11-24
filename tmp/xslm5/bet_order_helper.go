@@ -116,7 +116,7 @@ func (s *betOrderService) showPostUpdateErrorLog() {
 
 func isBlockedCell(r, c int64) bool { return r == 0 && (c == 0 || c == _colCount-1) }
 
-// isMatchingFemaleWild 检查女性百搭符号是否可以匹配目标符号
+/*// isMatchingFemaleWild 检查女性百搭符号是否可以匹配目标符号
 // 规则：女性百搭符号（10-12）可以替代除了夺宝、百搭外的所有符号（即基础符号1-9和女性符号7-9）
 // 注意：女性百搭之间不可以相互替换，但可以通过此函数匹配基础符号
 func isMatchingFemaleWild(target, curr int64) bool {
@@ -126,7 +126,7 @@ func isMatchingFemaleWild(target, curr int64) bool {
 	}
 	// 女性百搭可以匹配基础符号（1-9），包括普通符号（1-6）和女性符号（7-9）
 	return target >= (_blank+1) && target <= _femaleC
-}
+}*/
 
 func infoHasFemaleWild(grid int64Grid) bool {
 	return infoHas(grid, func(symbol int64) bool { return symbol >= _wildFemaleA && symbol <= _wildFemaleC })

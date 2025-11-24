@@ -28,10 +28,10 @@ func init() {
 	global.GVA_LOG = logger
 }
 
-//const (
-//	testRounds       = int64(1e7) // 测试局数
-//	progressInterval = int64(1e6) // 进度输出间隔
-//)
+const (
+	benchTestRounds       = int64(1e7) // 测试局数
+	benchProgressInterval = int64(1e6) // 进度输出间隔
+)
 
 func TestRtp2(t *testing.T) {
 	betService := newBerService()
@@ -46,7 +46,7 @@ func TestRtp2(t *testing.T) {
 
 	fmt.Println()
 
-	for runtime < testRounds {
+	for runtime < benchTestRounds {
 		// 根据 Steps 判断是否为第一步骤：Steps == 0 表示新的一轮开始（第一步骤）
 		betService.isFirst = (betService.scene.Steps == 0)
 		isFirst := betService.isFirst
@@ -140,7 +140,7 @@ func TestRtp2(t *testing.T) {
 			// 注意：isFirst 会在循环开始时根据 Steps 自动设置
 
 			// 到达打印间隔时输出统计
-			if runtime%progressInterval == 0 {
+			if runtime%benchProgressInterval == 0 {
 				// 平均每次触发免费获得多少次免费局（包括中途追加）
 				var avgFreeGamePerTrigger float64
 				if freeTime > 0 {

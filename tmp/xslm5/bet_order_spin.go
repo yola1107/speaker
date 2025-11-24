@@ -24,6 +24,10 @@ func (s *betOrderService) getTreasureCount() int64 {
 }
 
 func (s *betOrderService) findWinInfos() bool {
+	// 重置标志，避免上一轮的值影响当前轮
+	s.hasFemaleWin = false
+	s.hasFemaleWildWin = false
+
 	var winInfos []*winInfo
 	for symbol := _blank + 1; symbol < _wildFemaleA; symbol++ {
 		if info, ok := s.findNormalSymbolWinInfo(symbol); ok {
@@ -47,6 +51,19 @@ func (s *betOrderService) findWinInfos() bool {
 	return len(winInfos) > 0
 }
 
+// isMatchingFemaleWild 检查女性百搭符号是否可以匹配目标符号
+// 规则：女性百搭符号（10-12）可以替代除了夺宝、百搭外的所有符号（即基础符号1-9和女性符号7-9）
+// 注意：女性百搭之间不可以相互替换，但可以通过此函数匹配基础符号
+func isMatchingFemaleWild(target, curr int64) bool {
+	// 检查 curr 是否是女性百搭符号（10-12）
+	if curr < _wildFemaleA || curr > _wildFemaleC {
+		return false
+	}
+	// 女性百搭可以匹配基础符号（1-9），包括普通符号（1-6）和女性符号（7-9）
+	return target >= (_blank+1) && target <= _femaleC
+}
+
+// 遍历符号【1，9】查找中奖符号及中奖网格（线）
 func (s *betOrderService) findNormalSymbolWinInfo(symbol int64) (*winInfo, bool) {
 	exist := false
 	lineCount := int64(1)
@@ -55,6 +72,7 @@ func (s *betOrderService) findNormalSymbolWinInfo(symbol int64) (*winInfo, bool)
 		count := int64(0)
 		for r := int64(0); r < _rowCount; r++ {
 			currSymbol := s.symbolGrid[r][c]
+			// 符号 1-9
 			//if currSymbol == symbol || (currSymbol >= _wildFemaleA && currSymbol <= _wild) {
 			if currSymbol == symbol || currSymbol == _wild || isMatchingFemaleWild(symbol, currSymbol) {
 				if currSymbol == symbol {

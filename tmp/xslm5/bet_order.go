@@ -206,6 +206,8 @@ func (s *betOrderService) eliminateResultForBase(hasElimination bool) {
 		s.client.IsRoundOver = true
 		s.scene.Steps = 0
 		s.scene.FemaleCountsForFree = [3]int64{}
+		// 清空 nextSymbolGrid，避免下一局使用上一局的数据
+		s.nextSymbolGrid = nil
 
 		// 基础模式：只在 roundOver 时统计夺宝数量并判断是否进入免费
 		s.treasureCount = s.getTreasureCount()
@@ -248,33 +250,7 @@ func (s *betOrderService) eliminateResultForBase(hasElimination bool) {
 	}
 }
 
-// getFreeRoundCountFromTreasure 根据夺宝数量从配置获取免费次数
-func (s *betOrderService) getFreeRoundCountFromTreasure() int64 {
-	if s.treasureCount < _triggerTreasureCount {
-		return 0
-	}
-	idx := int(s.treasureCount - 1)
-	if idx >= len(s.gameConfig.FreeSpinCount) {
-		idx = len(s.gameConfig.FreeSpinCount) - 1
-	}
-	return s.gameConfig.FreeSpinCount[idx]
-}
-
 func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
-	/*// 计算本步骤增加的夺宝数量
-	s.treasureCount = s.getTreasureCount()
-	s.stepAddTreasure = s.treasureCount - s.scene.TreasureNum
-	s.scene.TreasureNum = s.treasureCount
-
-	// 免费模式：每收集1个夺宝符号则免费游戏次数+1
-	// stepAddTreasure 就是本步骤增加的夺宝数量，也就是新增的免费次数
-	s.newFreeRoundCount = s.stepAddTreasure
-	if s.newFreeRoundCount > 0 {
-		s.client.ClientOfFreeGame.Incr(uint64(s.newFreeRoundCount))
-		s.client.IncLastMaxFreeNum(uint64(s.newFreeRoundCount))
-		s.scene.FreeNum += s.newFreeRoundCount
-	}*/
-
 	if hasElimination {
 		// 有消除，继续消除状态
 		s.isRoundOver = false
@@ -288,6 +264,8 @@ func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
 		s.isRoundOver = true
 		s.client.IsRoundOver = true
 		s.scene.Steps = 0
+		// 清空 nextSymbolGrid，避免下一局使用上一局的数据
+		s.nextSymbolGrid = nil
 
 		// 新增免费次数
 		s.newFreeRoundCount = s.getTreasureCount()
@@ -307,6 +285,9 @@ func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
 		// 更新状态
 		if s.scene.FreeNum > 0 {
 			s.scene.NextStage = _spinTypeFree
+			s.scene.FemaleCountsForFree = s.nextFemaleCountsForFree //+++
+			// 注意：下一轮 baseSpin() 时，Steps == 0 且 Stage == _spinTypeFree 会自动调用 getSceneSymbol() 生成新的roller
+
 		} else {
 			s.scene.NextStage = _spinTypeBase
 			s.scene.FemaleCountsForFree = [3]int64{}
@@ -336,6 +317,50 @@ func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
 		)
 	}
 }
+
+/*func (s *betOrderService) randomRollStartPos() {
+	realIndex := s.scene.SymbolRoller[0].Real
+
+	// 生成符号网格和滚轴
+	var symbolGrid int64Grid
+	var rollers [_colCount]SymbolRoller
+
+	for col := 0; col < int(_colCount); col++ {
+		data := s.gameConfig.RealData[realIndex][col]
+		if len(data) == 0 {
+			panic("real data column is empty")
+		}
+
+		start := rand.IntN(len(data))
+		end := (start + int(_rowCount) - 1) % len(data)
+		roller := SymbolRoller{Real: realIndex, Start: start, Fall: end, Col: col}
+
+		for row := 0; row < int(_rowCount); row++ {
+			symbol := data[(start+row)%len(data)]
+			// 左上角和右上角填充下block [0][0] [0][4]
+			// (*grid)[0][0], (*grid)[0][_colCount-1] = _blocked, _blocked
+			if row == 0 && (col == 0 || col == int(_colCount-1)) {
+				symbol = _blocked
+			}
+
+			if s.isFreeRound {
+				// 免费模式下，根据 ABC 计数转换符号（A->wildA, B->wildB, C->wildC）
+				// 检查是否是女性符号（A/B/C），且对应的计数 >= 10，转换为对应的 女性百搭
+				if symbol >= _femaleA && symbol <= _femaleC {
+					idx := symbol - _femaleA
+					if s.nextFemaleCountsForFree[idx] >= _femaleFullCount {
+						symbol = _wildFemaleA + idx
+					}
+				}
+			}
+
+			symbolGrid[row][col] = symbol
+			roller.BoardSymbol[int(_rowCount)-1-row] = symbol
+		}
+		rollers[col] = roller
+	}
+
+}*/
 
 //_____________________________________________________________________________________________
 
@@ -372,8 +397,8 @@ func (s *betOrderService) processElimination() bool {
 	}
 
 	if _debugLogOpen {
-		fmt.Printf("Step%d 初始盘面：\n%s", s.scene.Steps, printGrid(s.symbolGrid, nil))
-		fmt.Printf("Step%d 中奖标记:\n%s", s.scene.Steps, printGrid(s.symbolGrid, s.winGrid))
+		fmt.Printf("Step%d 初始盘面：\n%s", s.scene.Steps, GridToString(s.symbolGrid, nil))
+		fmt.Printf("Step%d 中奖标记:\n%s", s.scene.Steps, GridToString(s.symbolGrid, s.winGrid))
 	}
 
 	// 有消除，执行掉落和填充
@@ -383,7 +408,7 @@ func (s *betOrderService) processElimination() bool {
 	s.nextSymbolGrid = &nextGrid
 
 	if _debugLogOpen {
-		fmt.Printf("Step%d 下一盘面预览（实际消除+下落+填充结果）:\n%s", s.scene.Steps, printGrid(s.nextSymbolGrid, nil))
+		fmt.Printf("Step%d 下一盘面预览（实际消除+下落+填充结果）:\n%s", s.scene.Steps, GridToString(s.nextSymbolGrid, nil))
 	}
 	return cnt > 0
 }
