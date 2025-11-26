@@ -1,4 +1,4 @@
-package xslm3
+package xslm2
 
 import (
 	"context"
@@ -11,16 +11,17 @@ import (
 	"go.uber.org/zap"
 )
 
-// SpinSceneData 场景数据（需要持久化的状态，与 xslm3 保持一致）
+// SpinSceneData 场景数据（需要持久化的状态）
 type SpinSceneData struct {
 	// 新增字段
-	Steps               uint64                  `json:"steps"`        // step步数，也是连赢次数
-	Stage               int8                    `json:"stage"`        // 运行阶段
-	NextStage           int8                    `json:"nStage"`       // 下一阶段
-	FreeNum             int64                   `json:"freeNum"`      // 剩余免费次数（独立统计，不依赖client）
-	TreasureNum         int64                   `json:"treasureNum"`  // 夺宝符号数量 (每局结束写入)
-	FemaleCountsForFree [3]int64                `json:"femaleCounts"` // 女性符号计数
-	SymbolRoller        [_colCount]SymbolRoller `json:"sRoller"`      // 滚轮符号表
+	Steps                    uint64                  `json:"steps"`             // step步数，也是连赢次数
+	Stage                    int8                    `json:"stage"`             // 运行阶段
+	NextStage                int8                    `json:"nStage"`            // 下一阶段
+	FreeNum                  int64                   `json:"freeNum"`           // 剩余免费次数（独立统计，不依赖client）
+	TreasureNum              int64                   `json:"treasureNum"`       // 夺宝符号数量 (每局结束写入)  （废弃，暂未使用）
+	FemaleCountsForFree      [3]int64                `json:"femaleCounts"`      // 女性符号计数
+	RoundFemaleCountsForFree [3]int64                `json:"roundFemaleCounts"` // 女性符号计数 （每局统计） +++
+	SymbolRoller             [_colCount]SymbolRoller `json:"sRoller"`           // 滚轮符号表
 }
 
 var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", _gameID)

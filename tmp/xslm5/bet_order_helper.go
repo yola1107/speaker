@@ -1,9 +1,10 @@
-package xslm3
+package xslm2
 
 import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"egame-grpc/gamelogic"
 	"egame-grpc/global"
@@ -31,10 +32,10 @@ func (s *betOrderService) selectGameRedis() {
 }
 
 func (s *betOrderService) updateBetAmount() bool {
-	betAmount := decimal.NewFromFloat(s.req.BaseMoney).
+	s.betAmount = decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
 		Mul(decimal.NewFromInt(_baseMultiplier))
-	s.betAmount = betAmount
+
 	if s.betAmount.LessThanOrEqual(decimal.Zero) {
 		global.GVA_LOG.Warn("updateBetAmount",
 			zap.Error(fmt.Errorf("invalid request params: [%v,%v]", s.req.BaseMoney, s.req.Multiple)))
@@ -86,15 +87,10 @@ func (s *betOrderService) updateBonusAmount() {
 		s.bonusAmount = decimal.Zero
 		return
 	}
-	// 统一使用正常模式的逻辑：bonusAmount = BaseMoney * Multiple * stepMultiplier
-	// 在RTP测试中，BaseMoney=1, Multiple=1，所以 bonusAmount = stepMultiplier
-	bonusAmount := decimal.NewFromFloat(s.req.BaseMoney).
+	s.bonusAmount = decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
 		Mul(decimal.NewFromInt(s.stepMultiplier))
-	s.bonusAmount = bonusAmount
 }
-
-// Log operations
 
 func (s *betOrderService) showPostUpdateErrorLog() {
 	global.GVA_LOG.Error(
@@ -113,20 +109,7 @@ func (s *betOrderService) showPostUpdateErrorLog() {
 }
 
 // ___________________________________________________________________________
-
 func isBlockedCell(r, c int64) bool { return r == 0 && (c == 0 || c == _colCount-1) }
-
-/*// isMatchingFemaleWild 检查女性百搭符号是否可以匹配目标符号
-// 规则：女性百搭符号（10-12）可以替代除了夺宝、百搭外的所有符号（即基础符号1-9和女性符号7-9）
-// 注意：女性百搭之间不可以相互替换，但可以通过此函数匹配基础符号
-func isMatchingFemaleWild(target, curr int64) bool {
-	// 检查 curr 是否是女性百搭符号（10-12）
-	if curr < _wildFemaleA || curr > _wildFemaleC {
-		return false
-	}
-	// 女性百搭可以匹配基础符号（1-9），包括普通符号（1-6）和女性符号（7-9）
-	return target >= (_blank+1) && target <= _femaleC
-}*/
 
 func infoHasFemaleWild(grid int64Grid) bool {
 	return infoHas(grid, func(symbol int64) bool { return symbol >= _wildFemaleA && symbol <= _wildFemaleC })
@@ -149,4 +132,49 @@ func infoHas(grid int64Grid, match func(symbol int64) bool) bool {
 		}
 	}
 	return false
+}
+
+func GridToString(grid *int64Grid, winGrid *int64Grid) string {
+	if grid == nil {
+		return "(空)\n"
+	}
+	var buf strings.Builder
+	rGrid := reverseGridRows(grid)
+	rWinGrid := reverseGridRows(winGrid)
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			symbol := rGrid[r][c]
+			isWin := rWinGrid[r][c] != _blank && rWinGrid[r][c] != _blocked
+			if symbol == _blank {
+				if isWin {
+					buf.WriteString("   *|")
+				} else {
+					buf.WriteString("    |")
+				}
+			} else {
+				if isWin {
+					fmt.Fprintf(&buf, " %2d*|", symbol)
+				} else {
+					fmt.Fprintf(&buf, " %2d |", symbol)
+				}
+			}
+			if c < _colCount-1 {
+				buf.WriteString(" ")
+			}
+		}
+		buf.WriteString("\n")
+	}
+	return buf.String()
+}
+
+// reverseGridRows 网格行序反转
+func reverseGridRows(grid *int64Grid) int64Grid {
+	if grid == nil {
+		return int64Grid{}
+	}
+	var reversed int64Grid
+	for i := int64(0); i < _rowCount; i++ {
+		reversed[i] = grid[_rowCount-1-i]
+	}
+	return reversed
 }

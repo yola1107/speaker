@@ -1,4 +1,4 @@
-package xslm3
+package xslm2
 
 import (
 	"fmt"
@@ -29,9 +29,12 @@ func init() {
 }
 
 const (
-	benchTestRounds       = int64(1e7) // 测试局数
-	benchProgressInterval = int64(1e6) // 进度输出间隔
+	benchTestRounds       = int64(1e8) // 测试局数
+	benchProgressInterval = int64(1e7) // 进度输出间隔
 )
+
+// 索引对应关系：0=base, 1=000, 2=001, 3=010, 4=100, 5=011, 6=101, 7=110, 8=111, 9=008
+var stateNames = []string{"base", "000", "001", "010", "100", "011", "101", "110", "111", "008"}
 
 func TestRtp2(t *testing.T) {
 	betService := newBerService()
@@ -39,35 +42,37 @@ func TestRtp2(t *testing.T) {
 	var baseRounds, freeRounds int64   // 基础模式和免费模式的局数（完整回合数）
 	var freeWinRounds int64            // 免费模式中奖局数（每一局免费游戏结束时，如果中奖就统计一次）
 	var totalFreeGameCount int64       // 实际执行的免费游戏步数（包括中途追加的免费次数）
-	var freeFemaleStateCount [10]int64 // 免费模式女性符号状态统计 [000,001,010,011,100,101,110,111,008,009]
+	var freeFemaleStateCount [10]int64 // 免费模式女性符号状态统计 [000,001,010,011,100,101,110,111,008,009] 对应滚轴下标Index
 	var freeRoundWin float64           // 记录当前免费游戏一局的累计奖金
+	var roundWin float64               //
 	start := time.Now()
 	runtime := int64(0) // 已完成的整局数（基础+对应的免费全部结束算 1）
 
 	fmt.Println()
 
+	// 平均每一轮，
+	var femaleKeyWins [10]float64 // 免费模式女性符号状态统计 [000,001,010,011,100,101,110,111,008,009] 对应滚轴下标Index
+
+	// key 触发率对的上
 	for runtime < benchTestRounds {
 		// 根据 Steps 判断是否为第一步骤：Steps == 0 表示新的一轮开始（第一步骤）
-		betService.isFirst = (betService.scene.Steps == 0)
+		betService.isFirst = (betService.scene.Steps == 0) // 新的一局
 		isFirst := betService.isFirst
 
-		// 检测是否是免费模式新的一局开始
-		// Steps == 0 且 Stage == _spinTypeFree 或 NextStage == _spinTypeFree，说明是免费模式新的一局开始
-		isFreeStage := betService.scene.Stage == _spinTypeFree || betService.scene.NextStage == _spinTypeFree
-
 		// 执行一步 spin（可能是基础模式的一步，或免费模式的一步）
-		err := betService.baseSpin()
+		err := betService.baseSpin() // step 一步
 		if err != nil {
 			panic(err)
 		}
 
+		// baseSpin() 内部会通过 handleStageTransition() 设置 isFreeRound
+		isFree := betService.isFreeRound
+
 		// 在新的一局开始时统计女性状态（baseSpin 后 SymbolRoller 已生成）
 		// 使用 roller[0].Real 对应的状态索引（getSceneSymbol 中已根据女性状态选择）
 		// Real 索引直接对应数组索引：0-9
-		if isFirst && isFreeStage && len(betService.scene.SymbolRoller) > 0 {
-			if stateKey := betService.scene.SymbolRoller[0].Real; stateKey >= 0 && stateKey < 10 {
-				freeFemaleStateCount[stateKey]++
-			}
+		if isFirst && isFree {
+			freeFemaleStateCount[betService.scene.SymbolRoller[0].Real]++
 		}
 
 		// 当前这一步的奖金（stepMultiplier 在 baseSpin 中已被正确更新）
@@ -87,6 +92,8 @@ func TestRtp2(t *testing.T) {
 			// 2. 收集夺宝时 FreeNum 可能增加，但当前这一步仍然是免费游戏的一步
 			totalFreeGameCount++
 
+			roundWin += float64(stepWin)
+
 			// 免费模式中奖步数统计：每一步如果中奖就累加
 			if stepWin > 0 {
 				freeWinTime++
@@ -99,29 +106,41 @@ func TestRtp2(t *testing.T) {
 				if freeRoundWin > 0 {
 					freeWinRounds++
 				}
-				freeRoundWin = 0 // 重置当前免费游戏一局的累计奖金
+				freeRoundWin = 0 // 重置当前免费游戏一局的累计奖金  +++
+
+				// 统计 000 001 010... 对应的每局赢分
+				femaleKeyWins[betService.scene.SymbolRoller[0].Real] += roundWin
+
+				roundWin = 0 // 清理每局的累积赢分
 			}
+
 		} else {
+
 			// 基础模式：累加基础模式奖金
 			baseWin += stepWin
+
+			roundWin += float64(stepWin)
+
 			// 基础模式这一步结束
 			if betService.isRoundOver {
 				// 基础模式一局结束
 				baseRounds++
-				if stepWin > 0 {
-					baseWinTime++
+				if roundWin > 0 {
+					baseWinTime++ // 一局赢了
 				}
 				// 在基础模式结束时，如果 newFreeRoundCount > 0，说明这一发基础局触发了免费游戏
 				if betService.newFreeRoundCount > 0 {
 					freeTime++
 				}
+
+				roundWin = 0 // 清理每局的累积赢分
 			}
 		}
 
 		// 判断一整局（基础 + 可能存在的一串免费局）是否结束：
 		// 条件：当前这一步结束 && 没有剩余免费次数
 		// 无论当前这一步是 base 还是 free，只要 FreeNum == 0，说明这一整轮已经跑完
-		if betService.isRoundOver && betService.scene.FreeNum == 0 {
+		if betService.isRoundOver && betService.scene.FreeNum <= 0 {
 			runtime++
 			// 复用同一个 betService，不再每轮重新 new，减少大量分配开销
 			// 重置状态，确保新的一轮开始时状态正确
@@ -156,7 +175,7 @@ func TestRtp2(t *testing.T) {
 				fmt.Printf(
 					"\rRuntime=%d baseRtp=%.4f%%,baseWinRate=%.4f%% freeRtp=%.4f%% freeWinRate=%.4f%%, freeTriggerRate=%.4f%% Rtp=%.4f%%\n",
 					runtime,
-					calculateRtp(baseWin, runtime, _baseMultiplier),        // baseRtp
+					calculateRtp(baseWin, runtime, _baseMultiplier),        // baseRtp 。 ==> base / runtime*20 === 1*1**20
 					calculateRtp(baseWinTime, runtime, 1),                  // baseWinRate
 					calculateRtp(freeWin, runtime, _baseMultiplier),        // freeRtp 相对总下注
 					calculateRtp(freeWinRounds, freeWinRateDenominator, 1), // freeWinRate = 免费中奖局数 / 免费总局数
@@ -225,13 +244,25 @@ func TestRtp2(t *testing.T) {
 			totalStateCount += freeFemaleStateCount[i]
 		}
 		fmt.Printf("  总统计次数: %d (应该等于免费模式总游戏局数: %d)\n", totalStateCount, freeRounds)
-		for i := 0; i < 10; i++ {
+		for i := 1; i < 9; i++ {
 			count := freeFemaleStateCount[i]
 			if freeRounds > 0 {
 				fmt.Printf("  状态 %s: %.2f%% (%d次)\n", stateNames[i], float64(count)*100/float64(freeRounds), count)
 			} else {
 				fmt.Printf("  状态 %s: 0.00%% (%d次)\n", stateNames[i], count)
 			}
+		}
+		fmt.Println("\n[免费模式女性 key 赢分统计]")
+		for i := 0; i < len(femaleKeyWins); i++ {
+			winSum := femaleKeyWins[i]
+			count := freeFemaleStateCount[i]
+			avg := 0.0
+			if count > 0 {
+				avg = winSum / float64(count)
+			}
+			avgBet := avg / float64(_baseMultiplier)
+			fmt.Printf("  key=%s | 总赢分=%.2f | 次数=%d | 平均倍数=%.4f\n",
+				stateNames[i], winSum, count, avgBet)
 		}
 	}
 	fmt.Println()

@@ -1,4 +1,4 @@
-package xslm3
+package xslm2
 
 const _gameID = 18892
 const _baseMultiplier = 20

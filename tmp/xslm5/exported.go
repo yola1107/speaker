@@ -1,4 +1,4 @@
-package xslm3
+package xslm2
 
 import (
 	"errors"
