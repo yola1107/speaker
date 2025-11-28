@@ -1,12 +1,13 @@
 package mahjong
 
 import (
+	"errors"
+	"runtime/debug"
+
 	"egame-grpc/global"
 	"egame-grpc/global/client"
 	"egame-grpc/model/game/request"
 	"egame-grpc/model/pb"
-	"errors"
-	"runtime/debug"
 
 	"go.uber.org/zap"
 )
@@ -19,6 +20,7 @@ var (
 
 type Game struct{}
 
+// NewGame 创建游戏实例
 func NewGame() *Game {
 	return &Game{}
 }
@@ -34,27 +36,23 @@ func (g *Game) BetOrder(req *request.BetOrderReq) (result map[string]any, err er
 		}
 	}()
 
-	var betService = newBetOrderService(false)
-
+	betService := newBetOrderService()
 	betService.initGameConfigs()
 
 	resMap, err := betService.betOrder(req)
-
 	if err != nil {
 		return nil, err
 	}
-
 	return map[string]any{
-
-		"win":            resMap.CurrentWin, // 当前Step赢
-		"cards":          resMap.Cards,
-		"wincards":       resMap.WinInfo.WinGrid,
-		"betMoney":       resMap.BetAmount, // 下注额
-		"balance":        resMap.Balance,   // 余额
-		"free":           resMap.Free,      // 是否在免费
-		"freeNum":        resMap.WinInfo.FreeNum,
-		"freeTotalMoney": resMap.AccWin, // 当前round赢
-		"totalWin":       resMap.TotalWin,
+		"win":            resMap.CurrentWin,      // 当前Step赢
+		"cards":          resMap.Cards,           //
+		"wincards":       resMap.WinInfo.WinGrid, //
+		"betMoney":       resMap.BetAmount,       // 下注额
+		"balance":        resMap.Balance,         // 余额
+		"free":           resMap.Free,            // 是否在免费
+		"freeNum":        resMap.WinInfo.FreeNum, //
+		"freeTotalMoney": resMap.AccWin,          // 当前round赢
+		"totalWin":       resMap.TotalWin,        //
 	}, nil
 }
 

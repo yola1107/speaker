@@ -1,14 +1,15 @@
 package mahjong
 
 import (
+	"strconv"
+	"time"
+
 	"egame-grpc/gamelogic"
 	"egame-grpc/global"
 	"egame-grpc/model/game"
 	"egame-grpc/model/pool"
 	"egame-grpc/utils/json"
 	"egame-grpc/utils/snow"
-	"strconv"
-	"time"
 
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
@@ -17,12 +18,12 @@ import (
 // 初始化
 func (s *betOrderService) initialize() error {
 	s.client.ClientOfFreeGame.ResetFreeClean()
-
 	if !s.forRtpBench {
 		s.orderSN = strconv.FormatInt(snow.GenarotorID(s.member.ID), 10)
 	}
 
-	if s.scene == nil || s.scene.Stage == _spinTypeBase || s.scene.Stage == 0 { //是否首次spin first round
+	//是否首次spin first round
+	if s.scene == nil || s.scene.Stage == _spinTypeBase || s.scene.Stage == 0 {
 		err := s.initFirstStepForSpin()
 		if err != nil {
 			return err
@@ -47,9 +48,64 @@ func (s *betOrderService) initialize() error {
 	return nil
 }
 
+// 初始化spin第一个step
+func (s *betOrderService) initFirstStepForSpin() error {
+	if !s.forRtpBench {
+		switch {
+		case !s.updateBetAmount():
+			return InvalidRequestParams
+		case !s.checkBalance():
+			return InsufficientBalance
+		}
+	}
+	s.client.SetLastMaxFreeNum(0)
+	s.client.ClientOfFreeGame.Reset()
+	s.client.ClientOfFreeGame.ResetGeneralWinTotal()
+	s.client.ClientOfFreeGame.ResetRoundBonus()
+	s.client.ClientOfFreeGame.ResetRoundBonusStaging()
+	s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
+	s.amount = s.betAmount
+	s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
+	return nil
+}
+
+// 初始化spin后续step
+func (s *betOrderService) initStepForNextStep() {
+	if !s.forRtpBench {
+		s.req.BaseMoney = s.lastOrder.BaseAmount
+		s.req.Multiple = s.lastOrder.Multiple
+	} else {
+		s.req.BaseMoney = 1
+		s.req.Multiple = 1
+	}
+
+	s.betAmount = decimal.NewFromFloat(s.client.ClientOfFreeGame.GetBetAmount())
+	s.amount = decimal.Zero
+
+	if s.forRtpBench {
+		return
+	}
+
+	if s.scene.IsFreeRound {
+		switch {
+		case s.lastOrder.FreeOrderSn != "":
+			s.freeOrderSN = s.lastOrder.FreeOrderSn
+		case s.lastOrder.ParentOrderSn != "":
+			s.freeOrderSN = s.lastOrder.ParentOrderSn
+		default:
+			s.freeOrderSN = s.lastOrder.OrderSn
+		}
+	} else {
+		if s.lastOrder.ParentOrderSn != "" {
+			s.parentOrderSN = s.lastOrder.ParentOrderSn
+		} else {
+			s.parentOrderSN = s.lastOrder.OrderSn
+		}
+	}
+}
+
 // 更新订单
 func (s *betOrderService) updateGameOrder(result *BaseSpinResult) (bool, error) {
-
 	gameOrder := game.GameOrder{
 		MerchantID:        s.merchant.ID,
 		Merchant:          s.merchant.Merchant,
@@ -84,8 +140,7 @@ func (s *betOrderService) updateGameOrder(result *BaseSpinResult) (bool, error) 
 	return s.fillInGameOrderDetails(result)
 }
 
-// 结算step
-func (s *betOrderService) settleStep() error { // 94
+func (s *betOrderService) settleStep() error {
 	poolRecord := pool.GamePoolRecord{
 		OrderId:      s.gameOrder.OrderSn,
 		MemberId:     s.gameOrder.MemberID,
@@ -111,10 +166,7 @@ func (s *betOrderService) settleStep() error { // 94
 		MemberOne:   s.member,
 		Ip:          s.req.Ip,
 	}
-	res := gamelogic.SaveTransfer(saveParam)
-	//res.CurBalance 当前余额，已兼容转账、单一
-
-	return res.Err
+	return gamelogic.SaveTransfer(saveParam).Err
 }
 
 // 获取当前余额
@@ -144,8 +196,6 @@ func (s *betOrderService) fillInGameOrderDetails(result *BaseSpinResult) (bool, 
 	s.gameOrder.BonusRawDetail = winRawDetail
 	s.gameOrder.BetDetail = s.symbolGridToString(result.cards)
 	s.gameOrder.BonusDetail = s.winGridToString(result)
-	winDetails := s.getWinDetail(result.winResult, result.stepMultiplier, result.scatterCount, result.freeTime, s.gameConfig.FreeGameMin)
-	s.gameOrder.WinDetails = winDetails
-
+	s.gameOrder.WinDetails = s.getWinDetail(result.winResult, result.stepMultiplier, result.scatterCount, result.freeTime, s.gameConfig.FreeGameMin)
 	return true, nil
 }

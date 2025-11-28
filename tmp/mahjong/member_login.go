@@ -2,13 +2,14 @@ package mahjong
 
 import (
 	"context"
+	"errors"
+	"fmt"
+
 	"egame-grpc/global"
 	"egame-grpc/global/client"
 	"egame-grpc/model/game"
 	"egame-grpc/model/pb"
 	"egame-grpc/utils/json"
-	"errors"
-	"fmt"
 
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"

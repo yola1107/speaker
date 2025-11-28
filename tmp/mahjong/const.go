@@ -1,11 +1,9 @@
 package mahjong
 
-const _gameID = 18943  // 麻将胡了 18943
-const GameID = _gameID // 麻将胡了
-const _policeID = 3    // 游戏策略，新游戏固定为3
+const _gameID = 18943
+const GameID = _gameID
 
-const _baseMultiplier = 20    // 虚拟中奖线倍数
-const _commonRateProb = 10000 //概率空间总数
+const _baseMultiplier = 20
 
 const (
 	_rowCount    = 5 // 行数
@@ -35,12 +33,10 @@ const (
 	BAIBAN_k int64 = 16 //白板
 	ZHONG_k  int64 = 17 //红中
 	FA_k     int64 = 18 //发财
-
 )
 
 const _minMatchCount = 3 // 最小中奖数量
-
-const _goldSymbol = 10 // 金符号
+const _goldSymbol = 10   // 金符号
 
 var _baseSpecific = [5]int{-1, -1, -1, -1, -1}
 

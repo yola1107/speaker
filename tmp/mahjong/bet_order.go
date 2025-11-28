@@ -1,14 +1,15 @@
 package mahjong
 
 import (
+	"errors"
+	"fmt"
+
 	"egame-grpc/global"
 	"egame-grpc/global/client"
 	"egame-grpc/model/game"
 	"egame-grpc/model/game/request"
 	"egame-grpc/model/member"
 	"egame-grpc/model/merchant"
-	"errors"
-	"fmt"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/shopspring/decimal"
@@ -31,11 +32,11 @@ type betOrderService struct {
 	orderSN            string               // 订单号
 	parentOrderSN      string               // 父订单号，回合第一个 step 此字段为空
 	freeOrderSN        string               // 触发免费的回合的父订单号，基础 step 此字段为空
-	gameType           int64                //游戏type
-	stepMultiplier     int64                //Step倍数
-	isRoundFirstStep   bool                 //是否为第一step
-	isSpinFirstRound   bool                 //是否为Spin的第一回合
-	forRtpBench        bool                 //是否为RTP测试流程
+	gameType           int64                // 游戏type
+	stepMultiplier     int64                // Step倍数
+	isRoundFirstStep   bool                 // 是否为第一step
+	isSpinFirstRound   bool                 // 是否为Spin的第一回合
+	forRtpBench        bool                 // 是否为RTP测试流程
 	isRoundOver        bool                 // 一轮是否结束
 	gameConfig         *gameConfigJson      // 配置数据
 	removeNum          int64                // 免费游戏中奖消除次数
@@ -45,26 +46,19 @@ type betOrderService struct {
 	symbolGrid         int64Grid            // 符号网格
 	winGrid            int64Grid            // 中奖网格
 	reversalSymbolGrid int64Grid            // 反转符号网格
-	reversalWinGrid    int64GridW           // 反正中奖网格
-
+	reversalWinGrid    int64GridW           // 反转中奖网格
 }
 
-// 生成下注服务实例
-func newBetOrderService(forRtpBench bool) *betOrderService {
-	s := &betOrderService{
-		forRtpBench: forRtpBench,
-	}
-
+func newBetOrderService() *betOrderService {
+	s := &betOrderService{}
 	s.selectGameRedis()
 	s.gameMultiple = 1
-
 	return s
 }
 
-// 统一下注请求接口，无论是免费还是普通
+// betOrder 统一下注请求接口，无论是免费还是普通
 func (s *betOrderService) betOrder(req *request.BetOrderReq) (*SpinResultC, error) {
 	s.req = req
-
 	if !s.getRequestContext() {
 		return nil, InternalServerError
 	}
@@ -88,7 +82,6 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (*SpinResultC, erro
 		s.isRoundFirstStep = true
 		s.cleanScene()
 	}
-	//加载场景数据
 	s.reloadScene()
 
 	baseRes, err := s.baseSpin()
@@ -96,7 +89,7 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (*SpinResultC, erro
 		return nil, err
 	}
 
-	accWin := float64(0)
+	var accWin float64
 	if s.isFreeRound() {
 		accWin = s.client.ClientOfFreeGame.GetFreeTotalMoney()
 	}
@@ -120,17 +113,14 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (*SpinResultC, erro
 		RoundBonus: s.client.ClientOfFreeGame.RoundBonus,
 	}
 
-	if ok, err = s.updateGameOrder(baseRes); !ok {
+	ok, err = s.updateGameOrder(baseRes)
+	if !ok || err != nil {
 		return nil, err
 	}
-
-	err = s.settleStep()
-	if err != nil {
+	if err = s.settleStep(); err != nil {
 		return nil, err
 	}
-
-	err = s.saveScene()
-	if err != nil {
+	if err = s.saveScene(); err != nil {
 		return nil, err
 	}
 	spinResultC.Balance = s.gameOrder.CurBalance

@@ -1,5 +1,6 @@
 package mahjong
 
+// baseSpin 核心旋转逻辑
 func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 	if err := s.initialize(); err != nil {
 		return nil, err
@@ -15,24 +16,15 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 		}
 	}
 
-	//判断是否为round的第一个step
 	if s.isRoundFirstStep {
-		//初始化SymbolRoller
 		s.scene.SymbolRoller = s.initSpinSymbol(s.scene.Stage)
 		s.isRoundFirstStep = false
 		s.gameMultiple = 1
 		s.removeNum = 0
 	}
 
-	//prettyRandSymbol(s.scene.SymbolRoller)
-
 	s.scene.Steps++
-	//zap.L().Info("s.scene.steps:", zap.Any(":", s.scene.steps))
-
-	//转换成通用符号
 	s.handleSymbolGrid()
-
-	//prettyInt64Grid(symbolGrid)
 
 	winInfos := s.checkSymbolGridWin()
 
@@ -63,7 +55,6 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 		cards: s.reversalSymbolGrid,
 	}
 
-	//有中奖
 	if len(winInfos) > 0 {
 
 		s.scene.RoundOver = false
@@ -94,13 +85,12 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 
 		s.nextSymbolGrid = s.moveSymbols()
 		baseSpinResult.nextSymbolGrid = s.nextSymbolGrid
-
 		baseSpinResult.winInfo.Next = true
 		//掉落补充符号
 		s.fallingWinSymbols(s.nextSymbolGrid, s.scene.Stage)
 		//中奖后下回合倍数增加
 		if s.removeNum < 3 {
-			s.removeNum += 1
+			s.removeNum++
 		}
 
 		for _, info := range winInfos {
@@ -127,8 +117,6 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 		}
 
 	} else {
-
-		//没中奖逻辑
 		s.scene.Steps = 0
 		s.scene.NextStage = _spinTypeBase
 		if s.isFreeRound() {
@@ -150,15 +138,10 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 		baseSpinResult.nextSymbolGrid = s.nextSymbolGrid
 
 		scatterCount := s.getScatterCount()
-
 		baseSpinResult.scatterCount = scatterCount
-
-		// 设置round结束
 		s.client.ClientOfFreeGame.SetLastMapId(0)
 
-		//普通模式里面
 		if s.isBaseRound() {
-			//Scatter数量大于配置，要进入到免费模式
 			scatterCountTmp := scatterCount
 			if scatterCountTmp >= 5 {
 				scatterCountTmp = 5
@@ -172,24 +155,20 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 				s.gameMultiple = 1
 				baseSpinResult.winInfo.Next = true
 				baseSpinResult.freeTime = int64(addFreeTimes)
-
-			} else { //否则设置spin和round都退出
+			} else {
 				baseSpinResult.winInfo.Next = false
 				s.client.ClientOfFreeGame.SetLastWinId(0)
 				s.scene.IsFreeRound = false
 				baseSpinResult.SpinOver = true
 			}
-		} else { //本来在免费模式里面
-			//增加免费次数
+		} else {
 			if scatterCount >= s.gameConfig.FreeGameMin {
 				addFreeTimes := int64(s.gameConfig.FreeGameTimes + (scatterCount-s.gameConfig.FreeGameMin)*s.gameConfig.FreeGameAddTimes)
 				baseSpinResult.addFreeTime = addFreeTimes
 				baseSpinResult.freeTime = int64(addFreeTimes)
 				s.client.ClientOfFreeGame.Incr(uint64(baseSpinResult.addFreeTime))
 			}
-			//是否是最后一次？
 			if s.client.ClientOfFreeGame.GetFreeNum() < 1 {
-				//设置spin结束
 				s.client.ClientOfFreeGame.SetLastWinId(0)
 				s.scene.NextStage = _spinTypeBase
 				baseSpinResult.winInfo.Next = false
@@ -213,7 +192,5 @@ func (s *betOrderService) baseSpin() (*BaseSpinResult, error) {
 	baseSpinResult.winInfo.AddFreeTime = baseSpinResult.addFreeTime
 	baseSpinResult.winInfo.WinGrid = s.reversalWinGrid
 	baseSpinResult.winInfo.NextSymbolGrid = s.nextSymbolGrid
-
 	return &baseSpinResult, nil
-
 }
