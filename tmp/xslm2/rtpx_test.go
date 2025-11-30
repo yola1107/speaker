@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	testRounds       = 1e3
+	testRounds       = 1e8
 	progressInterval = 1e7
-	debugFileOpen    = 10
+	debugFileOpen    = 0
 	freeModeLogOnly  = 0
 )
 

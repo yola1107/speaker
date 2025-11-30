@@ -365,8 +365,9 @@ func (s *betOrderService) eliminateResultForBase(hasElimination bool) {
 		}
 	}
 
+	// 总是调用 updateBonusAmount 来确保 bonusAmount 被正确设置
+	s.updateBonusAmount()
 	if s.stepMultiplier > 0 {
-		s.updateBonusAmount()
 		s.client.ClientOfFreeGame.IncrGeneralWinTotal(s.bonusAmount.Round(2).InexactFloat64())
 		s.client.ClientOfFreeGame.IncRoundBonus(s.bonusAmount.Round(2).InexactFloat64())
 	}
@@ -425,8 +426,9 @@ func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
 		}
 	}
 
+	// 总是调用 updateBonusAmount 来确保 bonusAmount 被正确设置
+	s.updateBonusAmount()
 	if s.stepMultiplier > 0 {
-		s.updateBonusAmount()
 		s.client.ClientOfFreeGame.IncrGeneralWinTotal(s.bonusAmount.Round(2).InexactFloat64())
 		s.client.ClientOfFreeGame.IncrFreeTotalMoney(s.bonusAmount.Round(2).InexactFloat64())
 		s.client.ClientOfFreeGame.IncRoundBonus(s.bonusAmount.Round(2).InexactFloat64())
