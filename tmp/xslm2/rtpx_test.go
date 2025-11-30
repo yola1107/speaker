@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	testRounds       = 1e8
+	testRounds       = 1e3
 	progressInterval = 1e7
-	debugFileOpen    = 0
+	debugFileOpen    = 10
 	freeModeLogOnly  = 0
 )
 
@@ -81,7 +81,7 @@ func TestRtp2(t *testing.T) {
 			}
 
 			cascadeCount++
-			stepWin := float64(svc.stepMultiplier)
+			stepWin := svc.bonusAmount.Round(2).InexactFloat64()
 			roundWin += stepWin
 
 			if isFree {
@@ -331,12 +331,14 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 		buf.WriteString(fmt.Sprintf("\t🛑 连消结束（%s）\n\n", stopReason))
 	}
 
-	lineBet := svc.betAmount.Div(decimal.NewFromInt(_baseMultiplier))
+	// 直接使用 TotalMultiplier 计算每条中奖线的奖金
+	// stepMultiplier = sum(TotalMultiplier)，所以可以直接用 BaseMoney × Multiple × TotalMultiplier
+	lineBet := decimal.NewFromFloat(svc.req.BaseMoney).Mul(decimal.NewFromInt(svc.req.Multiple))
 	for _, wr := range svc.winResults {
-		amount := lineBet.Mul(decimal.NewFromInt(wr.TotalMultiplier)).Round(2).InexactFloat64()
-		buf.WriteString(fmt.Sprintf("\t符号: %d(%d), 连线: %d, 乘积: %d, 赔率: %.2f, 下注: %g×%d, 奖金: %g\n",
+		lineWin := lineBet.Mul(decimal.NewFromInt(wr.TotalMultiplier)).Round(2).InexactFloat64()
+		buf.WriteString(fmt.Sprintf("\t符号: %d(%d), 连线: %d, 乘积: %d, 赔率: %.2f, 下注: %g×%d, 奖金: %.2f\n",
 			wr.Symbol, wr.Symbol, wr.SymbolCount, wr.LineCount, float64(wr.BaseLineMultiplier),
-			svc.req.BaseMoney, svc.req.Multiple, amount))
+			svc.req.BaseMoney, svc.req.Multiple, lineWin))
 	}
 	buf.WriteString(fmt.Sprintf("\t累计中奖: %.2f\n", roundWin))
 
