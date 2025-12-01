@@ -29,7 +29,7 @@ func (s *betOrderService) initialize() error {
 }
 
 func (s *betOrderService) initStepForFirstStep() error {
-	if !s.debug.open {
+	if s.debug.open {
 		s.betAmount = decimal.NewFromInt(_baseMultiplier)
 		s.amount = s.betAmount
 		return nil

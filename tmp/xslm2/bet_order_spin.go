@@ -1,13 +1,5 @@
 package xslm2
 
-import (
-	"fmt"
-
-	"egame-grpc/global"
-
-	"go.uber.org/zap"
-)
-
 // baseSpin 主旋转函数
 func (s *betOrderService) baseSpin() error {
 	if err := s.initialize(); err != nil {
@@ -20,19 +12,14 @@ func (s *betOrderService) baseSpin() error {
 	// 新回合开始时初始化符号网格
 	if s.scene.Steps == 0 && (s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeFree) {
 		s.scene.SymbolRoller = s.getSceneSymbol()
-		if _debugLogOpen {
-			global.GVA_LOG.Debug("新回合开始",
-				zap.Int8("Stage", s.scene.Stage),
-				zap.Int64("FreeNum", s.scene.FreeNum),
-				zap.Any("scene", s.scene),
-			)
-		}
 	}
 
 	// 处理符号网格、查找中奖、更新结果
 	s.handleSymbolGrid()
 	s.findWinInfos()
-	s.updateStepResults(false)
+	s.processWinInfos(false)
+	s.updateBonusAmount()
+	s.updateCurrentBalance()
 
 	// 处理消除和结果
 	hasElimination := s.processElimination()
@@ -41,7 +28,6 @@ func (s *betOrderService) baseSpin() error {
 	} else {
 		s.eliminateResultForBase(hasElimination)
 	}
-	s.updateCurrentBalance()
 	return nil
 }
 
@@ -169,8 +155,8 @@ func (s *betOrderService) findWildSymbolWinInfo(symbol int64) (*winInfo, bool) {
 	return nil, false
 }
 
-// updateStepResults 更新步骤结果
-func (s *betOrderService) updateStepResults(partialElimination bool) {
+// processWinInfos 更新步骤结果
+func (s *betOrderService) processWinInfos(partialElimination bool) {
 	var winResults []*winResult
 	var winGrid int64Grid
 	lineMultiplier := int64(0)
@@ -237,19 +223,11 @@ func (s *betOrderService) processElimination() bool {
 		return false
 	}
 
-	if _debugLogOpen {
-		fmt.Printf("Step%d 初始盘面：\n%s", s.scene.Steps, GridToString(s.symbolGrid, nil))
-		fmt.Printf("Step%d 中奖标记:\n%s", s.scene.Steps, GridToString(s.symbolGrid, s.winGrid))
-	}
-
 	s.collectFemaleSymbol()
 	s.dropSymbols(&nextGrid)
 	s.fallingWinSymbols(nextGrid)
 	s.nextSymbolGrid = &nextGrid
 
-	if _debugLogOpen {
-		fmt.Printf("Step%d 下一盘面预览（消除后）:\n%s", s.scene.Steps, GridToString(s.nextSymbolGrid, nil))
-	}
 	return true
 }
 
@@ -364,24 +342,6 @@ func (s *betOrderService) eliminateResultForBase(hasElimination bool) {
 			s.scene.NextStage = _spinTypeBase
 		}
 	}
-
-	// 总是调用 updateBonusAmount 来确保 bonusAmount 被正确设置
-	s.updateBonusAmount()
-	if s.stepMultiplier > 0 {
-		s.client.ClientOfFreeGame.IncrGeneralWinTotal(s.bonusAmount.Round(2).InexactFloat64())
-		s.client.ClientOfFreeGame.IncRoundBonus(s.bonusAmount.Round(2).InexactFloat64())
-	}
-
-	if _debugLogOpen {
-		msg := "回合消除"
-		if s.isRoundOver {
-			msg = "回合结束"
-		}
-		global.GVA_LOG.Debug(msg,
-			zap.Int8("Stage", s.scene.Stage),
-			zap.Int64("FreeNum", s.scene.FreeNum),
-			zap.Any("scene", s.scene))
-	}
 }
 
 // eliminateResultForFree 免费模式消除结果处理
@@ -424,25 +384,6 @@ func (s *betOrderService) eliminateResultForFree(hasElimination bool) {
 			s.scene.FemaleCountsForFree = [3]int64{}
 			s.scene.RoundFemaleCountsForFree = [3]int64{}
 		}
-	}
-
-	// 总是调用 updateBonusAmount 来确保 bonusAmount 被正确设置
-	s.updateBonusAmount()
-	if s.stepMultiplier > 0 {
-		s.client.ClientOfFreeGame.IncrGeneralWinTotal(s.bonusAmount.Round(2).InexactFloat64())
-		s.client.ClientOfFreeGame.IncrFreeTotalMoney(s.bonusAmount.Round(2).InexactFloat64())
-		s.client.ClientOfFreeGame.IncRoundBonus(s.bonusAmount.Round(2).InexactFloat64())
-	}
-
-	if _debugLogOpen {
-		msg := "   消除    "
-		if s.isRoundOver {
-			msg = "回合结束"
-		}
-		global.GVA_LOG.Debug(msg,
-			zap.Int8("Stage", s.scene.Stage),
-			zap.Int64("FreeNum", s.scene.FreeNum),
-			zap.Any("scene", s.scene))
 	}
 }
 

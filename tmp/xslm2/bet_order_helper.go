@@ -85,13 +85,18 @@ func (s *betOrderService) winGridToString() string {
 }
 
 func (s *betOrderService) updateBonusAmount() {
-	if s.stepMultiplier <= 0 {
-		s.bonusAmount = decimal.Zero
-		return
-	}
 	s.bonusAmount = decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
 		Mul(decimal.NewFromInt(s.stepMultiplier))
+
+	if s.bonusAmount.GreaterThan(decimal.Zero) {
+		rounded := s.bonusAmount.Round(2).InexactFloat64()
+		s.client.ClientOfFreeGame.IncrGeneralWinTotal(rounded)
+		s.client.ClientOfFreeGame.IncRoundBonus(rounded)
+		if s.isFreeRound {
+			s.client.ClientOfFreeGame.IncrFreeTotalMoney(rounded)
+		}
+	}
 }
 
 func (s *betOrderService) showPostUpdateErrorLog() {
@@ -177,7 +182,7 @@ func GridToString(grid *int64Grid, winGrid *int64Grid) string {
 		return "(空)\n"
 	}
 	var buf strings.Builder
-	buf.Grow(int(_rowCount * _colCount * 10))
+	buf.Grow(512)
 	writeGridToBuilder(&buf, grid, winGrid)
 	return buf.String()
 }
