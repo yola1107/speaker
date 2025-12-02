@@ -1,4 +1,4 @@
-package mahjong
+package mahjong4
 
 import (
 	"context"
@@ -54,6 +54,10 @@ func (s *betOrderService) reloadScene() error {
 		s.cleanScene()
 		return nil
 	}
+
+	// 加载场景后立即进行状态切换
+	s.syncGameStage()
+
 	return nil
 }
 
@@ -69,23 +73,18 @@ func (s *betOrderService) loadCacheSceneData() error {
 	return nil
 }
 
-// handleStageTransition 处理状态跳转和验证
-func (s *betOrderService) handleStageTransition() {
-	// 初始化 Stage（如果是首次或未设置）
+func (s *betOrderService) syncGameStage() {
 	if s.scene.Stage == 0 {
 		s.scene.Stage = _spinTypeBase
 	}
 
-	// 处理状态切换：如果 NextStage 已设置且与当前 Stage 不同，则切换
 	if s.scene.NextStage > 0 {
 		if s.scene.NextStage != s.scene.Stage {
 			s.scene.Stage = s.scene.NextStage
 		}
-		// 无论是否切换，都清零 NextStage（避免状态混淆）
 		s.scene.NextStage = 0
 	}
 
-	// 根据当前 Stage 设置 isFreeRound
 	s.isFreeRound = s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeFreeEli
 
 	if s.scene.Steps == 0 {

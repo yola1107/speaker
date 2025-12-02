@@ -2,6 +2,7 @@ package xslm2
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -65,6 +66,7 @@ func TestRtp(t *testing.T) {
 	betService := newBerService()
 	stats := &rtpStats{}
 	start := time.Now()
+	buf := &strings.Builder{}
 	progressStep := int64(min(benchProgressInterval, benchTestRounds))
 
 	var freeRoundWin float64
@@ -127,153 +129,109 @@ func TestRtp(t *testing.T) {
 			freeRoundWin = 0
 
 			if stats.baseRounds%progressStep == 0 {
-				printBenchmarkProgress(stats, start)
+				printBenchmarkProgress(buf, stats, start)
+				fmt.Print(buf.String())
 			}
 		}
 	}
 
-	fmt.Println()
-	printBenchmarkSummary(stats, start)
+	printBenchmarkSummary(buf, stats, start)
+	fmt.Print(buf.String())
 }
 
-func printBenchmarkProgress(stats *rtpStats, start time.Time) {
+func printBenchmarkProgress(buf *strings.Builder, stats *rtpStats, start time.Time) {
 	if stats.baseRounds == 0 || stats.totalBet == 0 {
 		return
 	}
-
 	freeRoundsSafe := max(stats.freeRounds, 1)
-	avgFreePerTrigger := float64(0)
-	if stats.freeTime > 0 {
-		avgFreePerTrigger = float64(stats.freeRounds) / float64(stats.freeTime)
-	}
-
-	fmt.Printf("Runtime-%d baseRtp=%.4f%%,baseWinRate=%.4f%% freeRtp=%.4f%% freeWinRate=%.4f%%, freeTriggerRate=%.4f%% avgFree=%.4f Rtp=%.4f%%\n",
+	avgFreePerTrigger := safeDivide(stats.freeRounds, stats.freeTime)
+	buf.Reset()
+	fprintf(buf, "\rRuntime=%d baseRtp=%.4f%%,baseWinRate=%.4f%% freeRtp=%.4f%% freeWinRate=%.4f%%, freeTriggerRate=%.4f%% avgFree=%.4f Rtp=%.4f%% \n",
 		stats.baseRounds,
-		calculateRtp(stats.baseWin, stats.baseRounds, _baseMultiplier),
-		calculateRtp(stats.baseWinTime, stats.baseRounds, 1),
-		calculateRtp(stats.freeWin, stats.baseRounds, _baseMultiplier),
-		float64(stats.freeWinRounds)*100/float64(freeRoundsSafe),
-		float64(stats.freeTime)*100/float64(stats.baseRounds),
+		safeDivide(stats.baseWin*100, stats.baseRounds*_baseMultiplier),
+		safeDivide(stats.baseWinTime*100, stats.baseRounds),
+		safeDivide(stats.freeWin*100, stats.baseRounds*_baseMultiplier),
+		safeDivide(stats.freeWinRounds*100, freeRoundsSafe),
+		safeDivide(stats.freeTime*100, stats.baseRounds),
 		avgFreePerTrigger,
-		calculateRtp(stats.totalWin, stats.baseRounds, _baseMultiplier),
+		safeDivide(stats.totalWin*100, stats.baseRounds*_baseMultiplier),
 	)
-	fmt.Printf("\rtotalWin-%d freeWin=%d,baseWin=%d ,baseWinTime=%d ,freeTime=%d, freeRounds=%d ,freeWinRounds=%d, freeWinTime=%d, elapsed=%v\n",
+	fprintf(buf, "\rtotalWin-%d freeWin=%d,baseWin=%d ,baseWinTime=%d ,freeTime=%d, freeRounds=%d ,freeWinRounds=%d, freeWinTime=%d, elapsed=%v\n",
 		stats.totalWin, stats.freeWin, stats.baseWin, stats.baseWinTime, stats.freeTime,
 		stats.freeRounds, stats.freeWinRounds, stats.freeWinTime, time.Since(start).Round(time.Second))
 }
 
-func printBenchmarkSummary(stats *rtpStats, start time.Time) {
+func printBenchmarkSummary(buf *strings.Builder, stats *rtpStats, start time.Time) {
 	if stats.baseRounds == 0 || stats.totalBet == 0 {
-		fmt.Println("No data collected for RTP benchmark.")
+		buf.WriteString("No data collected for RTP benchmark.\n")
 		return
 	}
 
+	w := func(format string, args ...interface{}) { fprintf(buf, format, args...) }
 	elapsed := time.Since(start)
-	fmt.Printf("运行局数: %d，用时: %v，速度: %.0f 局/秒\n\n",
-		stats.baseRounds, elapsed.Round(time.Second), float64(stats.baseRounds)/elapsed.Seconds())
+	speed := safeDivide(stats.baseRounds, int64(elapsed.Seconds()))
+	w("\n运行局数: %d，用时: %v，速度: %.0f 局/秒\n\n", stats.baseRounds, elapsed.Round(time.Second), speed)
 
-	baseRTP := calculateRtp(stats.baseWin, stats.baseRounds, _baseMultiplier)
-	freeRTP := calculateRtp(stats.freeWin, stats.baseRounds, _baseMultiplier)
-	totalRTP := calculateRtp(stats.totalWin, stats.baseRounds, _baseMultiplier)
-	baseWinRate := float64(0)
-	if stats.baseRounds > 0 {
-		baseWinRate = float64(stats.baseWinTime) * 100 / float64(stats.baseRounds)
-	}
-	freeWinRate := float64(0)
+	baseRTP := safeDivide(stats.baseWin*100, stats.baseRounds*_baseMultiplier)
+	freeRTP := safeDivide(stats.freeWin*100, stats.baseRounds*_baseMultiplier)
+	totalRTP := safeDivide(stats.totalWin*100, stats.baseRounds*_baseMultiplier)
+	baseWinRate := safeDivide(stats.baseWinTime*100, stats.baseRounds)
+	freeWinRate := safeDivide(stats.freeWinRounds*100, stats.freeRounds)
+	freeTriggerRate := safeDivide(stats.freeTime*100, stats.baseRounds)
+	avgFreePerRound := safeDivide(stats.freeRounds, stats.baseRounds)
+	avgFreePerTrigger := safeDivide(stats.freeRounds, stats.freeTime)
+
+	w("\n[总计]\n")
+	w("总回报率(RTP): %.2f%%\n\n", totalRTP)
+
+	w("[基础模式统计]\n")
+	w("基础模式总游戏局数: %d\n", stats.baseRounds)
+	w("基础模式总投注(倍数): %.2f\n", stats.totalBet)
+	w("基础模式总奖金: %.2f\n", float64(stats.baseWin))
+	w("基础模式RTP: %.2f%%\n", baseRTP)
+	w("基础模式免费局触发次数: %d\n", stats.freeTime)
+	w("基础模式触发免费局比例: %.2f%%\n", freeTriggerRate)
+	w("基础模式平均每局免费次数: %.2f\n", avgFreePerRound)
+	w("基础模式中奖率: %.2f%%\n", baseWinRate)
+	w("基础模式中奖局数: %d\n", stats.baseWinTime)
+
+	w("\n[免费模式统计]\n")
+	w("免费模式总游戏局数: %d\n", stats.freeRounds)
+	w("免费模式总游戏步数: %d\n", stats.totalFreeGameCount)
+	w("免费模式总奖金: %.2f\n", float64(stats.freeWin))
+	w("免费模式RTP: %.2f%%\n", freeRTP)
+	w("免费模式中奖率: %.2f%%\n", freeWinRate)
+	w("免费模式中奖局数: %d\n", stats.freeWinRounds)
+	w("免费模式中奖步数: %d\n", stats.freeWinTime)
 	if stats.freeRounds > 0 {
-		freeWinRate = float64(stats.freeWinRounds) * 100 / float64(stats.freeRounds)
-	}
-	freeTriggerRate := float64(0)
-	if stats.baseRounds > 0 {
-		freeTriggerRate = float64(stats.freeTime) * 100 / float64(stats.baseRounds)
-	}
-	avgFreePerRound := float64(0)
-	if stats.baseRounds > 0 {
-		avgFreePerRound = float64(stats.freeRounds) / float64(stats.baseRounds)
-	}
-	avgFreePerTrigger := float64(0)
-	if stats.freeTime > 0 {
-		avgFreePerTrigger = float64(stats.freeRounds) / float64(stats.freeTime)
+		printFemaleStateStats(w, stats.freeRounds, stats.freeFemaleStateCount, stats.femaleKeyWins)
 	}
 
-	fmt.Println("[基础模式统计]")
-	fmt.Printf("基础模式总游戏局数: %d\n", stats.baseRounds)
-	fmt.Printf("基础模式总投注(倍数): %.2f\n", stats.totalBet)
-	fmt.Printf("基础模式总奖金: %.2f\n", float64(stats.baseWin))
-	fmt.Printf("基础模式RTP: %.2f%%\n", baseRTP)
-	fmt.Printf("基础模式免费局触发次数: %d\n", stats.freeTime)
-	fmt.Printf("基础模式触发免费局比例: %.2f%%\n", freeTriggerRate)
-	fmt.Printf("基础模式平均每局免费次数: %.2f\n", avgFreePerRound)
-	fmt.Printf("基础模式中奖率: %.2f%%\n", baseWinRate)
-	fmt.Printf("基础模式中奖局数: %d\n", stats.baseWinTime)
-
-	fmt.Println()
-	fmt.Println("[免费模式统计]")
-	fmt.Printf("免费模式总游戏局数: %d\n", stats.freeRounds)
-	fmt.Printf("免费模式总游戏步数: %d\n", stats.totalFreeGameCount)
-	fmt.Printf("免费模式总奖金: %.2f\n", float64(stats.freeWin))
-	fmt.Printf("免费模式RTP: %.2f%%\n", freeRTP)
-	fmt.Printf("免费模式中奖率: %.2f%%\n", freeWinRate)
-	fmt.Printf("免费模式中奖局数: %d\n", stats.freeWinRounds)
-	fmt.Printf("免费模式中奖步数: %d\n", stats.freeWinTime)
-	if stats.totalFreeGameCount > 0 {
-		fmt.Printf("免费模式中奖率(按步): %.2f%%\n", float64(stats.freeWinTime)*100/float64(stats.totalFreeGameCount))
-	}
-
-	if stats.freeRounds > 0 {
-		fmt.Println()
-		printFemaleStateStats(stats)
-	}
-
-	fmt.Println()
-	fmt.Println("[免费触发效率]")
-	fmt.Printf("总免费游戏次数: %d | 总触发次数: %d\n", stats.freeRounds, stats.freeTime)
-	if stats.freeTime > 0 {
-		fmt.Printf("平均每次触发获得免费次数: %.2f\n", avgFreePerTrigger)
-	} else {
-		fmt.Printf("平均每次触发获得免费次数: 0\n")
-	}
-
-	fmt.Println()
-	fmt.Println("[总计]")
-	fmt.Printf("总回报率(RTP): %.2f%%\n", totalRTP)
+	w("\n[免费触发效率]\n")
+	w("总免费游戏次数: %d | 总触发次数: %d\n", stats.freeRounds, stats.freeTime)
+	w("平均每次触发获得免费次数: %.2f\n", avgFreePerTrigger)
 }
 
-func printFemaleStateStats(stats *rtpStats) {
-	fmt.Println("[免费模式女性符号状态统计]")
+func printFemaleStateStats(w func(string, ...interface{}), freeRounds int64, freeFemaleStateCount [10]int64, femaleKeyWins [10]float64) {
+	w("\n[免费模式女性符号状态统计]\n")
 	totalStateCount := int64(0)
 	for i := 0; i < 10; i++ {
-		totalStateCount += stats.freeFemaleStateCount[i]
+		totalStateCount += freeFemaleStateCount[i]
 	}
-	fmt.Printf("总统计次数: %d (应该等于免费模式总游戏局数: %d)\n", totalStateCount, stats.freeRounds)
+	w("  总统计次数: %d (应该等于免费模式总游戏局数: %d)\n", totalStateCount, freeRounds)
 	for i := 1; i < 9; i++ {
-		count := stats.freeFemaleStateCount[i]
-		percentage := float64(0)
-		if stats.freeRounds > 0 {
-			percentage = float64(count) * 100 / float64(stats.freeRounds)
-		}
-		fmt.Printf("状态 %s: %.2f%% (%d次)\n", stateNames[i], percentage, count)
+		count := freeFemaleStateCount[i]
+		w("  状态 %s: %.4f%% (%d次)\n", stateNames[i], safeDivide(count*100, freeRounds), count)
 	}
-	fmt.Println()
-	fmt.Println("[免费模式女性 key 赢分统计]")
-	for i := 0; i < len(stats.femaleKeyWins); i++ {
-		winSum := stats.femaleKeyWins[i]
-		count := stats.freeFemaleStateCount[i]
-		avg := float64(0)
-		if count > 0 {
-			avg = winSum / float64(count)
-		}
+	w("\n[免费模式女性 key 赢分统计]\n")
+	for i := 1; i < 9; i++ {
+		winSum := femaleKeyWins[i]
+		count := freeFemaleStateCount[i]
+		avg := safeDivide(int64(winSum), count)
 		avgBet := avg / float64(_baseMultiplier)
-		fmt.Printf("key=%s | 总赢分=%.2f | 次数=%d | 平均倍数=%.4f\n",
+		w("  key=%s | 总赢分=%.2f | 次数=%d | 平均倍数=%.4f\n",
 			stateNames[i], winSum, count, avgBet)
 	}
-}
-
-func calculateRtp(win, rounds, multiplier int64) float64 {
-	if rounds == 0 || multiplier == 0 {
-		return 0
-	}
-	return float64(win) / float64(rounds*multiplier) * 100.0
 }
 
 func resetBetServiceForNextRound(s *betOrderService) {
@@ -352,4 +310,15 @@ func newBerService() *betOrderService {
 	}
 	s.initGameConfigs()
 	return s
+}
+
+func fprintf(buf *strings.Builder, format string, args ...interface{}) {
+	_, _ = fmt.Fprintf(buf, format, args...)
+}
+
+func safeDivide(numerator, denominator int64) float64 {
+	if denominator == 0 {
+		return 0
+	}
+	return float64(numerator) / float64(denominator)
 }

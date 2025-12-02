@@ -1,4 +1,4 @@
-package mahjong
+package mahjong4
 
 import (
 	"errors"
@@ -33,14 +33,18 @@ type betOrderService struct {
 	orderSN        string               // 订单号
 	parentOrderSN  string               // 父订单号，回合第一个 step 此字段为空
 	freeOrderSN    string               // 触发免费的回合的父订单号，基础 step 此字段为空
-	stepMultiplier int64                // Step倍数
 	isRoundOver    bool                 // 回合是否结束
 	isFreeRound    bool                 // 是否为免费回合
+	scatterCount   int64                // 夺宝符个数
 	gameMultiple   int64                // 连续消除倍数，初始1倍（从 scene.ContinueNum 计算得出）
+	lineMultiplier int64                // 线倍数
+	stepMultiplier int64                // Step倍数
 	winInfos       []*winInfo           // 中奖信息
 	nextSymbolGrid int64Grid            // 下一把 step 符号网格
 	symbolGrid     int64Grid            // 符号网格
 	winGrid        int64Grid            // 中奖网格
+	winData        winData              // 中奖信息（用于构建返回结果）
+	cardTypes      []CardType           // 中奖结果（用于 updateGameOrder）
 	debug          rtpDebugData         // 是否为RTP测试流程
 }
 
@@ -52,8 +56,7 @@ func newBetOrderService() *betOrderService {
 	return s
 }
 
-// betOrder 统一下注请求接口，无论是免费还是普通
-func (s *betOrderService) betOrder(req *request.BetOrderReq) (*SpinResultC, error) {
+func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, error) {
 	s.req = req
 	if !s.getRequestContext() {
 		return nil, InternalServerError
@@ -77,50 +80,21 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (*SpinResultC, erro
 		s.cleanScene()
 	}
 
-	// 加载场景数据
 	if err := s.reloadScene(); err != nil {
 		global.GVA_LOG.Error("betOrder: reloadScene failed", zap.Error(err))
 		return nil, InternalServerError
 	}
 
-	// 检查是否等待客户端选择免费游戏类型
 	if s.scene.BonusState == _bonusStatePending {
 		msg := fmt.Sprintf("scatterNum=%d bonusNum=%d,bonusState=%d", s.scene.ScatterNum, s.scene.BonusNum, s.scene.BonusState)
 		global.GVA_LOG.Warn("betOrder", zap.String("waiting for client to select bonus type.", msg))
 		return nil, fmt.Errorf("waiting for client to select bonus type: %s", msg)
 	}
 
-	baseRes, err := s.baseSpin()
-	if err != nil {
+	if err := s.baseSpin(); err != nil {
 		return nil, err
 	}
-
-	var accWin float64
-	var isFreeInt int
-	if s.isFreeRound {
-		accWin = s.client.ClientOfFreeGame.GetFreeTotalMoney()
-		isFreeInt = 1
-	}
-
-	spinResultC := &SpinResultC{
-		Balance:    s.getCurrentBalance(),
-		BetAmount:  s.betAmount.Round(2).InexactFloat64(),
-		CurrentWin: s.bonusAmount.Round(2).InexactFloat64(),
-		AccWin:     accWin,
-		TotalWin:   s.client.ClientOfFreeGame.GetGeneralWinTotal(),
-		Free:       isFreeInt,
-		Review:     0,
-		Sn:         s.orderSN,
-		LastWinId:  s.client.ClientOfFreeGame.GetLastWinId(),
-		MapId:      s.client.ClientOfFreeGame.GetLastMapId(),
-		WinInfo:    baseRes.winInfo,
-		Cards:      baseRes.cards,
-		RoundBonus: s.client.ClientOfFreeGame.RoundBonus,
-		BonusState: s.scene.BonusState,
-	}
-
-	ok, err = s.updateGameOrder(baseRes)
-	if !ok || err != nil {
+	if _, err = s.updateGameOrder(); err != nil {
 		return nil, err
 	}
 	if err = s.settleStep(); err != nil {
@@ -129,6 +103,37 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (*SpinResultC, erro
 	if err = s.saveScene(); err != nil {
 		return nil, err
 	}
-	spinResultC.Balance = s.gameOrder.CurBalance
-	return spinResultC, nil
+
+	result := s.getBetResultMap()
+	result["balance"] = s.gameOrder.CurBalance
+	return result, nil
+}
+
+func (s *betOrderService) getBetResultMap() map[string]any {
+	var freeTotalMoney float64
+	var isFreeInt int
+	if s.isFreeRound {
+		freeTotalMoney = s.client.ClientOfFreeGame.GetFreeTotalMoney()
+		isFreeInt = 1
+	}
+
+	return map[string]any{
+		"betMoney":       s.betAmount.Round(2).InexactFloat64(),
+		"bonusState":     s.scene.BonusState,
+		"balance":        s.gameOrder.CurBalance,
+		"free":           isFreeInt,
+		"review":         0,
+		"freeNum":        s.winData.FreeNum,
+		"totalWin":       s.client.ClientOfFreeGame.GetGeneralWinTotal(),
+		"win":            s.bonusAmount.Round(2).InexactFloat64(),
+		"freeTotalMoney": freeTotalMoney,
+		"cards":          s.symbolGrid,
+		"winDetails":     collectWinLineIndex(s.winData.WinArr),
+		"wincards":       s.winData.WinGrid,
+		"winData":        s.winData,
+		"sn":             s.orderSN,
+		"lastWinId":      s.client.ClientOfFreeGame.GetLastWinId(),
+		"mapId":          s.client.ClientOfFreeGame.GetLastMapId(),
+		"roundBonus":     s.client.ClientOfFreeGame.RoundBonus,
+	}
 }

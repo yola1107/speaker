@@ -1,4 +1,4 @@
-package mahjong
+package mahjong4
 
 import (
 	"context"
@@ -22,12 +22,10 @@ type memberLoginService struct {
 	lastOrder  *game.GameOrder
 }
 
-// 生成登录服务实例
 func newMemberLoginService() *memberLoginService {
 	return &memberLoginService{}
 }
 
-// 登录逻辑
 func (s *memberLoginService) memberLogin(req *pb.LoginStreamReq, c *client.Client) (string, error) {
 	s.req = req
 	s.selectOrderRedis()
@@ -61,13 +59,11 @@ func (s *memberLoginService) memberLogin(req *pb.LoginStreamReq, c *client.Clien
 	return s.doMemberLogin()
 }
 
-// 初始化订单redis
 func (s *memberLoginService) selectOrderRedis() {
 	index := _gameID % int64(len(global.GVA_ORDER_LIST))
 	s.orderRedis = global.GVA_ORDER_LIST[index]
 }
 
-// 登录核心逻辑
 func (s *memberLoginService) doMemberLogin() (string, error) {
 	site := global.GVA_CONFIG.System.Site
 	merchantID, memberID := s.req.MerchantId, s.req.MemberId

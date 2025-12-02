@@ -1,4 +1,4 @@
-package mahjong
+package mahjong4
 
 import (
 	"egame-grpc/global"
@@ -9,7 +9,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// 获取商户信息
 func (s *betOrderService) mdbGetMerchant() bool {
 	var m merchant.Merchant
 	query := "id=?"
@@ -22,7 +21,6 @@ func (s *betOrderService) mdbGetMerchant() bool {
 	return true
 }
 
-// 获取用户信息
 func (s *betOrderService) mdbGetMember() bool {
 	var m member.Member
 	query := "id=? and merchant=?"
@@ -40,7 +38,6 @@ func (s *betOrderService) mdbGetMember() bool {
 	return true
 }
 
-// 获取游戏信息
 func (s *betOrderService) mdbGetGame() bool {
 	var g game.Game
 	query := "id=? and status=1"

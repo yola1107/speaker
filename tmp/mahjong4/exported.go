@@ -1,4 +1,4 @@
-package mahjong
+package mahjong4
 
 import (
 	"errors"
@@ -20,12 +20,10 @@ var (
 
 type Game struct{}
 
-// NewGame 创建游戏实例
 func NewGame() *Game {
 	return &Game{}
 }
 
-// BetOrder 用户下注
 func (g *Game) BetOrder(req *request.BetOrderReq) (result map[string]any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -37,25 +35,9 @@ func (g *Game) BetOrder(req *request.BetOrderReq) (result map[string]any, err er
 	}()
 
 	betService := newBetOrderService()
-	resMap, err := betService.betOrder(req)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{
-		"win":            resMap.CurrentWin,      // 当前Step赢
-		"cards":          resMap.Cards,           //
-		"wincards":       resMap.WinInfo.WinGrid, //
-		"betMoney":       resMap.BetAmount,       // 下注额
-		"balance":        resMap.Balance,         // 余额
-		"free":           resMap.Free,            // 是否在免费
-		"freeNum":        resMap.WinInfo.FreeNum, //
-		"freeTotalMoney": resMap.AccWin,          // 当前round赢
-		"totalWin":       resMap.TotalWin,        //
-		"bonusState":     resMap.BonusState,      // 是否需要选择免费游戏类型：0-否，1-是
-	}, nil
+	return betService.betOrder(req)
 }
 
-// MemberLogin 用户登录
 func (g *Game) MemberLogin(req *pb.LoginStreamReq, c *client.Client) (result string, err error) {
 	defer func() {
 		if r := recover(); r != nil {

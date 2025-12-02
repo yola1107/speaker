@@ -21,7 +21,7 @@ func (s *betOrderService) initialize() error {
 		s.orderSN = strconv.FormatInt(snow.GenarotorID(s.member.ID), 10)
 	}
 	switch {
-	case s.scene.Steps == 0 && s.scene.Stage == _spinTypeBase:
+	case !s.isFreeRound && s.scene.Steps == 0: // 新一轮的首次下注
 		return s.initStepForFirstStep()
 	default:
 		return s.initStepForNextStep()

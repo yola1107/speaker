@@ -2,11 +2,15 @@ package xslm2
 
 // baseSpin 主旋转函数
 func (s *betOrderService) baseSpin() error {
+	// RTP 测试模式：直接调用时需要手动进行状态转换
+	if s.debug.open {
+		s.syncGameStage()
+	}
+
 	if err := s.initialize(); err != nil {
 		return err
 	}
 
-	s.handleStageTransition()
 	s.loadSceneFemaleCount()
 
 	// 新回合开始时初始化符号网格

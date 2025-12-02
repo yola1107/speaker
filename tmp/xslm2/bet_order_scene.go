@@ -38,6 +38,9 @@ func (s *betOrderService) reloadScene() error {
 		return nil
 	}
 
+	// 加载场景后立即进行状态切换
+	s.syncGameStage()
+
 	return nil
 }
 
@@ -67,8 +70,8 @@ func (s *betOrderService) loadCacheSceneData() error {
 	return nil
 }
 
-// handleStageTransition 处理状态跳转
-func (s *betOrderService) handleStageTransition() {
+// syncGameStage 处理状态跳转
+func (s *betOrderService) syncGameStage() {
 	// 初始化 Stage（如果是首次或未设置）
 	if s.scene.Stage == 0 {
 		s.scene.Stage = _spinTypeBase

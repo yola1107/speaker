@@ -1,4 +1,4 @@
-package mahjong
+package mahjong4
 
 import (
 	"strconv"
@@ -15,7 +15,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// 初始化
 func (s *betOrderService) initialize() error {
 	s.client.ClientOfFreeGame.ResetFreeClean()
 	if !s.debug.open {
@@ -23,7 +22,8 @@ func (s *betOrderService) initialize() error {
 	}
 
 	switch {
-	case s.scene.Steps == 0 && s.scene.Stage == _spinTypeBase:
+	//case s.scene.Steps == 0 && s.scene.Stage == _spinTypeBase:
+	case !s.isFreeRound && s.scene.ContinueNum <= 0:
 		return s.initFirstStepForSpin()
 	default:
 		return s.initStepForNextStep()
@@ -32,7 +32,7 @@ func (s *betOrderService) initialize() error {
 
 func (s *betOrderService) initFirstStepForSpin() error {
 	if s.debug.open {
-		s.betAmount = decimal.NewFromInt(_baseMultiplier) // 1*1*_baseMultiplier
+		s.betAmount = decimal.NewFromInt(_baseMultiplier)
 		s.amount = s.betAmount
 		return nil
 	}
@@ -89,7 +89,7 @@ func (s *betOrderService) initStepForNextStep() error {
 	return nil
 }
 
-func (s *betOrderService) updateGameOrder(result *BaseSpinResult) (bool, error) {
+func (s *betOrderService) updateGameOrder() (bool, error) {
 	gameOrder := game.GameOrder{
 		MerchantID:        s.merchant.ID,
 		Merchant:          s.merchant.Merchant,
@@ -99,9 +99,9 @@ func (s *betOrderService) updateGameOrder(result *BaseSpinResult) (bool, error) 
 		GameName:          s.game.GameName,
 		BaseMultiple:      _baseMultiplier,
 		Multiple:          s.req.Multiple,
-		LineMultiple:      result.lineMultiplier,
-		BonusHeadMultiple: result.bonusHeadMultiple,
-		BonusMultiple:     result.gameMultiple,
+		LineMultiple:      s.lineMultiplier,
+		BonusHeadMultiple: s.gameMultiple,
+		BonusMultiple:     s.gameMultiple,
 		BaseAmount:        s.req.BaseMoney,
 		Amount:            s.amount.Round(2).InexactFloat64(),
 		ValidAmount:       s.amount.Round(2).InexactFloat64(),
@@ -111,9 +111,9 @@ func (s *betOrderService) updateGameOrder(result *BaseSpinResult) (bool, error) 
 		ParentOrderSn:     s.parentOrderSN,
 		FreeOrderSn:       s.freeOrderSN,
 		State:             1,
-		BonusTimes:        result.bonusTimes, // 连续消除次数
-		HuNum:             int64(result.scatterCount),
-		FreeNum:           s.scene.FreeNum, // 使用 scene.FreeNum
+		BonusTimes:        s.scene.ContinueNum,
+		HuNum:             int64(s.scatterCount),
+		FreeNum:           s.scene.FreeNum,
 		FreeTimes:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
 	}
 	if s.isFreeRound {
@@ -121,26 +121,26 @@ func (s *betOrderService) updateGameOrder(result *BaseSpinResult) (bool, error) 
 	}
 
 	s.gameOrder = &gameOrder
-	return s.fillInGameOrderDetails(result)
+	return s.fillInGameOrderDetails()
 }
 
-func (s *betOrderService) fillInGameOrderDetails(result *BaseSpinResult) (bool, error) { // 932
-	betRawDetail, err := json.CJSON.MarshalToString(result.cards)
+func (s *betOrderService) fillInGameOrderDetails() (bool, error) {
+	betRawDetail, err := json.CJSON.MarshalToString(s.symbolGrid)
 	if err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails", zap.Error(err))
 		return false, err
 	}
 	s.gameOrder.BetRawDetail = betRawDetail
-	winRawDetail, err := json.CJSON.MarshalToString(result.winGrid)
+	winRawDetail, err := json.CJSON.MarshalToString(s.winData.WinGrid)
 	if err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails", zap.Error(err))
 		return false, err
 	}
 
 	s.gameOrder.BonusRawDetail = winRawDetail
-	s.gameOrder.BetDetail = s.symbolGridToString(result.cards)
-	s.gameOrder.BonusDetail = s.winGridToString(result)
-	s.gameOrder.WinDetails = s.getWinDetail(result.winResult, result.stepMultiplier, result.scatterCount, result.freeTime, int64(s.gameConfig.FreeGameScatterMin))
+	s.gameOrder.BetDetail = s.symbolGridToString(s.symbolGrid)
+	s.gameOrder.BonusDetail = s.winGridToString(s.winData.WinGrid)
+	s.gameOrder.WinDetails = s.getWinDetail(s.cardTypes, s.stepMultiplier, s.scatterCount, s.winData.AddFreeTime, int64(s.gameConfig.FreeGameScatterMin))
 	return true, nil
 }
 
@@ -173,7 +173,6 @@ func (s *betOrderService) settleStep() error {
 	return gamelogic.SaveTransfer(saveParam).Err
 }
 
-// 获取当前余额
 func (s *betOrderService) getCurrentBalance() float64 {
 	currBalance := decimal.NewFromFloat(s.member.Balance).
 		Sub(s.amount).

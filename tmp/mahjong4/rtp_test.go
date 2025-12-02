@@ -1,7 +1,8 @@
-package mahjong
+package mahjong4
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,9 +36,11 @@ func TestRtp(t *testing.T) {
 	svc := newBerService()
 	svc.initGameConfigs()
 	start := time.Now()
+	buf := &strings.Builder{}
 	progressStep := int64(min(_benchmarkProgressInterval, _benchmarkRounds))
 
 	var (
+		err                                                    error
 		baseRounds, freeRounds                                 int64
 		baseWin, freeWin, totalBet, totalWin                   float64
 		baseWinTimes, freeWinTimes, freeTriggerCount, freeTime int64
@@ -47,12 +50,11 @@ func TestRtp(t *testing.T) {
 	for baseRounds < _benchmarkRounds {
 		wasFreeBeforeSpin := svc.isFreeRound
 
-		ret, err := svc.baseSpin()
-		if err != nil {
+		if err = svc.baseSpin(); err != nil {
 			panic(err)
 		}
 
-		stepWin := ret.stepWin
+		stepWin := svc.bonusAmount.Round(2).InexactFloat64()
 		roundWin += stepWin
 		totalWin += stepWin
 
@@ -76,7 +78,7 @@ func TestRtp(t *testing.T) {
 					baseWinTimes++
 				}
 				// 基础模式回合结束时，如果触发了免费游戏
-				if !wasFreeBeforeSpin && ret.winInfo.State == runStateFreeGame {
+				if !wasFreeBeforeSpin && svc.winData.State == runStateFreeGame {
 					freeTriggerCount++
 					freeTime++
 				}
@@ -90,97 +92,79 @@ func TestRtp(t *testing.T) {
 			freeRoundWin = 0
 
 			if baseRounds%progressStep == 0 {
-				printBenchmarkProgress(baseRounds, totalBet, baseWin, freeWin, totalWin, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime, start)
+				printBenchmarkProgress(buf, baseRounds, totalBet, baseWin, freeWin, totalWin, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime, start)
+				fmt.Print(buf.String())
 			}
 		}
 	}
 
-	fmt.Println()
-	printBenchmarkSummary(baseRounds, totalBet, baseWin, freeWin, totalWin, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime, start)
+	printBenchmarkSummary(buf, baseRounds, totalBet, baseWin, freeWin, totalWin, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime, start)
+	fmt.Print(buf.String())
 }
 
-func printBenchmarkProgress(baseRounds int64, totalBet, baseWin, freeWin, totalWin float64, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime int64, start time.Time) {
+func printBenchmarkProgress(buf *strings.Builder, baseRounds int64, totalBet, baseWin, freeWin, totalWin float64, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime int64, start time.Time) {
 	if baseRounds == 0 || totalBet == 0 {
 		return
 	}
-
 	freeRoundsSafe := max(freeRounds, 1)
-	avgFreePerTrigger := float64(0)
-	if freeTriggerCount > 0 {
-		avgFreePerTrigger = float64(freeRounds) / float64(freeTriggerCount)
-	}
-
-	// 第一行：与 rtp_test.go 格式保持一致，并添加 avgFree
-	fmt.Printf("Runtime-%d baseRtp=%.4f%%,baseWinRate-%.4f%% freeRtp-%.4f%% freeWinRate-%.4f%%, freeTriggerRate-%.4f%% avgFree=%.4f Rtp-%.4f%%\n",
+	avgFreePerTrigger := safeDivide(freeRounds, freeTriggerCount)
+	buf.Reset()
+	fprintf(buf, "\rRuntime=%d baseRtp=%.4f%%,baseWinRate=%.4f%% freeRtp=%.4f%% freeWinRate=%.4f%%, freeTriggerRate=%.4f%% avgFree=%.4f Rtp=%.4f%% \n",
 		baseRounds,
 		baseWin*100/totalBet,
-		float64(baseWinTimes)*100/float64(baseRounds),
+		safeDivide(baseWinTimes*100, baseRounds),
 		freeWin*100/totalBet,
-		float64(freeWinTimes)*100/float64(freeRoundsSafe),
-		float64(freeTriggerCount)*100/float64(baseRounds),
+		safeDivide(freeWinTimes*100, freeRoundsSafe),
+		safeDivide(freeTriggerCount*100, baseRounds),
 		avgFreePerTrigger,
 		(baseWin+freeWin)*100/totalBet,
 	)
-	// 第二行：详细数据（与 rtp_test.go 保持一致）
-	fmt.Printf("\rtotalWin-%.0f freeWin=%.0f,baseWin-%.0f ,baseWinTime-%d ,freeTime-%d, freeRound-%d ,freeWinTime-%d, elapsed=%v\n",
+	fprintf(buf, "\rtotalWin-%.0f freeWin=%.0f,baseWin-%.0f ,baseWinTime-%d ,freeTime-%d, freeRound-%d ,freeWinTime-%d, elapsed=%v\n",
 		totalWin, freeWin, baseWin, baseWinTimes, freeTime, freeRounds, freeWinTimes, time.Since(start).Round(time.Second))
 }
 
-func printBenchmarkSummary(baseRounds int64, totalBet, baseWin, freeWin, totalWin float64, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime int64, start time.Time) {
+func printBenchmarkSummary(buf *strings.Builder, baseRounds int64, totalBet, baseWin, freeWin, totalWin float64, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime int64, start time.Time) {
 	if baseRounds == 0 || totalBet == 0 {
-		fmt.Println("No data collected for RTP benchmark.")
+		buf.WriteString("No data collected for RTP benchmark.\n")
 		return
 	}
+	w := func(format string, args ...interface{}) { fprintf(buf, format, args...) }
+	elapsed := time.Since(start)
+	speed := safeDivide(baseRounds, int64(elapsed.Seconds()))
+	w("\n运行局数: %d，用时: %v，速度: %.0f 局/秒\n\n", baseRounds, elapsed.Round(time.Second), speed)
 
 	baseRTP := baseWin * 100 / totalBet
 	freeRTP := freeWin * 100 / totalBet
 	totalRTP := (baseWin + freeWin) * 100 / totalBet
-	baseWinRate := float64(baseWinTimes) * 100 / float64(baseRounds)
-	freeWinRate := float64(0)
-	if freeRounds > 0 {
-		freeWinRate = float64(freeWinTimes) * 100 / float64(freeRounds)
-	}
-	freeTriggerRate := float64(freeTriggerCount) * 100 / float64(baseRounds)
-	avgFreePerRound := float64(0)
-	if baseRounds > 0 {
-		avgFreePerRound = float64(freeRounds) / float64(baseRounds)
-	}
-	avgFreePerTrigger := float64(0)
-	if freeTriggerCount > 0 {
-		avgFreePerTrigger = float64(freeRounds) / float64(freeTriggerCount)
-	}
+	baseWinRate := safeDivide(baseWinTimes*100, baseRounds)
+	freeWinRate := safeDivide(freeWinTimes*100, freeRounds)
+	freeTriggerRate := safeDivide(freeTriggerCount*100, baseRounds)
+	avgFreePerRound := safeDivide(freeRounds, baseRounds)
+	avgFreePerTrigger := safeDivide(freeRounds, freeTriggerCount)
 
-	fmt.Println("[基础模式统计]")
-	fmt.Printf("基础模式总游戏局数: %d\n", baseRounds)
-	fmt.Printf("基础模式总投注(倍数): %.2f\n", totalBet)
-	fmt.Printf("基础模式总奖金: %.2f\n", baseWin)
-	fmt.Printf("基础模式RTP: %.2f%%\n", baseRTP)
-	fmt.Printf("基础模式免费局触发次数: %d\n", freeTriggerCount)
-	fmt.Printf("基础模式触发免费局比例: %.2f%%\n", freeTriggerRate)
-	fmt.Printf("基础模式平均每局免费次数: %.2f\n", avgFreePerRound)
-	fmt.Printf("基础模式中奖率: %.2f%%\n", baseWinRate)
-	fmt.Printf("基础模式中奖局数: %d\n", baseWinTimes)
+	w("[基础模式统计]\n")
+	w("基础模式总游戏局数: %d\n", baseRounds)
+	w("基础模式总投注(倍数): %.2f\n", totalBet)
+	w("基础模式总奖金: %.2f\n", baseWin)
+	w("基础模式RTP: %.2f%%\n", baseRTP)
+	w("基础模式免费局触发次数: %d\n", freeTriggerCount)
+	w("基础模式触发免费局比例: %.2f%%\n", freeTriggerRate)
+	w("基础模式平均每局免费次数: %.2f\n", avgFreePerRound)
+	w("基础模式中奖率: %.2f%%\n", baseWinRate)
+	w("基础模式中奖局数: %d\n", baseWinTimes)
 
-	fmt.Println()
-	fmt.Println("[免费模式统计]")
-	fmt.Printf("免费模式总游戏局数: %d\n", freeRounds)
-	fmt.Printf("免费模式总奖金: %.2f\n", freeWin)
-	fmt.Printf("免费模式RTP: %.2f%%\n", freeRTP)
-	fmt.Printf("免费模式中奖率: %.2f%%\n", freeWinRate)
-	fmt.Printf("免费模式中奖局数: %d\n", freeWinTimes)
+	w("\n[免费模式统计]\n")
+	w("免费模式总游戏局数: %d\n", freeRounds)
+	w("免费模式总奖金: %.2f\n", freeWin)
+	w("免费模式RTP: %.2f%%\n", freeRTP)
+	w("免费模式中奖率: %.2f%%\n", freeWinRate)
+	w("免费模式中奖局数: %d\n", freeWinTimes)
+	w("\n[免费触发效率]\n")
+	w("  总免费游戏次数: %d | 总触发次数: %d\n", freeRounds, freeTriggerCount)
+	w("  平均每次触发获得免费次数: %.2f\n", avgFreePerTrigger)
 
-	fmt.Println()
-	fmt.Println("[免费触发效率]")
-	fmt.Printf("  总免费游戏次数: %d | 总触发次数: %d\n", freeRounds, freeTriggerCount)
-	if freeTriggerCount > 0 {
-		fmt.Printf("  平均每次触发获得免费次数: %.2f\n", avgFreePerTrigger)
-	} else {
-		fmt.Printf("  平均每次触发获得免费次数: 0\n")
-	}
-
-	fmt.Println()
-	fmt.Println("[总计]")
-	fmt.Printf("总回报率(RTP): %.2f%%\n", totalRTP)
+	w("\n[总计]\n")
+	w("总回报率(RTP): %.2f%%\n", totalRTP)
 }
 
 func newBerService() *betOrderService {
@@ -220,7 +204,7 @@ func newBerService() *betOrderService {
 func resetBetServiceForNextRound(s *betOrderService) {
 	// 复用 scene 而不是重新分配（减少内存分配，提升性能）
 	s.scene.Steps = 0
-	s.scene.Stage = _spinTypeBase // 直接设置为基础模式，避免 handleStageTransition 每次检查
+	s.scene.Stage = _spinTypeBase // 直接设置为基础模式，避免 syncGameStage 每次检查
 	s.scene.NextStage = 0
 	s.scene.FreeNum = 0
 	s.scene.BonusNum = 0
@@ -260,4 +244,15 @@ func resetBetServiceForNextRound(s *betOrderService) {
 	s.nextSymbolGrid = int64Grid{}
 	s.symbolGrid = int64Grid{}
 	s.winGrid = int64Grid{}
+}
+
+func fprintf(buf *strings.Builder, format string, args ...interface{}) {
+	_, _ = fmt.Fprintf(buf, format, args...)
+}
+
+func safeDivide(numerator, denominator int64) float64 {
+	if denominator == 0 {
+		return 0
+	}
+	return float64(numerator) / float64(denominator)
 }

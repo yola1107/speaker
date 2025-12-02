@@ -1,4 +1,4 @@
-package mahjong
+package mahjong4
 
 import (
 	"fmt"
@@ -127,8 +127,6 @@ func (s *betOrderService) initSpinSymbol() [_colCount]SymbolRoller {
 	return s.getSceneSymbol(rollCfg)
 }
 
-// getSceneSymbol 生成符号滚轴
-// BoardSymbol 从下往上存储：索引0=最下面，索引3=最上面
 func (s *betOrderService) getSceneSymbol(rollCfg RollCfgType) [_colCount]SymbolRoller {
 	realIndex := 0
 	r := rand.IntN(rollCfg.WTotal)
@@ -155,11 +153,9 @@ func (s *betOrderService) getSceneSymbol(rollCfg RollCfgType) [_colCount]SymbolR
 		end := (start + _rowCount - 1) % len(data)
 		roller := SymbolRoller{Real: realIndex, Start: start, Fall: end, Col: col}
 
-		// 填充符号：从下往上存储（索引0=最下面）
 		dataIndex := 0
 		for row := 0; row < _rowCount; row++ {
 			symbol := data[(start+dataIndex)%len(data)]
-			// BoardSymbol 从下往上存储：索引0=最下面，索引3=最上面
 			roller.BoardSymbol[int(_rowCount)-1-row] = symbol
 			dataIndex++
 		}
@@ -169,18 +165,13 @@ func (s *betOrderService) getSceneSymbol(rollCfg RollCfgType) [_colCount]SymbolR
 	return symbols
 }
 
-// ringSymbol 补充掉下来导致的空缺位置
-// 注意：BoardSymbol 从下往上存储（索引0=最下面，索引3=最上面）
-// 填充时应该从最上面（索引3）开始，按照索引从高到低（3→2→1→0）的顺序填充
 func (rs *SymbolRoller) ringSymbol(gameConfig *gameConfigJson) {
 	var newBoard [_rowCount]int64
-	// 先复制非空白位置（保持原位置）
 	for i, s := range rs.BoardSymbol {
 		if s != 0 {
 			newBoard[i] = s
 		}
 	}
-	// 从高索引到低索引（3→2→1→0）遍历，遇到空白就填充
 	for i := int(_rowCount) - 1; i >= 0; i-- {
 		if newBoard[i] == 0 {
 			newBoard[i] = rs.getFallSymbol(gameConfig)
@@ -189,14 +180,12 @@ func (rs *SymbolRoller) ringSymbol(gameConfig *gameConfigJson) {
 	rs.BoardSymbol = newBoard
 }
 
-// getFallSymbol 从滚轴获取下一个符号：Fall 指向当前最后一个符号，下一个是 (Fall+1) % len
 func (rs *SymbolRoller) getFallSymbol(gameConfig *gameConfigJson) int64 {
 	data := gameConfig.RealData[rs.Real][rs.Col]
 	rs.Fall = (rs.Fall + 1) % len(data)
 	return data[rs.Fall]
 }
 
-// 读取符号的赔率
 func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64 {
 	if len(s.gameConfig.PayTable) < int(symbol) {
 		return 0

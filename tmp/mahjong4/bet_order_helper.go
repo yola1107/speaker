@@ -1,4 +1,4 @@
-package mahjong
+package mahjong4
 
 import (
 	"fmt"
@@ -13,7 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// 获取请求上下文
 func (s *betOrderService) getRequestContext() bool {
 	switch {
 	case !s.mdbGetMerchant():
@@ -27,13 +26,11 @@ func (s *betOrderService) getRequestContext() bool {
 	}
 }
 
-// 初始化游戏redis
 func (s *betOrderService) selectGameRedis() {
 	index := _gameID % int64(len(global.GVA_GAME_REDIS))
 	s.gameRedis = global.GVA_GAME_REDIS[index]
 }
 
-// 更新下注金额
 func (s *betOrderService) updateBetAmount() bool {
 	s.betAmount = decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
@@ -47,54 +44,59 @@ func (s *betOrderService) updateBetAmount() bool {
 	return true
 }
 
-// 检查用户余额
 func (s *betOrderService) checkBalance() bool {
 	f, _ := s.betAmount.Float64()
 	return gamelogic.CheckMemberBalance(f, s.member)
 }
 
-// 符号网格转换为字符串
 func (s *betOrderService) symbolGridToString(symbolGrid int64Grid) string {
-	typeCard := ""
-	num := 0
-	for i := 0; i < _rowCount; i++ {
-		for j := 0; j < _colCount; j++ {
-			typeCard += strconv.Itoa(num + 1)
-			typeCard += ":"
-			typeCard += strconv.Itoa(int(symbolGrid[i][j]))
-			typeCard += "; "
-			num++
+	var b strings.Builder
+	b.Grow(512)
+	cellIndex := 0
+	for r := 0; r < _rowCount; r++ {
+		for c := 0; c < _colCount; c++ {
+			b.WriteString(strconv.Itoa(cellIndex + 1))
+			b.WriteString(":")
+			b.WriteString(strconv.FormatInt(symbolGrid[r][c], 10))
+			b.WriteString("; ")
+			cellIndex++
 		}
 	}
-	return typeCard
+	return b.String()
 }
 
-// 中奖网格转换为字符串
-func (s *betOrderService) winGridToString(result *BaseSpinResult) string {
-	winCard := ""
-	numW := 0
-	for i := 0; i < _rowCountReward; i++ {
-		for j := 0; j < _colCount; j++ {
-			winCard += strconv.Itoa(numW + 1)
-			winCard += ":"
-			winCard += strconv.Itoa(int(result.winGrid[i][j]))
-			winCard += "; "
-			numW++
+func (s *betOrderService) winGridToString(winGridW int64GridW) string {
+	var b strings.Builder
+	b.Grow(512)
+	cellIndex := 0
+	for r := 0; r < _rowCountReward; r++ {
+		for c := 0; c < _colCount; c++ {
+			b.WriteString(strconv.Itoa(cellIndex + 1))
+			b.WriteString(":")
+			b.WriteString(strconv.FormatInt(winGridW[r][c], 10))
+			b.WriteString("; ")
+			cellIndex++
 		}
 	}
-	return winCard
+	return b.String()
 }
 
-// 更新奖金金额
-func (s *betOrderService) updateBonusAmount(stepMultiplier int64) decimal.Decimal {
+func (s *betOrderService) updateBonusAmount(stepMultiplier int64) {
 	bonusAmount := s.betAmount.
 		Mul(decimal.NewFromInt(stepMultiplier)).
 		Div(decimal.NewFromInt(_baseMultiplier))
 	s.bonusAmount = bonusAmount
-	return bonusAmount
+
+	if s.bonusAmount.GreaterThan(decimal.Zero) {
+		rounded := bonusAmount.Round(2).InexactFloat64()
+		s.client.ClientOfFreeGame.IncrGeneralWinTotal(rounded)
+		s.client.ClientOfFreeGame.IncRoundBonus(rounded)
+		if s.isFreeRound {
+			s.client.ClientOfFreeGame.IncrFreeTotalMoney(rounded)
+		}
+	}
 }
 
-// 获得中奖路数及详情
 func (s *betOrderService) getWinDetail(routeDetails []CardType, nwin int64, freeCount, freeNum, scatter int64) string {
 	var returnRouteDetail []CardType
 	if nwin > 0 {
@@ -107,7 +109,6 @@ func (s *betOrderService) getWinDetail(routeDetails []CardType, nwin int64, free
 			Way:      int(freeNum),
 		})
 	}
-
 	if len(returnRouteDetail) == 0 {
 		return ""
 	}
@@ -115,7 +116,6 @@ func (s *betOrderService) getWinDetail(routeDetails []CardType, nwin int64, free
 	return string(winDetailsBytes)
 }
 
-// 获取夺宝符号数量
 func (s *betOrderService) getScatterCount() int64 {
 	var count int64
 	for r := int64(0); r < _rowCountReward; r++ {
@@ -128,7 +128,7 @@ func (s *betOrderService) getScatterCount() int64 {
 	return count
 }
 
-// checkSymbolGridWin 检查中奖
+// checkSymbolGridWin 检查符号网格中奖情况（核心算法）
 func (s *betOrderService) checkSymbolGridWin(symbolGrid int64Grid) ([]*winInfo, int64Grid) {
 	var winInfos []*winInfo
 	var totalWinGrid int64Grid
@@ -179,7 +179,6 @@ func (s *betOrderService) checkSymbolGridWin(symbolGrid int64Grid) ([]*winInfo, 
 	return winInfos, totalWinGrid
 }
 
-// 处理中奖列表，计算总倍数
 func (s *betOrderService) handleWinInfosMultiplier(infos []*winInfo) int64 {
 	var stepMultiplier int64
 	for _, info := range infos {
@@ -188,8 +187,6 @@ func (s *betOrderService) handleWinInfosMultiplier(infos []*winInfo) int64 {
 	return stepMultiplier
 }
 
-// handleSymbolGrid 从 BoardSymbol 生成 symbolGrid（反转映射）
-// BoardSymbol[0]（最下面）→ symbolGrid[3]（Row 3），BoardSymbol[3]（最上面）→ symbolGrid[0]（Row 0）
 func (s *betOrderService) handleSymbolGrid() int64Grid {
 	var symbolGrid int64Grid
 	for r := int64(0); r < _rowCount; r++ {
@@ -200,8 +197,7 @@ func (s *betOrderService) handleSymbolGrid() int64Grid {
 	return symbolGrid
 }
 
-// toWinGridReward 将 int64Grid 转换为 int64GridW（只复制前 _rowCountReward 行）
-func toWinGridReward(winGrid int64Grid) int64GridW {
+func convertToRewardGrid(winGrid int64Grid) int64GridW {
 	var winGridW int64GridW
 	for r := int64(0); r < _rowCountReward; r++ {
 		winGridW[r] = winGrid[r]
@@ -209,8 +205,7 @@ func toWinGridReward(winGrid int64Grid) int64GridW {
 	return winGridW
 }
 
-// winGridRewardToFull 将 int64GridW 转换为 int64Grid
-func winGridRewardToFull(winGridW int64GridW) int64Grid {
+func convertRewardGridToFull(winGridW int64GridW) int64Grid {
 	var fullWinGrid int64Grid
 	for r := int64(0); r < _rowCountReward; r++ {
 		fullWinGrid[r] = winGridW[r]
@@ -218,19 +213,6 @@ func winGridRewardToFull(winGridW int64GridW) int64Grid {
 	return fullWinGrid
 }
 
-func (s *betOrderService) updateSpinBonusAmount(bonusAmount decimal.Decimal) {
-	if s.debug.open {
-		return
-	}
-	rounded := bonusAmount.Round(2).InexactFloat64()
-	s.client.ClientOfFreeGame.IncrGeneralWinTotal(rounded)
-	s.client.ClientOfFreeGame.IncRoundBonus(rounded)
-	if s.isFreeRound {
-		s.client.ClientOfFreeGame.IncrFreeTotalMoney(rounded)
-	}
-}
-
-// moveSymbols 消除中奖符号并下落（只消除前3行，Row 3 是缓冲区）
 func (s *betOrderService) moveSymbols() int64Grid {
 	nextSymbolGrid := s.symbolGrid
 	for r := int64(0); r < _rowCountReward; r++ {
@@ -244,7 +226,7 @@ func (s *betOrderService) moveSymbols() int64Grid {
 	return nextSymbolGrid
 }
 
-// dropSymbols 符号下落：非零符号前移，零值留在后面
+// dropSymbols 符号下落（消除算法核心）
 func (s *betOrderService) dropSymbols(grid *int64Grid) {
 	for c := int64(0); c < _colCount; c++ {
 		writePos := int64(0)
@@ -252,7 +234,7 @@ func (s *betOrderService) dropSymbols(grid *int64Grid) {
 			if val := (*grid)[r][c]; val != 0 {
 				if r != writePos {
 					(*grid)[writePos][c] = val
-					(*grid)[r][c] = 0 // _blank
+					(*grid)[r][c] = 0
 				}
 				writePos++
 			}
@@ -260,8 +242,7 @@ func (s *betOrderService) dropSymbols(grid *int64Grid) {
 	}
 }
 
-// fallingWinSymbols 将 nextSymbolGrid 同步到 BoardSymbol 并填充新符号
-func (s *betOrderService) fallingWinSymbols(nextSymbolGrid int64Grid, _ int8) {
+func (s *betOrderService) fallingWinSymbols(nextSymbolGrid int64Grid) {
 	for r := int64(0); r < _rowCount; r++ {
 		for c := int64(0); c < _colCount; c++ {
 			s.scene.SymbolRoller[c].BoardSymbol[r] = nextSymbolGrid[_rowCount-1-r][c]
@@ -272,15 +253,28 @@ func (s *betOrderService) fallingWinSymbols(nextSymbolGrid int64Grid, _ int8) {
 	}
 }
 
-func printGridToBuf(buf *strings.Builder, grid *int64Grid, winGrid *int64Grid) {
+func GridToString(grid *int64Grid, winGrid *int64Grid) string {
+	if grid == nil {
+		return "(空)\n"
+	}
+	var buf strings.Builder
+	buf.Grow(512)
+	writeGridToBuilder(&buf, grid, winGrid)
+	return buf.String()
+}
+
+func writeGridToBuilder(buf *strings.Builder, grid *int64Grid, winGrid *int64Grid) {
 	if grid == nil {
 		buf.WriteString("(空)\n")
 		return
 	}
+	rGrid := reverseGridRows(grid)
+	rWinGrid := reverseGridRows(winGrid)
+
 	for r := int64(0); r < _rowCount; r++ {
 		for c := int64(0); c < _colCount; c++ {
-			symbol := grid[r][c]
-			isWin := winGrid != nil && winGrid[r][c] != 0
+			symbol := rGrid[r][c]
+			isWin := rWinGrid[r][c] != 0
 			if symbol == 0 {
 				if isWin {
 					buf.WriteString("   *|")
@@ -289,9 +283,9 @@ func printGridToBuf(buf *strings.Builder, grid *int64Grid, winGrid *int64Grid) {
 				}
 			} else {
 				if isWin {
-					fmt.Fprintf(buf, " %2d*|", symbol)
+					_, _ = fmt.Fprintf(buf, " %2d*|", symbol)
 				} else {
-					fmt.Fprintf(buf, " %2d |", symbol)
+					_, _ = fmt.Fprintf(buf, " %2d |", symbol)
 				}
 			}
 			if c < _colCount-1 {
@@ -302,27 +296,67 @@ func printGridToBuf(buf *strings.Builder, grid *int64Grid, winGrid *int64Grid) {
 	}
 }
 
-// setupBonusNumAndFreeTimes 设置 BonusNum 并计算免费次数
+func reverseGridRows(grid *int64Grid) int64Grid {
+	if grid == nil {
+		return int64Grid{}
+	}
+	var reversed int64Grid
+	for i := int64(0); i < _rowCount; i++ {
+		reversed[i] = grid[_rowCount-1-i]
+	}
+	return reversed
+}
+
+func (s *betOrderService) autoSetupBonusNumAndFreeTimes(scatterCount int64) {
+	if s.debug.open {
+		s.setupBonusNumAndFreeTimes(scatterCount, _bonusNum3)
+	}
+}
+
 func (s *betOrderService) setupBonusNumAndFreeTimes(scatterCount int64, bonusNum int) int {
 	if bonusNum <= 0 || bonusNum > 3 {
 		bonusNum = _bonusNum3
 	}
-
-	// 根据 scatterCount 和 FreeBonusMap 配置计算免费次数
 	bonusItem, ok := s.gameConfig.FreeBonusMap[bonusNum]
 	if !ok {
-		panic(fmt.Errorf("BonusNum %d not found in FreeBonusMap", bonusNum))
+		panic(fmt.Errorf("invalid BonusNum %d: not found in FreeBonusMap", bonusNum))
 	}
 	extraScatterCount := scatterCount - int64(s.gameConfig.FreeGameScatterMin)
 	freeTimes := bonusItem.Times + int(extraScatterCount)*bonusItem.AddTimes
-
-	// 更新场景数据
 	s.scene.BonusNum = bonusNum
 	s.scene.ScatterNum = scatterCount
 	s.scene.FreeNum = int64(freeTimes)
-	s.scene.BonusState = _bonusStateSelected                // 已选择免费游戏类型
-	s.client.ClientOfFreeGame.SetFreeNum(uint64(freeTimes)) // 设置客户端免费次数
-	s.scene.NextStage = _spinTypeFree                       // 设置下一阶段为免费模式，确保下次 betOrder 时切换
-
+	s.scene.BonusState = _bonusStateSelected
+	s.scene.NextStage = _spinTypeFree
+	s.client.ClientOfFreeGame.SetFreeNum(uint64(freeTimes))
 	return freeTimes
+}
+
+func (s *betOrderService) checkNewFreeGameNum(scatterCount int64) (bool, int64) {
+	if scatterCount < int64(s.gameConfig.FreeGameScatterMin) {
+		return false, 0
+	}
+	if s.scene.ContinueNum != 0 {
+		return false, 0
+	}
+	bonusItem, ok := s.gameConfig.FreeBonusMap[s.scene.BonusNum]
+	if !ok {
+		global.GVA_LOG.Error("checkNewFreeGameNum: invalid BonusNum",
+			zap.Int("bonusNum", s.scene.BonusNum))
+		return false, 0
+	}
+	extraScatterCount := scatterCount - int64(s.gameConfig.FreeGameScatterMin)
+	newFreeRoundCount := int64(bonusItem.Times) + extraScatterCount*int64(bonusItem.AddTimes)
+	return true, newFreeRoundCount
+}
+
+func collectWinLineIndex(winArr []WinElem) [_maxWinLines]int {
+	var winDetails [_maxWinLines]int
+	for _, winElem := range winArr {
+		lineIndex := int(winElem.RoadNum)
+		if lineIndex >= 0 && lineIndex < len(winDetails) {
+			winDetails[lineIndex] = 1
+		}
+	}
+	return winDetails
 }

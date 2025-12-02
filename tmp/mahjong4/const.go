@@ -1,4 +1,4 @@
-package mahjong
+package mahjong4
 
 const _gameID = 18931
 const GameID = 18931
@@ -47,3 +47,5 @@ const (
 	_bonusStatePending  = 1 // 等待客户端选择免费游戏类型
 	_bonusStateSelected = 2 // 已选择免费游戏类型
 )
+
+const _maxWinLines = 20 // 20条中奖线
