@@ -319,22 +319,22 @@ func (s *betOrderService) setupBonusNumAndFreeTimes(scatterCount int64, bonusNum
 	return freeTimes
 }
 
-func (s *betOrderService) checkNewFreeGameNum(scatterCount int64) (bool, int64) {
+func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
 	if scatterCount < int64(s.gameConfig.FreeGameScatterMin) {
-		return false, 0
+		return 0
 	}
 	if s.scene.ContinueNum != 0 {
-		return false, 0
+		return 0
 	}
 	bonusItem, ok := s.gameConfig.FreeBonusMap[s.scene.BonusNum]
 	if !ok {
-		global.GVA_LOG.Error("checkNewFreeGameNum: invalid BonusNum",
+		global.GVA_LOG.Error("calcNewFreeGameNum: invalid BonusNum",
 			zap.Int("bonusNum", s.scene.BonusNum))
-		return false, 0
+		return 0
 	}
 	extraScatterCount := scatterCount - int64(s.gameConfig.FreeGameScatterMin)
 	newFreeRoundCount := int64(bonusItem.Times) + extraScatterCount*int64(bonusItem.AddTimes)
-	return true, newFreeRoundCount
+	return newFreeRoundCount
 }
 
 func (s *betOrderService) getCardTypes() []CardType {

@@ -67,7 +67,7 @@ func (s *betOrderService) processNoWin() {
 	s.client.ClientOfFreeGame.SetLastWinId(0)
 
 	if s.isFreeRound {
-		if trigger, newFreeRoundCount := s.checkNewFreeGameNum(s.scatterCount); trigger {
+		if newFreeRoundCount := s.calcNewFreeGameNum(s.scatterCount); newFreeRoundCount > 0 {
 			s.client.ClientOfFreeGame.Incr(uint64(newFreeRoundCount))
 			s.scene.FreeNum += newFreeRoundCount
 			s.addFreeTime = newFreeRoundCount
