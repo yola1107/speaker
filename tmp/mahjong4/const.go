@@ -39,9 +39,6 @@ const (
 	_spinTypeFreeEli = 22 // 免费消除
 )
 
-const runStateNormal = int8(0)   //普通
-const runStateFreeGame = int8(1) //免费
-
 // 免费游戏选择状态
 const (
 	_bonusStatePending  = 1 // 等待客户端选择免费游戏类型

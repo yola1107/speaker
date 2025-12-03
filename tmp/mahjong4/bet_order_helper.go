@@ -82,6 +82,15 @@ func (s *betOrderService) winGridToString(winGridW int64GridW) string {
 }
 
 func (s *betOrderService) updateBonusAmount(stepMultiplier int64) {
+	// RTP 测试模式优化：跳过昂贵的 decimal 除法计算
+	if s.debug.open {
+		s.bonusAmount = decimal.Zero
+		return
+	}
+	if stepMultiplier == 0 {
+		s.bonusAmount = decimal.Zero
+		return
+	}
 	bonusAmount := s.betAmount.
 		Mul(decimal.NewFromInt(stepMultiplier)).
 		Div(decimal.NewFromInt(_baseMultiplier))
@@ -97,16 +106,16 @@ func (s *betOrderService) updateBonusAmount(stepMultiplier int64) {
 	}
 }
 
-func (s *betOrderService) getWinDetail(routeDetails []CardType, nwin int64, freeCount, freeNum, scatter int64) string {
+func (s *betOrderService) getWinDetail() string {
 	var returnRouteDetail []CardType
-	if nwin > 0 {
-		returnRouteDetail = append(returnRouteDetail, routeDetails...)
-	} else if freeNum > 0 && freeCount >= scatter {
+	if s.stepMultiplier > 0 {
+		returnRouteDetail = append(returnRouteDetail, s.getCardTypes()...)
+	} else if s.addFreeTime > 0 && s.scatterCount >= int64(s.gameConfig.FreeGameScatterMin) {
 		returnRouteDetail = append(returnRouteDetail, CardType{
 			Type:     int(_treasure),
-			Route:    int(freeCount),
+			Route:    int(s.scatterCount),
 			Multiple: 0,
-			Way:      int(freeNum),
+			Way:      int(s.addFreeTime),
 		})
 	}
 	if len(returnRouteDetail) == 0 {
@@ -128,10 +137,21 @@ func (s *betOrderService) getScatterCount() int64 {
 	return count
 }
 
+func (s *betOrderService) handleSymbolGrid() {
+	var symbolGrid int64Grid
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			symbolGrid[_rowCount-1-r][c] = s.scene.SymbolRoller[c].BoardSymbol[r]
+		}
+	}
+	s.symbolGrid = symbolGrid
+}
+
 // checkSymbolGridWin 检查符号网格中奖情况（核心算法）
-func (s *betOrderService) checkSymbolGridWin(symbolGrid int64Grid) ([]*winInfo, int64Grid) {
-	var winInfos []*winInfo
-	var totalWinGrid int64Grid
+func (s *betOrderService) checkSymbolGridWin() {
+	var winInfos []WinInfo
+	var totalWinGrid int64Grid        // 完整4行格式（内部使用，保留完整信息）
+	var totalWinGridReward int64GridW // 奖励3行格式（返回客户端）
 
 	for i, line := range s.gameConfig.WinLines {
 		for symbol := _blank + 1; symbol < _wild; symbol++ {
@@ -144,7 +164,7 @@ func (s *betOrderService) checkSymbolGridWin(symbolGrid int64Grid) ([]*winInfo, 
 				if r >= _rowCountReward {
 					break
 				}
-				currSymbol := symbolGrid[r][c]
+				currSymbol := s.symbolGrid[r][c]
 				if currSymbol == symbol || currSymbol == _wild {
 					winGrid[r][c] = currSymbol
 					count++
@@ -156,19 +176,23 @@ func (s *betOrderService) checkSymbolGridWin(symbolGrid int64Grid) ([]*winInfo, 
 			if count >= _minMatchCount {
 				odds := s.getSymbolBaseMultiplier(symbol, int(count))
 				if odds > 0 {
-					winInfos = append(winInfos, &winInfo{
+					// 直接创建最终格式，避免后续转换
+					winInfos = append(winInfos, WinInfo{
 						Symbol:      symbol,
 						SymbolCount: count,
 						LineCount:   int64(i),
 						Odds:        odds,
 						Multiplier:  odds,
-						WinGrid:     winGrid,
+						WinGrid:     winGrid, // 保留完整4行信息
 					})
-					// 合并中奖标记到总中奖网格（只处理前3行，Row 3不参与中奖检测）
-					for r := int64(0); r < _rowCountReward; r++ {
+					// 同时更新完整4行和奖励3行两种格式
+					for r := int64(0); r < _rowCount; r++ {
 						for c := int64(0); c < _colCount; c++ {
 							if winGrid[r][c] > 0 {
-								totalWinGrid[r][c] = 1
+								totalWinGrid[r][c] = 1 // 完整4行
+								if r < _rowCountReward {
+									totalWinGridReward[r][c] = 1 // 前3行
+								}
 							}
 						}
 					}
@@ -176,41 +200,10 @@ func (s *betOrderService) checkSymbolGridWin(symbolGrid int64Grid) ([]*winInfo, 
 			}
 		}
 	}
-	return winInfos, totalWinGrid
-}
 
-func (s *betOrderService) handleWinInfosMultiplier(infos []*winInfo) int64 {
-	var stepMultiplier int64
-	for _, info := range infos {
-		stepMultiplier += info.Multiplier
-	}
-	return stepMultiplier
-}
-
-func (s *betOrderService) handleSymbolGrid() int64Grid {
-	var symbolGrid int64Grid
-	for r := int64(0); r < _rowCount; r++ {
-		for c := int64(0); c < _colCount; c++ {
-			symbolGrid[_rowCount-1-r][c] = s.scene.SymbolRoller[c].BoardSymbol[r]
-		}
-	}
-	return symbolGrid
-}
-
-func convertToRewardGrid(winGrid int64Grid) int64GridW {
-	var winGridW int64GridW
-	for r := int64(0); r < _rowCountReward; r++ {
-		winGridW[r] = winGrid[r]
-	}
-	return winGridW
-}
-
-func convertRewardGridToFull(winGridW int64GridW) int64Grid {
-	var fullWinGrid int64Grid
-	for r := int64(0); r < _rowCountReward; r++ {
-		fullWinGrid[r] = winGridW[r]
-	}
-	return fullWinGrid
+	s.winInfos = winInfos
+	s.winGrid = totalWinGrid
+	s.winGridReward = totalWinGridReward
 }
 
 func (s *betOrderService) moveSymbols() int64Grid {
@@ -307,12 +300,6 @@ func reverseGridRows(grid *int64Grid) int64Grid {
 	return reversed
 }
 
-func (s *betOrderService) autoSetupBonusNumAndFreeTimes(scatterCount int64) {
-	if s.debug.open {
-		s.setupBonusNumAndFreeTimes(scatterCount, _bonusNum3)
-	}
-}
-
 func (s *betOrderService) setupBonusNumAndFreeTimes(scatterCount int64, bonusNum int) int {
 	if bonusNum <= 0 || bonusNum > 3 {
 		bonusNum = _bonusNum3
@@ -350,13 +337,29 @@ func (s *betOrderService) checkNewFreeGameNum(scatterCount int64) (bool, int64) 
 	return true, newFreeRoundCount
 }
 
-func collectWinLineIndex(winArr []WinElem) [_maxWinLines]int {
-	var winDetails [_maxWinLines]int
-	for _, winElem := range winArr {
-		lineIndex := int(winElem.RoadNum)
-		if lineIndex >= 0 && lineIndex < len(winDetails) {
-			winDetails[lineIndex] = 1
+func (s *betOrderService) getCardTypes() []CardType {
+	if len(s.winInfos) == 0 {
+		return nil
+	}
+	cardTypes := make([]CardType, len(s.winInfos))
+	for i, elem := range s.winInfos {
+		cardTypes[i] = CardType{
+			Type:     int(elem.Symbol),
+			Way:      int(elem.LineCount),
+			Multiple: int(elem.Odds),
+			Route:    int(elem.SymbolCount),
 		}
 	}
-	return winDetails
+	return cardTypes
+}
+
+func (s *betOrderService) getWinRoads() [_maxWinLines]int {
+	var roads [_maxWinLines]int
+	for _, elem := range s.winInfos {
+		lineIndex := int(elem.LineCount)
+		if lineIndex >= 0 && lineIndex < _maxWinLines {
+			roads[lineIndex] = 1
+		}
+	}
+	return roads
 }

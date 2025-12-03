@@ -80,7 +80,7 @@ func TestRtp2(t *testing.T) {
 			}
 
 			cascadeCount++
-			stepWin := svc.bonusAmount.Round(2).InexactFloat64()
+			stepWin := float64(svc.stepMultiplier) // svc.bonusAmount.Round(2).InexactFloat64() // 精准浮点统计用bonusAmount
 			roundWin += stepWin
 
 			if isFree && svc.scene.FreeNum > freeMaxFreeStreak {
@@ -338,8 +338,8 @@ func saveDebugFile(statsResult, detailResult string, start time.Time) {
 }
 
 func printWinContribution(w func(string, ...interface{}), femaleSymbolWin, femaleWildWin, totalWin float64) {
-	w("  女性符号中奖贡献: %.2f (%.2f%%)\n", femaleSymbolWin, safeDivide(int64(femaleSymbolWin)*100, int64(totalWin)))
-	w("  女性百搭中奖贡献: %.2f (%.2f%%)\n", femaleWildWin, safeDivide(int64(femaleWildWin)*100, int64(totalWin)))
+	w("  女性符号中奖贡献: %.2f (%.2f%%)\n", femaleSymbolWin, safeDiv(int64(femaleSymbolWin)*100, int64(totalWin)))
+	w("  女性百搭中奖贡献: %.2f (%.2f%%)\n", femaleWildWin, safeDiv(int64(femaleWildWin)*100, int64(totalWin)))
 }
 
 func printFinalStats(buf *strings.Builder,
@@ -349,8 +349,8 @@ func printFinalStats(buf *strings.Builder,
 
 	w := func(format string, args ...interface{}) { fprintf(buf, format, args...) }
 	elapsed := time.Since(start)
-	speed := safeDivide(baseRounds, int64(elapsed.Seconds()))
-	w("运行局数: %d，用时: %v，速度: %.0f 局/秒\n\n", baseRounds, elapsed.Round(time.Second), speed)
+	speed := safeDiv(baseRounds, int64(elapsed.Seconds()))
+	w("\n运行局数: %d，用时: %v，速度: %.0f 局/秒\n\n", baseRounds, elapsed.Round(time.Second), speed)
 	w("\n===== 详细统计汇总 =====\n")
 	w("生成时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 
@@ -358,12 +358,12 @@ func printFinalStats(buf *strings.Builder,
 	w("基础模式总游戏局数: %d\n", baseRounds)
 	w("基础模式总投注(倍数): %.2f\n", totalBet)
 	w("基础模式总奖金: %.2f\n", baseTotalWin)
-	w("基础模式RTP: %.2f%% (基础模式奖金/基础模式投注)\n", safeDivide(int64(baseTotalWin)*100, int64(totalBet)))
+	w("基础模式RTP: %.2f%% (基础模式奖金/基础模式投注)\n", safeDiv(int64(baseTotalWin)*100, int64(totalBet)))
 	w("基础模式免费局触发次数: %d\n", baseFreeTriggered)
-	w("基础模式触发免费局比例: %.2f%%\n", safeDivide(baseFreeTriggered*100, baseRounds))
-	w("基础模式平均每局免费次数: %.2f\n", safeDivide(freeRounds, baseRounds))
-	w("基础模式中奖率: %.2f%%\n", safeDivide(baseWinRounds*100, baseRounds))
-	w("基础模式平均连消步数: %.2f\n", safeDivide(baseCascadeSteps, baseRounds))
+	w("基础模式触发免费局比例: %.2f%%\n", safeDiv(baseFreeTriggered*100, baseRounds))
+	w("基础模式平均每局免费次数: %.2f\n", safeDiv(freeRounds, baseRounds))
+	w("基础模式中奖率: %.2f%%\n", safeDiv(baseWinRounds*100, baseRounds))
+	w("基础模式平均连消步数: %.2f\n", safeDiv(baseCascadeSteps, baseRounds))
 	w("基础模式最大连消步数: %d\n", baseMaxCascadeSteps)
 	w("基础模式中奖局数: %d\n", baseWinRounds)
 	w("\n[基础模式中奖贡献分析]\n")
@@ -372,14 +372,14 @@ func printFinalStats(buf *strings.Builder,
 	w("\n[免费模式统计]\n")
 	w("免费模式总游戏局数: %d\n", freeRounds)
 	w("免费模式总奖金: %.2f\n", freeTotalWin)
-	w("免费模式RTP: %.2f%% (免费模式奖金/基础模式投注，因为免费模式不投注)\n", safeDivide(int64(freeTotalWin)*100, int64(totalBet)))
+	w("免费模式RTP: %.2f%% (免费模式奖金/基础模式投注，因为免费模式不投注)\n", safeDiv(int64(freeTotalWin)*100, int64(totalBet)))
 	w("免费模式额外增加局数: %d\n", freeExtraFreeRounds)
 	w("免费模式最大连续局数: %d\n", freeMaxFreeStreak)
 	w("免费模式中奖局数: %d\n", freeWinRounds)
-	w("免费模式中奖率: %.2f%%\n", safeDivide(freeWinRounds*100, freeRounds))
-	w("免费模式全屏消除次数: %d (%.2f%%)\n", freeFullElimination, safeDivide(freeFullElimination*100, freeRounds))
-	w("免费模式出现夺宝的次数: %d (%.2f%%)\n", freeTreasureInFree, safeDivide(freeTreasureInFree*100, freeRounds))
-	w("免费模式平均连消步数: %.2f\n", safeDivide(freeCascadeSteps, freeRounds))
+	w("免费模式中奖率: %.2f%%\n", safeDiv(freeWinRounds*100, freeRounds))
+	w("免费模式全屏消除次数: %d (%.2f%%)\n", freeFullElimination, safeDiv(freeFullElimination*100, freeRounds))
+	w("免费模式出现夺宝的次数: %d (%.2f%%)\n", freeTreasureInFree, safeDiv(freeTreasureInFree*100, freeRounds))
+	w("免费模式平均连消步数: %.2f\n", safeDiv(freeCascadeSteps, freeRounds))
 	w("免费模式最大连消步数: %d\n", freeMaxCascadeSteps)
 	if freeRounds > 0 {
 		printFemaleStateStats(w, freeRounds, freeFemaleStateCount, femaleKeyWins)
@@ -391,13 +391,13 @@ func printFinalStats(buf *strings.Builder,
 	w("\n[免费触发效率]\n")
 	w("  总免费游戏次数: %d (真实的游戏局数，包含中途增加的免费次数)\n", freeRounds)
 	w("  总触发次数: %d (基础模式触发免费游戏的次数)\n", baseFreeTriggered)
-	w("  平均1次触发获得免费游戏: %.2f次 (总免费游戏次数 / 总触发次数)\n", safeDivide(freeRounds, baseFreeTriggered))
+	w("  平均1次触发获得免费游戏: %.2f次 (总免费游戏次数 / 总触发次数)\n", safeDiv(freeRounds, baseFreeTriggered))
 
 	w("\n[总计]\n")
 	w("  总投注(倍数): %.2f (仅基础模式投注，免费模式不投注)\n", totalBet)
 	w("  总奖金: %.2f (基础模式奖金 + 免费模式奖金)\n", totalWin)
-	totalRTP := safeDivide(int64(totalWin)*100, int64(totalBet))
+	totalRTP := safeDiv(int64(totalWin)*100, int64(totalBet))
 	w("  总回报率(RTP): %.2f%% (总奖金/总投注 = %.2f/%.2f)\n", totalRTP, totalWin, totalBet)
-	w("  基础贡献: %.2f%% | 免费贡献: %.2f%%\n", safeDivide(int64(baseTotalWin)*100, int64(totalWin)), safeDivide(int64(freeTotalWin)*100, int64(totalWin)))
+	w("  基础贡献: %.2f%% | 免费贡献: %.2f%%\n", safeDiv(int64(baseTotalWin)*100, int64(totalWin)), safeDiv(int64(freeTotalWin)*100, int64(totalWin)))
 	w("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 }

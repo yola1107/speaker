@@ -36,15 +36,15 @@ type betOrderService struct {
 	isRoundOver    bool                 // 回合是否结束
 	isFreeRound    bool                 // 是否为免费回合
 	scatterCount   int64                // 夺宝符个数
+	addFreeTime    int64                // 增加的免费次数
 	gameMultiple   int64                // 连续消除倍数，初始1倍（从 scene.ContinueNum 计算得出）
 	lineMultiplier int64                // 线倍数
 	stepMultiplier int64                // Step倍数
-	winInfos       []*winInfo           // 中奖信息
+	winInfos       []WinInfo            // 中奖信息（统一格式，避免冗余转换）
 	nextSymbolGrid int64Grid            // 下一把 step 符号网格
-	symbolGrid     int64Grid            // 符号网格
-	winGrid        int64Grid            // 中奖网格
-	winData        winData              // 中奖信息（用于构建返回结果）
-	cardTypes      []CardType           // 中奖结果（用于 updateGameOrder）
+	symbolGrid     int64Grid            // 符号网格（4行5列）
+	winGrid        int64Grid            // 中奖网格（4行5列，只包含参与中奖的行）
+	winGridReward  int64GridW           // 奖励网格（3行5列，只包含参与中奖的行）
 	debug          rtpDebugData         // 是否为RTP测试流程
 }
 
@@ -80,7 +80,7 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 		s.cleanScene()
 	}
 
-	if err := s.reloadScene(); err != nil {
+	if err = s.reloadScene(); err != nil {
 		global.GVA_LOG.Error("betOrder: reloadScene failed", zap.Error(err))
 		return nil, InternalServerError
 	}
@@ -91,10 +91,10 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 		return nil, fmt.Errorf("waiting for client to select bonus type: %s", msg)
 	}
 
-	if err := s.baseSpin(); err != nil {
+	if err = s.baseSpin(); err != nil {
 		return nil, err
 	}
-	if _, err = s.updateGameOrder(); err != nil {
+	if err = s.updateGameOrder(); err != nil {
 		return nil, err
 	}
 	if err = s.settleStep(); err != nil {
@@ -104,9 +104,7 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 		return nil, err
 	}
 
-	result := s.getBetResultMap()
-	result["balance"] = s.gameOrder.CurBalance
-	return result, nil
+	return s.getBetResultMap(), nil
 }
 
 func (s *betOrderService) getBetResultMap() map[string]any {
@@ -118,22 +116,19 @@ func (s *betOrderService) getBetResultMap() map[string]any {
 	}
 
 	return map[string]any{
+		"sn":             s.orderSN,
 		"betMoney":       s.betAmount.Round(2).InexactFloat64(),
 		"bonusState":     s.scene.BonusState,
 		"balance":        s.gameOrder.CurBalance,
 		"free":           isFreeInt,
 		"review":         0,
-		"freeNum":        s.winData.FreeNum,
+		"freeNum":        uint64(s.scene.FreeNum),
 		"totalWin":       s.client.ClientOfFreeGame.GetGeneralWinTotal(),
 		"win":            s.bonusAmount.Round(2).InexactFloat64(),
 		"freeTotalMoney": freeTotalMoney,
 		"cards":          s.symbolGrid,
-		"winDetails":     collectWinLineIndex(s.winData.WinArr),
-		"wincards":       s.winData.WinGrid,
-		"winData":        s.winData,
-		"sn":             s.orderSN,
-		"lastWinId":      s.client.ClientOfFreeGame.GetLastWinId(),
-		"mapId":          s.client.ClientOfFreeGame.GetLastMapId(),
-		"roundBonus":     s.client.ClientOfFreeGame.RoundBonus,
+		"winDetails":     s.getWinRoads(),
+		"wincards":       s.winGridReward, // 使用3行奖励格式
+		"scatterCount":   s.scatterCount,
 	}
 }

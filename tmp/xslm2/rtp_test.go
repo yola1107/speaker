@@ -144,17 +144,17 @@ func printBenchmarkProgress(buf *strings.Builder, stats *rtpStats, start time.Ti
 		return
 	}
 	freeRoundsSafe := max(stats.freeRounds, 1)
-	avgFreePerTrigger := safeDivide(stats.freeRounds, stats.freeTime)
+	avgFreePerTrigger := safeDiv(stats.freeRounds, stats.freeTime)
 	buf.Reset()
 	fprintf(buf, "\rRuntime=%d baseRtp=%.4f%%,baseWinRate=%.4f%% freeRtp=%.4f%% freeWinRate=%.4f%%, freeTriggerRate=%.4f%% avgFree=%.4f Rtp=%.4f%% \n",
 		stats.baseRounds,
-		safeDivide(stats.baseWin*100, stats.baseRounds*_baseMultiplier),
-		safeDivide(stats.baseWinTime*100, stats.baseRounds),
-		safeDivide(stats.freeWin*100, stats.baseRounds*_baseMultiplier),
-		safeDivide(stats.freeWinRounds*100, freeRoundsSafe),
-		safeDivide(stats.freeTime*100, stats.baseRounds),
+		safeDiv(stats.baseWin*100, stats.baseRounds*_baseMultiplier),
+		safeDiv(stats.baseWinTime*100, stats.baseRounds),
+		safeDiv(stats.freeWin*100, stats.baseRounds*_baseMultiplier),
+		safeDiv(stats.freeWinRounds*100, freeRoundsSafe),
+		safeDiv(stats.freeTime*100, stats.baseRounds),
 		avgFreePerTrigger,
-		safeDivide(stats.totalWin*100, stats.baseRounds*_baseMultiplier),
+		safeDiv(stats.totalWin*100, stats.baseRounds*_baseMultiplier),
 	)
 	fprintf(buf, "\rtotalWin-%d freeWin=%d,baseWin=%d ,baseWinTime=%d ,freeTime=%d, freeRounds=%d ,freeWinRounds=%d, freeWinTime=%d, elapsed=%v\n",
 		stats.totalWin, stats.freeWin, stats.baseWin, stats.baseWinTime, stats.freeTime,
@@ -169,22 +169,19 @@ func printBenchmarkSummary(buf *strings.Builder, stats *rtpStats, start time.Tim
 
 	w := func(format string, args ...interface{}) { fprintf(buf, format, args...) }
 	elapsed := time.Since(start)
-	speed := safeDivide(stats.baseRounds, int64(elapsed.Seconds()))
-	w("\n运行局数: %d，用时: %v，速度: %.0f 局/秒\n\n", stats.baseRounds, elapsed.Round(time.Second), speed)
+	speed := safeDiv(stats.baseRounds, int64(elapsed.Seconds()))
+	w("\n运行局数: %d，用时: %v，速度: %.0f 局/秒\n", stats.baseRounds, elapsed.Round(time.Second), speed)
 
-	baseRTP := safeDivide(stats.baseWin*100, stats.baseRounds*_baseMultiplier)
-	freeRTP := safeDivide(stats.freeWin*100, stats.baseRounds*_baseMultiplier)
-	totalRTP := safeDivide(stats.totalWin*100, stats.baseRounds*_baseMultiplier)
-	baseWinRate := safeDivide(stats.baseWinTime*100, stats.baseRounds)
-	freeWinRate := safeDivide(stats.freeWinRounds*100, stats.freeRounds)
-	freeTriggerRate := safeDivide(stats.freeTime*100, stats.baseRounds)
-	avgFreePerRound := safeDivide(stats.freeRounds, stats.baseRounds)
-	avgFreePerTrigger := safeDivide(stats.freeRounds, stats.freeTime)
+	baseRTP := safeDiv(stats.baseWin*100, stats.baseRounds*_baseMultiplier)
+	freeRTP := safeDiv(stats.freeWin*100, stats.baseRounds*_baseMultiplier)
+	totalRTP := safeDiv(stats.totalWin*100, stats.baseRounds*_baseMultiplier)
+	baseWinRate := safeDiv(stats.baseWinTime*100, stats.baseRounds)
+	freeWinRate := safeDiv(stats.freeWinRounds*100, stats.freeRounds)
+	freeTriggerRate := safeDiv(stats.freeTime*100, stats.baseRounds)
+	avgFreePerRound := safeDiv(stats.freeRounds, stats.baseRounds)
+	avgFreePerTrigger := safeDiv(stats.freeRounds, stats.freeTime)
 
-	w("\n[总计]\n")
-	w("总回报率(RTP): %.2f%%\n\n", totalRTP)
-
-	w("[基础模式统计]\n")
+	w("\n[基础模式统计]\n")
 	w("基础模式总游戏局数: %d\n", stats.baseRounds)
 	w("基础模式总投注(倍数): %.2f\n", stats.totalBet)
 	w("基础模式总奖金: %.2f\n", float64(stats.baseWin))
@@ -210,6 +207,11 @@ func printBenchmarkSummary(buf *strings.Builder, stats *rtpStats, start time.Tim
 	w("\n[免费触发效率]\n")
 	w("总免费游戏次数: %d | 总触发次数: %d\n", stats.freeRounds, stats.freeTime)
 	w("平均每次触发获得免费次数: %.2f\n", avgFreePerTrigger)
+
+	w("\n[总计]\n")
+	w("总回报率(RTP): %.2f%%\n", totalRTP)
+	w("总投注金额: %.2f\n", stats.totalBet)
+	w("总奖金金额: %.2f\n\n", float64(stats.totalWin))
 }
 
 func printFemaleStateStats(w func(string, ...interface{}), freeRounds int64, freeFemaleStateCount [10]int64, femaleKeyWins [10]float64) {
@@ -221,13 +223,13 @@ func printFemaleStateStats(w func(string, ...interface{}), freeRounds int64, fre
 	w("  总统计次数: %d (应该等于免费模式总游戏局数: %d)\n", totalStateCount, freeRounds)
 	for i := 1; i < 9; i++ {
 		count := freeFemaleStateCount[i]
-		w("  状态 %s: %.4f%% (%d次)\n", stateNames[i], safeDivide(count*100, freeRounds), count)
+		w("  状态 %s: %.4f%% (%d次)\n", stateNames[i], safeDiv(count*100, freeRounds), count)
 	}
 	w("\n[免费模式女性 key 赢分统计]\n")
 	for i := 1; i < 9; i++ {
 		winSum := femaleKeyWins[i]
 		count := freeFemaleStateCount[i]
-		avg := safeDivide(int64(winSum), count)
+		avg := safeDiv(int64(winSum), count)
 		avgBet := avg / float64(_baseMultiplier)
 		w("  key=%s | 总赢分=%.2f | 次数=%d | 平均倍数=%.4f\n",
 			stateNames[i], winSum, count, avgBet)
@@ -235,12 +237,6 @@ func printFemaleStateStats(w func(string, ...interface{}), freeRounds int64, fre
 }
 
 func resetBetServiceForNextRound(s *betOrderService) {
-	s.scene = &SpinSceneData{}
-	s.stepMultiplier = 0
-	s.lineMultiplier = 0
-	s.treasureCount = 0
-	s.newFreeRoundCount = 0
-	s.isRoundOver = false
 	s.client.IsRoundOver = false
 	s.client.ClientOfFreeGame.Reset()
 	s.client.ClientOfFreeGame.ResetGeneralWinTotal()
@@ -316,7 +312,7 @@ func fprintf(buf *strings.Builder, format string, args ...interface{}) {
 	_, _ = fmt.Fprintf(buf, format, args...)
 }
 
-func safeDivide(numerator, denominator int64) float64 {
+func safeDiv(numerator, denominator int64) float64 {
 	if denominator == 0 {
 		return 0
 	}

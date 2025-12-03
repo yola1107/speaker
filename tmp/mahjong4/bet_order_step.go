@@ -89,7 +89,7 @@ func (s *betOrderService) initStepForNextStep() error {
 	return nil
 }
 
-func (s *betOrderService) updateGameOrder() (bool, error) {
+func (s *betOrderService) updateGameOrder() error {
 	gameOrder := game.GameOrder{
 		MerchantID:        s.merchant.ID,
 		Merchant:          s.merchant.Merchant,
@@ -106,13 +106,13 @@ func (s *betOrderService) updateGameOrder() (bool, error) {
 		Amount:            s.amount.Round(2).InexactFloat64(),
 		ValidAmount:       s.amount.Round(2).InexactFloat64(),
 		BonusAmount:       s.bonusAmount.Round(2).InexactFloat64(),
-		CurBalance:        s.getCurrentBalance(),
+		CurBalance:        decimal.NewFromFloat(s.member.Balance).Sub(s.amount).Add(s.bonusAmount).Round(2).InexactFloat64(),
 		OrderSn:           s.orderSN,
 		ParentOrderSn:     s.parentOrderSN,
 		FreeOrderSn:       s.freeOrderSN,
 		State:             1,
 		BonusTimes:        s.scene.ContinueNum,
-		HuNum:             int64(s.scatterCount),
+		HuNum:             s.scatterCount,
 		FreeNum:           s.scene.FreeNum,
 		FreeTimes:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
 	}
@@ -124,24 +124,21 @@ func (s *betOrderService) updateGameOrder() (bool, error) {
 	return s.fillInGameOrderDetails()
 }
 
-func (s *betOrderService) fillInGameOrderDetails() (bool, error) {
-	betRawDetail, err := json.CJSON.MarshalToString(s.symbolGrid)
-	if err != nil {
-		global.GVA_LOG.Error("fillInGameOrderDetails", zap.Error(err))
-		return false, err
+func (s *betOrderService) fillInGameOrderDetails() error {
+	var err error
+	if s.gameOrder.BetRawDetail, err = json.CJSON.MarshalToString(s.symbolGrid); err != nil {
+		global.GVA_LOG.Error("fillInGameOrderDetails: marshal symbolGrid", zap.Error(err))
+		return err
 	}
-	s.gameOrder.BetRawDetail = betRawDetail
-	winRawDetail, err := json.CJSON.MarshalToString(s.winData.WinGrid)
-	if err != nil {
-		global.GVA_LOG.Error("fillInGameOrderDetails", zap.Error(err))
-		return false, err
+	// 使用3行奖励格式保存
+	if s.gameOrder.BonusRawDetail, err = json.CJSON.MarshalToString(s.winGridReward); err != nil {
+		global.GVA_LOG.Error("fillInGameOrderDetails: marshal WinGridReward", zap.Error(err))
+		return err
 	}
-
-	s.gameOrder.BonusRawDetail = winRawDetail
 	s.gameOrder.BetDetail = s.symbolGridToString(s.symbolGrid)
-	s.gameOrder.BonusDetail = s.winGridToString(s.winData.WinGrid)
-	s.gameOrder.WinDetails = s.getWinDetail(s.cardTypes, s.stepMultiplier, s.scatterCount, s.winData.AddFreeTime, int64(s.gameConfig.FreeGameScatterMin))
-	return true, nil
+	s.gameOrder.BonusDetail = s.winGridToString(s.winGridReward)
+	s.gameOrder.WinDetails = s.getWinDetail()
+	return nil
 }
 
 func (s *betOrderService) settleStep() error {
@@ -171,13 +168,4 @@ func (s *betOrderService) settleStep() error {
 		Ip:          s.req.Ip,
 	}
 	return gamelogic.SaveTransfer(saveParam).Err
-}
-
-func (s *betOrderService) getCurrentBalance() float64 {
-	currBalance := decimal.NewFromFloat(s.member.Balance).
-		Sub(s.amount).
-		Add(s.bonusAmount).
-		Round(2).
-		InexactFloat64()
-	return currBalance
 }

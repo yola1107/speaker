@@ -85,6 +85,16 @@ func (s *betOrderService) winGridToString() string {
 }
 
 func (s *betOrderService) updateBonusAmount() {
+	// RTP 测试模式优化：跳过昂贵的 decimal 除法计算
+	if s.debug.open {
+		s.bonusAmount = decimal.Zero
+		return
+	}
+
+	if s.stepMultiplier == 0 {
+		s.bonusAmount = decimal.Zero
+		return
+	}
 	s.bonusAmount = decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
 		Mul(decimal.NewFromInt(s.stepMultiplier))

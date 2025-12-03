@@ -76,7 +76,7 @@ func TestRtp2(t *testing.T) {
 			}
 
 			cascadeCount++
-			stepWin := svc.bonusAmount.Round(2).InexactFloat64()
+			stepWin := float64(svc.stepMultiplier) // svc.bonusAmount.Round(2).InexactFloat64()
 			roundWin += stepWin
 
 			// 更新最大免费次数
@@ -100,9 +100,9 @@ func TestRtp2(t *testing.T) {
 			if isFree {
 				freeTotalWin += stepWin
 				freeRoundWin += stepWin
-				if svc.winData.AddFreeTime > 0 {
+				if svc.addFreeTime > 0 {
 					freeTreasureInFree++
-					freeExtraFreeRounds += svc.winData.AddFreeTime
+					freeExtraFreeRounds += svc.addFreeTime
 				}
 			} else {
 				baseTotalWin += stepWin
@@ -132,7 +132,7 @@ func TestRtp2(t *testing.T) {
 					}
 					totalBet += float64(_baseMultiplier)
 					// 基础模式回合结束时，如果触发了免费游戏
-					if !wasFreeBeforeSpin && svc.winData.State == runStateFreeGame {
+					if svc.addFreeTime > 0 {
 						baseFreeTriggered++
 					}
 					// 记录触发免费游戏的基础局数
@@ -176,10 +176,9 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum, step i
 	fprintf(buf, "Step%d 初始盘面:\n", step)
 	writeGridToBuilder(buf, &svc.symbolGrid, nil)
 
-	if len(svc.winData.WinArr) > 0 {
+	if len(svc.winInfos) > 0 {
 		fprintf(buf, "Step%d 中奖标记:\n", step)
-		fullWinGrid := convertRewardGridToFull(svc.winData.WinGrid)
-		writeGridToBuilder(buf, &svc.symbolGrid, &fullWinGrid)
+		writeGridToBuilder(buf, &svc.symbolGrid, &svc.winGrid)
 	}
 
 	if !svc.isRoundOver {
@@ -187,27 +186,27 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum, step i
 		writeGridToBuilder(buf, &svc.nextSymbolGrid, nil)
 	}
 	writeStepSummary(buf, svc, step, isFree, stepWin, roundWin)
-	buf.WriteString("\n")
+	fprintf(buf, "\n")
 }
 
 func writeReelInfo(buf *strings.Builder, svc *betOrderService) {
 	if svc.scene == nil {
-		buf.WriteString("滚轴配置Index: 0\n转轮信息长度/起始：未初始化\n")
+		fprintf(buf, "滚轴配置Index: 0\n转轮信息长度/起始：未初始化\n")
 		return
 	}
 	fprintf(buf, "滚轴配置Index: %d\n转轮信息长度/起始：", svc.scene.SymbolRoller[0].Real)
 	for c := int64(0); c < _colCount; c++ {
 		if c > 0 {
-			buf.WriteString("， ")
+			fprintf(buf, "， ")
 		}
 		realIdx := svc.scene.SymbolRoller[c].Real
 		if length := len(svc.gameConfig.RealData[realIdx][c]); length > 0 {
 			fprintf(buf, "%d[%d～%d]", length, svc.scene.SymbolRoller[c].Start, svc.scene.SymbolRoller[c].Fall)
 		} else {
-			buf.WriteString("0[0～0]")
+			fprintf(buf, "0[0～0]")
 		}
 	}
-	buf.WriteString("\n")
+	fprintf(buf, "\n")
 }
 
 func writeRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggeringBaseRound int) {
@@ -227,8 +226,8 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 	fprintf(buf, "Step%d 中奖详情:\n", step)
 	treasureCount := svc.getScatterCount()
 
-	if len(svc.winData.WinArr) == 0 {
-		buf.WriteString("\t未中奖\n")
+	if len(svc.winInfos) == 0 {
+		fprintf(buf, "\t未中奖\n")
 		if svc.isRoundOver {
 			if isFree && treasureCount > 0 {
 				fprintf(buf, "\t💎 当前盘面夺宝数量: %d\n", treasureCount)
@@ -240,21 +239,25 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 	}
 
 	totalMultiplier := int64(0)
-	for _, win := range svc.winData.WinArr {
-		totalMultiplier += win.Mul * svc.gameMultiple
+	for _, elem := range svc.winInfos {
+		totalMultiplier += elem.Multiplier * svc.gameMultiple
 	}
 
-	for _, win := range svc.winData.WinArr {
+	for _, elem := range svc.winInfos {
 		lineWin := 0.0
 		if totalMultiplier > 0 {
-			lineWin = stepWin * float64(win.Mul*svc.gameMultiple) / float64(totalMultiplier)
+			lineWin = stepWin * float64(elem.Multiplier*svc.gameMultiple) / float64(totalMultiplier)
 		}
 		fprintf(buf, "\t符号: %2d, 支付线: %2d, 乘积: %d, 赔率: %4.2f, 下注: %g×%d, 奖金: %4.2f\n",
-			win.Val, win.RoadNum+1, win.StarNum, float64(win.Odds), svc.req.BaseMoney, svc.req.Multiple, lineWin)
+			elem.Symbol, elem.LineCount+1, elem.SymbolCount, float64(elem.Odds), svc.req.BaseMoney, svc.req.Multiple, lineWin)
 	}
 
+	isFreeMode := 0
+	if svc.isFreeRound {
+		isFreeMode = 1
+	}
 	fprintf(buf, "\tisFreeMode=%d, RoundMultiplier: %d, stepMultiplier: %d, lineMultiplier: %d, gameMultiple: %d, ContinueNum: %d\n\t累计中奖: %.2f \n",
-		svc.winData.State, svc.scene.RoundMultiplier, svc.stepMultiplier, svc.lineMultiplier, svc.gameMultiple, svc.scene.ContinueNum, roundWin)
+		isFreeMode, svc.scene.RoundMultiplier, svc.stepMultiplier, svc.lineMultiplier, svc.gameMultiple, svc.scene.ContinueNum, roundWin)
 
 	if !svc.isRoundOver {
 		fprintf(buf, "\t🔁 连消继续 → Step%d\n", step+1)
@@ -264,7 +267,7 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 	fprintf(buf, "\t🛑 连消结束（无后续可消除）\n\n")
 	if isFree {
 		if treasureCount > 0 {
-			fprintf(buf, "\t💎 当前盘面夺宝数量: %d, 增加免费次数: %d\n", treasureCount, svc.winData.AddFreeTime)
+			fprintf(buf, "\t💎 当前盘面夺宝数量: %d, 增加免费次数: %d\n", treasureCount, svc.addFreeTime)
 		}
 		if svc.scene.FreeNum == 0 {
 			fprintf(buf, "\t🎉 免费模式结束 - RoundMultiplier: %d, 总奖金: %.2f\n", svc.scene.RoundMultiplier, roundWin)
@@ -289,8 +292,8 @@ func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float6
 	freeExtraFreeRounds int64, freeMaxFreeStreak int64, totalBet float64, start time.Time) {
 	w := func(format string, args ...interface{}) { fprintf(buf, format, args...) }
 	elapsed := time.Since(start)
-	speed := safeDivide(baseRounds, int64(elapsed.Seconds()))
-	w("运行局数: %d，用时: %v，速度: %.0f 局/秒\n\n", baseRounds, elapsed.Round(time.Second), speed)
+	speed := safeDiv(baseRounds, int64(elapsed.Seconds()))
+	w("\n运行局数: %d，用时: %v，速度: %.0f 局/秒\n", baseRounds, elapsed.Round(time.Second), speed)
 
 	w("\n===== 详细统计汇总 =====\n")
 	w("生成时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
@@ -299,39 +302,39 @@ func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float6
 	w("基础模式总游戏局数: %d\n", baseRounds)
 	w("基础模式总投注(倍数): %.2f\n", totalBet)
 	w("基础模式总奖金: %.2f\n", baseTotalWin)
-	w("基础模式RTP: %.2f%% (基础模式奖金/基础模式投注)\n", safeDivide(int64(baseTotalWin)*100, int64(totalBet)))
+	w("基础模式RTP: %.2f%% (基础模式奖金/基础模式投注)\n", safeDiv(int64(baseTotalWin)*100, int64(totalBet)))
 	w("基础模式免费局触发次数: %d\n", baseFreeTriggered)
-	w("基础模式触发免费局比例: %.2f%%\n", safeDivide(baseFreeTriggered*100, baseRounds))
-	w("基础模式平均每局免费次数: %.2f\n", safeDivide(freeRounds, baseRounds))
-	w("基础模式中奖率: %.2f%%\n", safeDivide(baseWinRounds*100, baseRounds))
-	w("基础模式平均连消步数: %.2f\n", safeDivide(baseCascadeSteps, baseRounds))
+	w("基础模式触发免费局比例: %.2f%%\n", safeDiv(baseFreeTriggered*100, baseRounds))
+	w("基础模式平均每局免费次数: %.2f\n", safeDiv(freeRounds, baseRounds))
+	w("基础模式中奖率: %.2f%%\n", safeDiv(baseWinRounds*100, baseRounds))
+	w("基础模式平均连消步数: %.2f\n", safeDiv(baseCascadeSteps, baseRounds))
 	w("基础模式最大连消步数: %d\n", baseMaxCascadeSteps)
 	w("基础模式中奖局数: %d\n", baseWinRounds)
 
 	w("\n[免费模式统计]\n")
 	w("免费模式总游戏局数: %d\n", freeRounds)
 	w("免费模式总奖金: %.2f\n", freeTotalWin)
-	w("免费模式RTP: %.2f%% (免费模式奖金/基础模式投注，因为免费模式不投注)\n", safeDivide(int64(freeTotalWin)*100, int64(totalBet)))
+	w("免费模式RTP: %.2f%% (免费模式奖金/基础模式投注，因为免费模式不投注)\n", safeDiv(int64(freeTotalWin)*100, int64(totalBet)))
 
 	w("免费模式额外增加局数: %d\n", freeExtraFreeRounds)
 	w("免费模式最大连续局数: %d\n", freeMaxFreeStreak)
 	w("免费模式中奖局数: %d\n", freeWinRounds)
-	w("免费模式中奖率: %.2f%%\n", safeDivide(freeWinRounds*100, freeRounds))
-	w("免费模式出现夺宝的次数: %d (%.2f%%)\n", freeTreasureInFree, safeDivide(freeTreasureInFree*100, freeRounds))
-	w("免费模式平均连消步数: %.2f\n", safeDivide(freeCascadeSteps, freeRounds))
+	w("免费模式中奖率: %.2f%%\n", safeDiv(freeWinRounds*100, freeRounds))
+	w("免费模式出现夺宝的次数: %d (%.2f%%)\n", freeTreasureInFree, safeDiv(freeTreasureInFree*100, freeRounds))
+	w("免费模式平均连消步数: %.2f\n", safeDiv(freeCascadeSteps, freeRounds))
 	w("免费模式最大连消步数: %d\n", freeMaxCascadeSteps)
 
 	totalWin := baseTotalWin + freeTotalWin
 	w("\n[免费触发效率]\n")
 	w("  总免费游戏次数: %d (真实的游戏局数，包含中途增加的免费次数)\n", freeRounds)
 	w("  总触发次数: %d (基础模式触发免费游戏的次数)\n", baseFreeTriggered)
-	w("  平均1次触发获得免费游戏: %.2f次 (总免费游戏次数 / 总触发次数)\n", safeDivide(freeRounds, baseFreeTriggered))
+	w("  平均1次触发获得免费游戏: %.2f次 (总免费游戏次数 / 总触发次数)\n", safeDiv(freeRounds, baseFreeTriggered))
 
 	w("\n[总计]\n")
 	w("  总投注(倍数): %.2f (仅基础模式投注，免费模式不投注)\n", totalBet)
 	w("  总奖金: %.2f (基础模式奖金 + 免费模式奖金)\n", totalWin)
-	totalRTP := safeDivide(int64(totalWin)*100, int64(totalBet))
+	totalRTP := safeDiv(int64(totalWin)*100, int64(totalBet))
 	w("  总回报率(RTP): %.2f%% (总奖金/总投注 = %.2f/%.2f)\n", totalRTP, totalWin, totalBet)
-	w("  基础贡献: %.2f%% | 免费贡献: %.2f%%\n", safeDivide(int64(baseTotalWin)*100, int64(totalWin)), safeDivide(int64(freeTotalWin)*100, int64(totalWin)))
+	w("  基础贡献: %.2f%% | 免费贡献: %.2f%%\n", safeDiv(int64(baseTotalWin)*100, int64(totalWin)), safeDiv(int64(freeTotalWin)*100, int64(totalWin)))
 	w("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 }
