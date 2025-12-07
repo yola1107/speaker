@@ -97,8 +97,6 @@ github.com/vmihailenco/tagparser/v2 v2.0.0 h1:y09buUbR+b5aycVFQs/g70pqKVZNBmxwAh
 github.com/vmihailenco/tagparser/v2 v2.0.0/go.mod h1:Wri+At7QHww0WTrCBeu4J6bNtoV6mEfg5OIWRZA9qds=
 github.com/yola1107/kratos/contrib/log/zap/v2 v2.0.0-20250427101520-31f92cf577e8 h1:YBxnZy4iPvgn4n6hZ4sgLnnOzzPWf9MwK4onXOG+s7k=
 github.com/yola1107/kratos/contrib/log/zap/v2 v2.0.0-20250427101520-31f92cf577e8/go.mod h1:k9pfJlxzeFq+KHY4xyqNqJZexLePfP7Oo5hejwjgFkg=
-github.com/yola1107/kratos/v2 v2.8.7 h1:gtS+9/RRR1hG90WgjgCTvD7PxxXIpJgzX6CgvVlfzTo=
-github.com/yola1107/kratos/v2 v2.8.7/go.mod h1:3ZTxk+/H2IDwIn2pUQGWD7duD3+rXxfVvHeOozlNfoc=
 github.com/yola1107/kratos/v2 v2.8.8-0.20251205174857-6c5cde624243 h1:qFKANjrrB1y3wRcy+ql7Ayyx8GaVRR6G0KnNOaroclU=
 github.com/yola1107/kratos/v2 v2.8.8-0.20251205174857-6c5cde624243/go.mod h1:3ZTxk+/H2IDwIn2pUQGWD7duD3+rXxfVvHeOozlNfoc=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=

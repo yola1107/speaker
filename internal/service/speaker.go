@@ -23,7 +23,9 @@ type SpeakerService struct {
 
 // NewSpeakerService new a greeter service.
 func NewSpeakerService(uc *biz.SpeakerUsecase) *SpeakerService {
-	return &SpeakerService{uc: uc, loop: work.NewLoop()}
+	loop := work.NewLoop()
+	_ = loop.Start()
+	return &SpeakerService{uc: uc, loop: loop}
 }
 
 // SayHelloReq implements helloworld.SpeakerServer.

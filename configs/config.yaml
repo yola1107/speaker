@@ -11,6 +11,9 @@ server:
   websocket:
     addr: 0.0.0.0:3102
     timeout: 1s
+  gnet:
+    addr: 0.0.0.0:3103
+    timeout: 1s
 data:
   database:
     driver: mysql
