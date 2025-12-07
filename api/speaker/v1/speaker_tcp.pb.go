@@ -21,7 +21,7 @@ import (
 
 // SpeakerTCPServer is the server API for Speaker service.
 type SpeakerTCPServer interface {
-	GetTCPLoop() work.Loop
+	GetLoop() work.Loop
 	SetCometChan(cl *tcp.ChanList, cs *tcp.Server)
 	SayHelloReq(context.Context, *HelloRequest) (*HelloReply, error)
 	SayHello2Req(context.Context, *Hello2Request) (*Hello2Reply, error)
@@ -37,34 +37,35 @@ func _Speaker_SayHelloReq_TCP_Handler(srv interface{}, ctx context.Context, data
 	if err := proto.Unmarshal(data, in); err != nil {
 		return nil, err
 	}
-	doFunc := func(ctx context.Context, req *HelloRequest) ([]byte, error) {
-		doRequest := func() ([]byte, error) {
-			resp, err := srv.(SpeakerTCPServer).SayHelloReq(ctx, req)
-			if err != nil || resp == nil {
-				return nil, err
-			}
-			return proto.Marshal(resp)
+	handler := func(ctx context.Context, req *HelloRequest) ([]byte, error) {
+		resp, err := srv.(SpeakerTCPServer).SayHelloReq(ctx, req)
+		if err != nil {
+			return nil, err
 		}
-		if loop := srv.(SpeakerTCPServer).GetTCPLoop(); loop != nil {
-			return loop.PostAndWaitCtx(ctx, doRequest)
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			return nil, err
 		}
-		return doRequest()
+		if loop := srv.(SpeakerTCPServer).GetLoop(); loop != nil {
+			return loop.PostAndWaitCtx(ctx, func() ([]byte, error) { return data, nil })
+		}
+		return data, nil
 	}
 	if interceptor == nil {
-		return doFunc(ctx, in)
+		return handler(ctx, in)
 	}
 	info := &tcp.UnaryServerInfo{
 		Server:     srv,
 		FullMethod: "/helloworld.v1.Speaker/SayHelloReq",
 	}
-	handler := func(ctx context.Context, req interface{}) ([]byte, error) {
+	interceptorHandler := func(ctx context.Context, req interface{}) ([]byte, error) {
 		r, ok := req.(*HelloRequest)
 		if !ok {
 			return nil, status.Errorf(codes.InvalidArgument, "Invalid Request Argument, expect: *HelloRequest, Not: %T", req)
 		}
-		return doFunc(ctx, r)
+		return handler(ctx, r)
 	}
-	return interceptor(ctx, in, info, handler)
+	return interceptor(ctx, in, info, interceptorHandler)
 }
 
 func _Speaker_SayHello2Req_TCP_Handler(srv interface{}, ctx context.Context, data []byte, interceptor tcp.UnaryServerInterceptor) ([]byte, error) {
@@ -72,34 +73,35 @@ func _Speaker_SayHello2Req_TCP_Handler(srv interface{}, ctx context.Context, dat
 	if err := proto.Unmarshal(data, in); err != nil {
 		return nil, err
 	}
-	doFunc := func(ctx context.Context, req *Hello2Request) ([]byte, error) {
-		doRequest := func() ([]byte, error) {
-			resp, err := srv.(SpeakerTCPServer).SayHello2Req(ctx, req)
-			if err != nil || resp == nil {
-				return nil, err
-			}
-			return proto.Marshal(resp)
+	handler := func(ctx context.Context, req *Hello2Request) ([]byte, error) {
+		resp, err := srv.(SpeakerTCPServer).SayHello2Req(ctx, req)
+		if err != nil {
+			return nil, err
 		}
-		if loop := srv.(SpeakerTCPServer).GetTCPLoop(); loop != nil {
-			return loop.PostAndWaitCtx(ctx, doRequest)
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			return nil, err
 		}
-		return doRequest()
+		if loop := srv.(SpeakerTCPServer).GetLoop(); loop != nil {
+			return loop.PostAndWaitCtx(ctx, func() ([]byte, error) { return data, nil })
+		}
+		return data, nil
 	}
 	if interceptor == nil {
-		return doFunc(ctx, in)
+		return handler(ctx, in)
 	}
 	info := &tcp.UnaryServerInfo{
 		Server:     srv,
 		FullMethod: "/helloworld.v1.Speaker/SayHello2Req",
 	}
-	handler := func(ctx context.Context, req interface{}) ([]byte, error) {
+	interceptorHandler := func(ctx context.Context, req interface{}) ([]byte, error) {
 		r, ok := req.(*Hello2Request)
 		if !ok {
 			return nil, status.Errorf(codes.InvalidArgument, "Invalid Request Argument, expect: *Hello2Request, Not: %T", req)
 		}
-		return doFunc(ctx, r)
+		return handler(ctx, r)
 	}
-	return interceptor(ctx, in, info, handler)
+	return interceptor(ctx, in, info, interceptorHandler)
 }
 
 var Speaker_TCP_ServiceDesc = tcp.ServiceDesc{

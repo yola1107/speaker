@@ -47,7 +47,6 @@ func (s *SpeakerService) SayHello2Req(ctx context.Context, in *v1.Hello2Request)
 }
 
 func (s *SpeakerService) SetCometChan(cl *tcp.ChanList, cs *tcp.Server) {}
-func (s *SpeakerService) GetTCPLoop() work.Loop                         { return s.loop }
 func (s *SpeakerService) GetLoop() work.Loop                            { return s.loop }
 func (s *SpeakerService) OnSessionOpen(*websocket.Session)              {}
 func (s *SpeakerService) OnSessionClose(*websocket.Session)             {}

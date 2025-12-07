@@ -41,6 +41,7 @@ func NewSpeakerUsecase(repo SpeakerRepo, logger log.Logger) *SpeakerUsecase {
 
 // CreateSpeaker creates a Speaker, and returns the new Speaker.
 func (uc *SpeakerUsecase) CreateSpeaker(ctx context.Context, g *Speaker) (*Speaker, error) {
-	uc.log.WithContext(ctx).Infof("CreateSpeaker: %v", g.Hello)
+	log.Infof("CreateSpeaker: %v", g.Hello)
+	// uc.log.WithContext(ctx).Infof("CreateSpeaker: %v", g.Hello)
 	return uc.repo.Save(ctx, g)
 }

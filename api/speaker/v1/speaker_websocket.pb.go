@@ -39,34 +39,35 @@ func _Speaker_SayHelloReq_Websocket_Handler(srv interface{}, ctx context.Context
 	if err := proto.Unmarshal(data, in); err != nil {
 		return nil, err
 	}
-	doFunc := func(ctx context.Context, req *HelloRequest) ([]byte, error) {
-		doRequest := func() ([]byte, error) {
-			resp, err := srv.(SpeakerWebsocketServer).SayHelloReq(ctx, req)
-			if err != nil || resp == nil {
-				return nil, err
-			}
-			return proto.Marshal(resp)
+	handler := func(ctx context.Context, req *HelloRequest) ([]byte, error) {
+		resp, err := srv.(SpeakerWebsocketServer).SayHelloReq(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			return nil, err
 		}
 		if loop := srv.(SpeakerWebsocketServer).GetLoop(); loop != nil {
-			return loop.PostAndWaitCtx(ctx, doRequest)
+			return loop.PostAndWaitCtx(ctx, func() ([]byte, error) { return data, nil })
 		}
-		return doRequest()
+		return data, nil
 	}
 	if interceptor == nil {
-		return doFunc(ctx, in)
+		return handler(ctx, in)
 	}
 	info := &websocket.UnaryServerInfo{
 		Server:     srv,
 		FullMethod: "/helloworld.v1.Speaker/SayHelloReq",
 	}
-	handler := func(ctx context.Context, req interface{}) ([]byte, error) {
+	interceptorHandler := func(ctx context.Context, req interface{}) ([]byte, error) {
 		r, ok := req.(*HelloRequest)
 		if !ok {
 			return nil, status.Errorf(codes.InvalidArgument, "Invalid Request Argument, expect: *HelloRequest, Not: %T", req)
 		}
-		return doFunc(ctx, r)
+		return handler(ctx, r)
 	}
-	return interceptor(ctx, in, info, handler)
+	return interceptor(ctx, in, info, interceptorHandler)
 }
 
 func _Speaker_SayHello2Req_Websocket_Handler(srv interface{}, ctx context.Context, data []byte, interceptor websocket.UnaryServerInterceptor) ([]byte, error) {
@@ -74,34 +75,35 @@ func _Speaker_SayHello2Req_Websocket_Handler(srv interface{}, ctx context.Contex
 	if err := proto.Unmarshal(data, in); err != nil {
 		return nil, err
 	}
-	doFunc := func(ctx context.Context, req *Hello2Request) ([]byte, error) {
-		doRequest := func() ([]byte, error) {
-			resp, err := srv.(SpeakerWebsocketServer).SayHello2Req(ctx, req)
-			if err != nil || resp == nil {
-				return nil, err
-			}
-			return proto.Marshal(resp)
+	handler := func(ctx context.Context, req *Hello2Request) ([]byte, error) {
+		resp, err := srv.(SpeakerWebsocketServer).SayHello2Req(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			return nil, err
 		}
 		if loop := srv.(SpeakerWebsocketServer).GetLoop(); loop != nil {
-			return loop.PostAndWaitCtx(ctx, doRequest)
+			return loop.PostAndWaitCtx(ctx, func() ([]byte, error) { return data, nil })
 		}
-		return doRequest()
+		return data, nil
 	}
 	if interceptor == nil {
-		return doFunc(ctx, in)
+		return handler(ctx, in)
 	}
 	info := &websocket.UnaryServerInfo{
 		Server:     srv,
 		FullMethod: "/helloworld.v1.Speaker/SayHello2Req",
 	}
-	handler := func(ctx context.Context, req interface{}) ([]byte, error) {
+	interceptorHandler := func(ctx context.Context, req interface{}) ([]byte, error) {
 		r, ok := req.(*Hello2Request)
 		if !ok {
 			return nil, status.Errorf(codes.InvalidArgument, "Invalid Request Argument, expect: *Hello2Request, Not: %T", req)
 		}
-		return doFunc(ctx, r)
+		return handler(ctx, r)
 	}
-	return interceptor(ctx, in, info, handler)
+	return interceptor(ctx, in, info, interceptorHandler)
 }
 
 var Speaker_Websocket_ServiceDesc = websocket.ServiceDesc{

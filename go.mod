@@ -8,7 +8,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/shopspring/decimal v1.4.0
 	github.com/yola1107/kratos/contrib/log/zap/v2 v2.0.0-20250427101520-31f92cf577e8
-	github.com/yola1107/kratos/v2 v2.8.8-0.20251205174857-6c5cde624243
+	github.com/yola1107/kratos/v2 v2.8.8-0.20251207171705-db74f324f9a3
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20250603155806-513f23925822

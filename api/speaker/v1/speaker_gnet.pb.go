@@ -37,21 +37,22 @@ func _Speaker_SayHelloReq_GNET_Handler(srv interface{}, ctx context.Context, dat
 	if err := proto.Unmarshal(data, in); err != nil {
 		return nil, err
 	}
-	doFunc := func(ctx context.Context, req *HelloRequest) ([]byte, error) {
-		doRequest := func() ([]byte, error) {
-			resp, err := srv.(SpeakerGNETServer).SayHelloReq(ctx, req)
-			if err != nil || resp == nil {
-				return nil, err
-			}
-			return proto.Marshal(resp)
+	handler := func(ctx context.Context, req *HelloRequest) ([]byte, error) {
+		resp, err := srv.(SpeakerGNETServer).SayHelloReq(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			return nil, err
 		}
 		if loop := srv.(SpeakerGNETServer).GetLoop(); loop != nil {
-			return loop.PostAndWaitCtx(ctx, doRequest)
+			return loop.PostAndWaitCtx(ctx, func() ([]byte, error) { return data, nil })
 		}
-		return doRequest()
+		return data, nil
 	}
 	if interceptor == nil {
-		return doFunc(ctx, in)
+		return handler(ctx, in)
 	}
 	info := &gnet.UnaryServerInfo{
 		Server:     srv,
@@ -62,7 +63,7 @@ func _Speaker_SayHelloReq_GNET_Handler(srv interface{}, ctx context.Context, dat
 		if !ok {
 			return nil, status.Errorf(codes.InvalidArgument, "Invalid Request Argument, expect: *HelloRequest, Not: %T", req)
 		}
-		return doFunc(ctx, r)
+		return handler(ctx, r)
 	}
 	return interceptor(ctx, in, info, interceptorHandler)
 }
@@ -72,21 +73,22 @@ func _Speaker_SayHello2Req_GNET_Handler(srv interface{}, ctx context.Context, da
 	if err := proto.Unmarshal(data, in); err != nil {
 		return nil, err
 	}
-	doFunc := func(ctx context.Context, req *Hello2Request) ([]byte, error) {
-		doRequest := func() ([]byte, error) {
-			resp, err := srv.(SpeakerGNETServer).SayHello2Req(ctx, req)
-			if err != nil || resp == nil {
-				return nil, err
-			}
-			return proto.Marshal(resp)
+	handler := func(ctx context.Context, req *Hello2Request) ([]byte, error) {
+		resp, err := srv.(SpeakerGNETServer).SayHello2Req(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			return nil, err
 		}
 		if loop := srv.(SpeakerGNETServer).GetLoop(); loop != nil {
-			return loop.PostAndWaitCtx(ctx, doRequest)
+			return loop.PostAndWaitCtx(ctx, func() ([]byte, error) { return data, nil })
 		}
-		return doRequest()
+		return data, nil
 	}
 	if interceptor == nil {
-		return doFunc(ctx, in)
+		return handler(ctx, in)
 	}
 	info := &gnet.UnaryServerInfo{
 		Server:     srv,
@@ -97,7 +99,7 @@ func _Speaker_SayHello2Req_GNET_Handler(srv interface{}, ctx context.Context, da
 		if !ok {
 			return nil, status.Errorf(codes.InvalidArgument, "Invalid Request Argument, expect: *Hello2Request, Not: %T", req)
 		}
-		return doFunc(ctx, r)
+		return handler(ctx, r)
 	}
 	return interceptor(ctx, in, info, interceptorHandler)
 }
