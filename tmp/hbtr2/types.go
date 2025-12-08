@@ -30,7 +30,8 @@ type position struct {
 
 // rtpDebugData RTP调试数据
 type rtpDebugData struct {
-	open bool // 是否开启调试模式（用于RTP测试时的详细日志输出）
+	open bool  // 是否开启调试模式（用于RTP测试时的详细日志输出）
+	mark int32 // 组合标记：基础模式0-99，免费模式100-199。低位表示状态：1=有wild,2=有wild移动,4=wild->scatter转换,8=有scatter
 }
 
 // Bat Wild移动记录，用于前端播放飞行动画
@@ -95,93 +96,92 @@ type Bat struct {
 	第 2～5 行按列从 realData[0]～realData[5] 各取 4 个符号垂直填充
 */
 
-//
-//// moveSymbolsOriginal 原版实现，用于验证优化版本的正确性
-//func (s *betOrderService) moveSymbolsOriginal(grid *int64Grid) *int64Grid {
-//	/*
-//		处理第0行：水平左移动（对应roller下标[6]）
-//		逻辑：从左到右扫描，如果当前位置是空位，从右侧找到第一个非空非wild符号向左移动
-//		注意：[0][0] [0][5]是墙格符号为0，只处理中间4列（列1-4）
-//		示例：[0, 4, 0, 8] -> [4, 8, 0, 0]
-//	*/
-//	for c := int64(1); c < _colCount-1; c++ {
-//		if grid[0][c] != 0 {
-//			continue
-//		}
-//		// 如果当前位置是空位，从右侧找有效符号（非0且非wild）填充
-//		for k := c + 1; k < _colCount-1; k++ {
-//			if val := grid[0][k]; val != 0 && !isWild(val) {
-//				grid[0][c] = val
-//				grid[0][k] = 0
-//				break
-//			}
-//		}
-//	}
-//
-//	/*
-//		处理第1-4行：垂直下落（对应roller下标[0-5]）
-//		逻辑：从下往上扫描每列，将非wild非0符号向下压缩到底部，wild位置保持不变
-//		示例：初始 [5, 0, 7, 0, 9] → 结果 [0, 0, 5, 7, 9]
-//	*/
-//	for col := int64(0); col < _colCount; col++ {
-//		// 初始化写入位置：从底部开始，如果是墙格列则跳过第0行
-//		writePos := int64(_rowCount - 1)
-//		if isBlockedCell(0, col) {
-//			writePos = _rowCount - 1 // 墙格列从第4行开始
-//		}
-//
-//		// 从下往上扫描第1-4行，将非wild非0符号下落
-//		for row := int64(_rowCount - 1); row >= 1; row-- {
-//			// 如果writePos已经超出范围，提前退出
-//			if writePos < 1 {
-//				break
-//			}
-//
-//			// 跳过墙格位置（墙格不会下落，保持为0）
-//			if isBlockedCell(row, col) {
-//				continue
-//			}
-//
-//			val := grid[row][col]
-//
-//			// 处理wild位置：wild位置保持不变，但writePos需要跳过这个位置
-//			if isWild(val) {
-//				// 如果wild在writePos上方，需要调整writePos跳过wild位置
-//				if row < writePos {
-//					writePos = row - 1
-//					// 确保writePos不会指向墙格
-//					for writePos >= 0 && isBlockedCell(writePos, col) {
-//						writePos--
-//					}
-//				}
-//				continue
-//			}
-//
-//			// 处理非空非wild符号：向下移动到writePos位置
-//			if val != 0 {
-//				// 确保writePos不是墙格位置
-//				for writePos >= 0 && isBlockedCell(writePos, col) {
-//					writePos--
-//				}
-//				if writePos < 1 {
-//					break // 没有可写入位置，退出
-//				}
-//
-//				// 如果当前位置和目标位置不同，执行移动
-//				if row != writePos {
-//					grid[writePos][col] = val
-//					grid[row][col] = 0
-//				}
-//				writePos-- // 下一个写入位置上移
-//
-//				// 确保writePos不会指向墙格
-//				for writePos >= 0 && isBlockedCell(writePos, col) {
-//					writePos--
-//				}
-//			}
-//			// 空位（val == 0）直接跳过，不处理
-//		}
-//	}
-//
-//	return grid
-//}
+// moveSymbolsOriginal 原版实现，用于验证优化版本的正确性
+func (s *betOrderService) moveSymbolsOriginal(grid *int64Grid) *int64Grid {
+	/*
+		处理第0行：水平左移动（对应roller下标[6]）
+		逻辑：从左到右扫描，如果当前位置是空位，从右侧找到第一个非空非wild符号向左移动
+		注意：[0][0] [0][5]是墙格符号为0，只处理中间4列（列1-4）
+		示例：[0, 4, 0, 8] -> [4, 8, 0, 0]
+	*/
+	for c := int64(1); c < _colCount-1; c++ {
+		if grid[0][c] != 0 {
+			continue
+		}
+		// 如果当前位置是空位，从右侧找有效符号（非0且非wild）填充
+		for k := c + 1; k < _colCount-1; k++ {
+			if val := grid[0][k]; val != 0 && !isWild(val) {
+				grid[0][c] = val
+				grid[0][k] = 0
+				break
+			}
+		}
+	}
+
+	/*
+		处理第1-4行：垂直下落（对应roller下标[0-5]）
+		逻辑：从下往上扫描每列，将非wild非0符号向下压缩到底部，wild位置保持不变
+		示例：初始 [5, 0, 7, 0, 9] → 结果 [0, 0, 5, 7, 9]
+	*/
+	for col := int64(0); col < _colCount; col++ {
+		// 初始化写入位置：从底部开始，如果是墙格列则跳过第0行
+		writePos := int64(_rowCount - 1)
+		if isBlockedCell(0, col) {
+			writePos = _rowCount - 1 // 墙格列从第4行开始
+		}
+
+		// 从下往上扫描第1-4行，将非wild非0符号下落
+		for row := int64(_rowCount - 1); row >= 1; row-- {
+			// 如果writePos已经超出范围，提前退出
+			if writePos < 1 {
+				break
+			}
+
+			// 跳过墙格位置（墙格不会下落，保持为0）
+			if isBlockedCell(row, col) {
+				continue
+			}
+
+			val := grid[row][col]
+
+			// 处理wild位置：wild位置保持不变，但writePos需要跳过这个位置
+			if isWild(val) {
+				// 如果wild在writePos上方，需要调整writePos跳过wild位置
+				if row < writePos {
+					writePos = row - 1
+					// 确保writePos不会指向墙格
+					for writePos >= 0 && isBlockedCell(writePos, col) {
+						writePos--
+					}
+				}
+				continue
+			}
+
+			// 处理非空非wild符号：向下移动到writePos位置
+			if val != 0 {
+				// 确保writePos不是墙格位置
+				for writePos >= 0 && isBlockedCell(writePos, col) {
+					writePos--
+				}
+				if writePos < 1 {
+					break // 没有可写入位置，退出
+				}
+
+				// 如果当前位置和目标位置不同，执行移动
+				if row != writePos {
+					grid[writePos][col] = val
+					grid[row][col] = 0
+				}
+				writePos-- // 下一个写入位置上移
+
+				// 确保writePos不会指向墙格
+				for writePos >= 0 && isBlockedCell(writePos, col) {
+					writePos--
+				}
+			}
+			// 空位（val == 0）直接跳过，不处理
+		}
+	}
+
+	return grid
+}

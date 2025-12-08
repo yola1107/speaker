@@ -197,7 +197,7 @@ func (s *betOrderService) findSymbolWinInfo(symbol int64) (*WinInfo, bool) {
 		matchCount := int64(0)
 		for r := int64(0); r < _rowCount; r++ {
 			currSymbol := s.symbolGrid[r][c]
-			if currSymbol == symbol || currSymbol == _wild {
+			if currSymbol == symbol || isWild(currSymbol) {
 				if currSymbol == symbol {
 					hasRealSymbol = true
 				}
@@ -231,12 +231,12 @@ func (s *betOrderService) findSymbolWinInfo(symbol int64) (*WinInfo, bool) {
 	return nil, false
 }
 
-// eliminateWinSymbols 消除中奖位置的符号
+// eliminateWinSymbols 消除中奖位置的符号；但 wild 保留（即便参与了中奖）
 func (s *betOrderService) eliminateWinSymbols() *int64Grid {
 	nextGrid := s.symbolGrid
 	for r := int64(0); r < _rowCount; r++ {
 		for c := int64(0); c < _colCount; c++ {
-			if s.winGrid[r][c] > 0 {
+			if s.winGrid[r][c] > 0 && !isWild(nextGrid[r][c]) {
 				nextGrid[r][c] = 0
 			}
 		}
@@ -246,14 +246,14 @@ func (s *betOrderService) eliminateWinSymbols() *int64Grid {
 
 // moveWildSymbols wild符号向左下移动，遇到scatter跳过，目标位置有符号则转成wild
 // 返回：所有wild的移动记录（Bat数组）
-func (s *betOrderService) moveWildSymbols(grid *int64Grid) []Bat {
+func (s *betOrderService) moveWildSymbols(nextGrid *int64Grid) []Bat {
 	var bats []Bat
 
 	// 先收集所有wild的位置 从下到上
 	var wildPositions []position
 	for c := int64(_colCount - 1); c >= 0; c-- {
 		for r := int64(_rowCount - 1); r >= 0; r-- {
-			if isWild(grid[r][c]) {
+			if isWild(nextGrid[r][c]) {
 				wildPositions = append(wildPositions, position{Row: r, Col: c})
 			}
 		}
@@ -261,7 +261,7 @@ func (s *betOrderService) moveWildSymbols(grid *int64Grid) []Bat {
 
 	// 移动每个wild
 	for _, pos := range wildPositions {
-		bat := s.moveSingleWild(grid, pos.Row, pos.Col)
+		bat := s.moveSingleWild(nextGrid, pos.Row, pos.Col)
 		if bat != nil {
 			bats = append(bats, *bat)
 		}
@@ -270,37 +270,60 @@ func (s *betOrderService) moveWildSymbols(grid *int64Grid) []Bat {
 	return bats
 }
 
-// moveSingleWild 移动单个wild符号向左下方向，跳过scatter，停在第一个有效位置
+// moveSingleWild 移动单个wild符号向左下方向，只尝试一格
 // 返回移动记录，如果无法移动则返回nil
-func (s *betOrderService) moveSingleWild(grid *int64Grid, startRow, startCol int64) *Bat {
-	// 清除原位置
-	grid[startRow][startCol] = 0
-
-	// 从起始位置开始向左下移动，直到找到有效位置或超出边界
-	row, col := startRow+1, startCol-1
-
-	for row < _rowCount && col >= 0 {
-		// 不能移动到墙格位置
-		if isBlockedCell(row, col) {
-			break
-		}
-		// 如果是scatter，继续向左下移动
-		if isScatter(grid[row][col]) {
-			row++
-			col--
-			continue
-		}
-
-		// 找到有效位置：记录原符号，然后设置为wild
-		originalSymbol := grid[row][col]
-		grid[row][col] = _wild
-
-		// 返回移动记录
-		return &Bat{X: startRow, Y: startCol, TransX: row, TransY: col, Syb: originalSymbol, Sybn: _wild}
+func (s *betOrderService) moveSingleWild(nextGrid *int64Grid, startRow, startCol int64) *Bat {
+	// 起点清理：14/15 还原为 12/13，其余清0
+	switch nextGrid[startRow][startCol] {
+	case _scaWild:
+		nextGrid[startRow][startCol] = _scatter
+	case _freeWild:
+		nextGrid[startRow][startCol] = _freePlus
+	default:
+		nextGrid[startRow][startCol] = 0
 	}
 
-	// 无法找到有效位置
-	return nil
+	// 只尝试左下一格
+	row, col := startRow+1, startCol-1
+	if row >= _rowCount || col < 0 || isBlockedCell(row, col) {
+		return nil
+	}
+
+	// 目标为 12/13 时生成 14/15，否则生成 11
+	var target int64
+	original := nextGrid[row][col]
+	switch original {
+	case _scatter:
+		target = _scaWild
+	case _freePlus:
+		target = _freeWild
+	default:
+		target = _wild
+	}
+	nextGrid[row][col] = target
+
+	// 调试标记：基础模式0-99，免费模式100-199，低位表示状态
+	if s.debug.open {
+		s.debug.mark = 0
+		if s.hasWild() {
+			s.debug.mark |= 1 // bit0: 有wild在盘面上
+		}
+		if len(s.bats) > 0 {
+			s.debug.mark |= 2 // bit1: 有wild移动
+		}
+		if target == _scaWild || target == _freeWild {
+			s.debug.mark |= 4 // bit2: 发生wild->scatter转换
+		}
+		if s.getScatterCount() > 0 {
+			s.debug.mark |= 8 // bit3: 有scatter在盘面上
+		}
+		// 免费模式标记偏移100 - 使用scene.Stage而不是isFreeRound，确保状态同步
+		if s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeFreeEli {
+			s.debug.mark += 100
+		}
+	}
+
+	return &Bat{X: startRow, Y: startCol, TransX: row, TransY: col, Syb: original, Sybn: target}
 }
 
 // moveSymbols 处理符号下落和左移动
@@ -329,51 +352,36 @@ func (s *betOrderService) moveSymbols(grid *int64Grid) *int64Grid {
 
 	/*
 		处理第1-4行：垂直下落（对应roller下标[0-5]）
-		逻辑：从下往上扫描每列，将非wild非0符号向下压缩到底部，wild位置保持不变
+		逻辑：从下往上扫描每列，将非wild非0符号向下压缩到底部，wild位置保持不变，允许符号穿过wild下落
 		示例：初始 [5, 0, 7, 0, 9] → 结果 [0, 0, 5, 7, 9]
+		示例：初始 [5, 0, 12, 0, 9] → 结果 [0, 0, 12, 5, 9]
 	*/
 	for col := int64(0); col < _colCount; col++ {
-		write := int64(_rowCount - 1) // 写入位置，从底部开始
-
+		// 第一步：收集所有非wild非空符号，并清空这些位置
+		var symbols []int64
 		for row := int64(_rowCount - 1); row >= 1; row-- {
-			val := grid[row][col]
-
-			// 跳过墙格（如果有），墙格在本实现里通常只可能是 row==0, 容错处理
 			if isBlockedCell(row, col) {
 				continue
 			}
-
-			// wild：保持原位，并将 write 移到其上一行
-			if isWild(val) {
-				write = row - 1
-				for write >= 1 && (isWild(grid[write][col]) || isBlockedCell(write, col)) {
-					write--
-				}
-				continue
-			}
-
-			// 空位跳过
-			if val == 0 {
-				continue
-			}
-
-			// 找到可写位置（跳过 wild 或墙格）
-			for write >= 1 && (isWild(grid[write][col]) || isBlockedCell(write, col)) {
-				write--
-			}
-
-			if write < 1 {
-				// 没地方写，清空当前格
-				grid[row][col] = 0
-				continue
-			}
-
-			// 执行移动
-			if write != row {
-				grid[write][col] = val
+			val := grid[row][col]
+			if val != 0 && !isWild(val) {
+				symbols = append(symbols, val)
 				grid[row][col] = 0
 			}
-			write--
+		}
+
+		// 第二步：从底部开始重新放置符号，跳过wild位置
+		writePos := int64(_rowCount - 1)
+		for _, symbol := range symbols {
+			// 找到下一个可写位置（不是wild的空位）
+			for writePos >= 1 && (isWild(grid[writePos][col]) || isBlockedCell(writePos, col)) {
+				writePos--
+			}
+			if writePos >= 1 {
+				grid[writePos][col] = symbol
+				writePos--
+			}
+			// 如果没地方放，符号被丢弃
 		}
 	}
 	return grid
@@ -462,16 +470,6 @@ func reverseGridRows(grid *int64Grid) int64Grid {
 	return reversed
 }
 
-// calcNewFreeGameNum 计算触发免费游戏的次数
-// 规则：4个夺宝触发8次免费，每多1个夺宝增加2次免费
-func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
-	if scatterCount < 4 {
-		return 0
-	}
-	// 基础8次 + 每多1个夺宝增加2次
-	return 8 + (scatterCount-4)*2
-}
-
 func (s *betOrderService) getCardTypes() []CardType {
 	if len(s.winInfos) == 0 {
 		return nil
@@ -488,16 +486,28 @@ func (s *betOrderService) getCardTypes() []CardType {
 	return cardTypes
 }
 
-// isWild 检查符号是否为wild符号
+// isWild 检查符号是否为wild符号（可替代、不可消除、下落时占位）
 func isWild(symbol int64) bool {
-	return symbol == _wild
+	return symbol == _wild || symbol == _scaWild || symbol == _freeWild
 }
 
-// isScatter 检查符号是否为scatter符号
+// isScatter 检查符号是否为scatter符号（夺宝/免费触发符号）
 func isScatter(symbol int64) bool {
-	return symbol == _scatter
+	return symbol == _scatter || symbol == _freePlus || symbol == _scaWild || symbol == _freeWild
 }
 
 func isBlockedCell(r, c int64) bool {
 	return r == 0 && (c == 0 || c == _colCount-1)
+}
+
+// hasWild 检查当前符号盘面是否存在任何 wild（11/14/15）
+func (s *betOrderService) hasWild() bool {
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			if isWild(s.symbolGrid[r][c]) {
+				return true
+			}
+		}
+	}
+	return false
 }

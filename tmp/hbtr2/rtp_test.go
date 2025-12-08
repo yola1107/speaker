@@ -207,6 +207,7 @@ func resetBetServiceForNextRound(s *betOrderService) {
 	s.stepMultiplier = 0
 	s.lineMultiplier = 0
 	s.scatterCount = 0
+	//s.isFreeRound = false
 	s.client.IsRoundOver = false
 	s.client.ClientOfFreeGame.Reset()
 	s.client.ClientOfFreeGame.ResetGeneralWinTotal()

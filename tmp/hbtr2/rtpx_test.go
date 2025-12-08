@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	testRounds       = 1e5
+	testRounds       = 1e6
 	progressInterval = 1e7
 	debugFileOpen    = 10
 	freeModeLogOnly  = 0
@@ -198,8 +198,8 @@ func writeReelInfo(buf *strings.Builder, svc *betOrderService) {
 	for c := 0; c < len(svc.scene.SymbolRoller); c++ {
 		roller := svc.scene.SymbolRoller[c]
 		fprintf(buf, "%d[%d～%d]  ", roller.Len, roller.Start, roller.Fall)
-		//rc := svc.scene.SymbolRoller[c]
-		//fprintf(buf, "idx=%d, Real:%d Col:%d Len:%-3d Start:%2d Fall:%2d \n",
+		// rc := svc.scene.SymbolRoller[c]
+		// fprintf(buf, "idx=%d, Real:%d Col:%d Len:%-3d Start:%2d Fall:%2d \n",
 		//	c, rc.Real, rc.Col, rc.Len, rc.Start, rc.Fall)
 	}
 	fprintf(buf, "\n")
@@ -244,7 +244,7 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 		if totalMultiplier > 0 {
 			lineWin = stepWin * float64(elem.Multiplier*svc.gameMultiple) / float64(totalMultiplier)
 		}
-		fprintf(buf, "\t符号: %d,  乘积: %d, 赔率: %2.2f, 下注: %g×%d, 奖金: %4.2f\n",
+		fprintf(buf, "\t符号: %d, 乘积: %d, 赔率: %2.2f, 下注: %g×%d, 奖金: %4.2f\n",
 			elem.Symbol, elem.SymbolCount, float64(elem.Odds), svc.req.BaseMoney, svc.req.Multiple, lineWin)
 	}
 
@@ -252,8 +252,9 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 	if svc.isFreeRound {
 		isFreeMode = 1
 	}
-	fprintf(buf, "\tisFreeMode=%d, RoundMultiplier: %d, stepMultiplier: %d, lineMultiplier: %d, gameMultiple: %d\n\t累计中奖: %.2f \n",
-		isFreeMode, svc.scene.RoundMultiplier, svc.stepMultiplier, svc.lineMultiplier, svc.gameMultiple, roundWin)
+	// mark: 基础模式0-99，免费模式100-199，低位表示状态：1=有wild,2=有wild移动,4=wild->scatter转换,8=有scatter
+	fprintf(buf, "\tMode=%d, mark=%d, RoundMultiplier: %d, stepMultiplier: %d, lineMultiplier: %d, gameMultiple: %d\n\t累计中奖: %.2f \n",
+		isFreeMode, svc.debug.mark, svc.scene.RoundMultiplier, svc.stepMultiplier, svc.lineMultiplier, svc.gameMultiple, roundWin)
 
 	if !svc.isRoundOver {
 		fprintf(buf, "\t🔁 连消继续 → Step%d\n", step+1)
@@ -333,4 +334,86 @@ func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float6
 	w("  总回报率(RTP): %.2f%% (总奖金/总投注 = %.2f/%.2f)\n", totalRTP, totalWin, totalBet)
 	w("  基础贡献: %.2f%% | 免费贡献: %.2f%%\n", safeDiv(int64(baseTotalWin)*100, int64(totalWin)), safeDiv(int64(freeTotalWin)*100, int64(totalWin)))
 	w("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+}
+
+// ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+// TestMoveSymbolsWild 测试修复后的垂直下落逻辑
+func TestMoveSymbolsWild(t *testing.T) {
+	t.Log("开始测试")
+	svc := &betOrderService{}
+
+	// 测试原来的逻辑为什么失败
+	t.Log("=== 测试原来的逻辑 ===")
+	grid1 := int64Grid{
+		{0, 0, 0, 0, 0, 0},  // Row0 - 墙格行
+		{0, 3, 0, 0, 0, 0},  // Row1 - 符号3
+		{0, 7, 0, 0, 0, 0},  // Row2 - 符号7
+		{0, 12, 0, 0, 0, 0}, // Row3 - wild
+		{0, 0, 0, 0, 0, 0},  // Row4 - 符号5
+	}
+
+	t.Logf("初始状态:\n%s\n", GridToString(&grid1, nil))
+
+	// 原来的逻辑实现
+	for col := int64(0); col < 6; col++ {
+		write := int64(4) // 写入位置，从底部开始 (row 4)
+
+		for row := int64(4); row >= 1; row-- {
+			val := grid1[row][col]
+
+			// 跳过墙格（这里没有墙格）
+			if row == 0 && (col == 0 || col == 5) {
+				continue
+			}
+
+			// wild：保持原位，并将 write 移到其上一行
+			if val == 12 { // isWild
+				write = row - 1
+				// 跳过wild位置
+				for write >= 1 && grid1[write][col] == 12 {
+					write--
+				}
+				continue
+			}
+
+			// 空位跳过
+			if val == 0 {
+				continue
+			}
+
+			// 找到可写位置（跳过 wild）
+			for write >= 1 && grid1[write][col] == 12 {
+				write--
+			}
+
+			if write < 1 {
+				// 没地方写，清空当前格
+				grid1[row][col] = 0
+				continue
+			}
+
+			// 执行移动
+			if write != row {
+				grid1[write][col] = val
+				grid1[row][col] = 0
+			}
+			write--
+		}
+	}
+
+	t.Logf("原来的逻辑结果:\n%s\n", GridToString(&grid1, nil))
+
+	// 测试修复后的逻辑
+	t.Log("=== 测试修复后的逻辑 ===")
+	grid2 := int64Grid{
+		{0, 0, 0, 0, 0, 0},  // Row0 - 墙格行
+		{0, 3, 0, 0, 0, 0},  // Row1 - 符号3
+		{0, 7, 0, 0, 0, 0},  // Row2 - 符号7
+		{0, 12, 0, 0, 0, 0}, // Row3 - wild
+		{0, 0, 0, 0, 0, 0},  // Row4 - 符号5
+	}
+
+	t.Logf("初始状态:\n%s\n", GridToString(&grid2, nil))
+	result := svc.moveSymbols(&grid2)
+	t.Logf("修复后的结果:\n%s\n", GridToString(result, nil))
 }

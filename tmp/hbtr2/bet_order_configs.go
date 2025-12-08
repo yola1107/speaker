@@ -9,9 +9,9 @@ import (
 
 type gameConfigJson struct {
 	PayTable                   [][]int64 `json:"pay_table"`                      // 赔付表
-	FreeGameTimes              int       `json:"free_game_times"`                // 触发免费初始次数
-	ExtraAddFreeTimes          int       `json:"extra_add_free_times"`           // 额外赠送次数
-	TriggerFreeGameNeedScatter int       `json:"trigger_free_game_need_scatter"` // 触发免费所需 scatter 数
+	FreeGameTimes              int64     `json:"free_game_times"`                // 触发免费初始次数
+	ExtraAddFreeTimes          int64     `json:"extra_add_free_times"`           // 额外赠送次数
+	TriggerFreeGameNeedScatter int64     `json:"trigger_free_game_need_scatter"` // 触发免费所需 scatter 数
 	RollCfg                    RollConf  `json:"roll_cfg"`                       // 滚轴配置
 	RealData                   []Reals   `json:"real_data"`                      // 真实数据
 }
@@ -80,15 +80,27 @@ func (s *betOrderService) initSpinSymbol() [_rollerColCount]SymbolRoller {
 }
 
 func (s *betOrderService) getSceneSymbol(rollCfg RollCfgType) [_rollerColCount]SymbolRoller {
-	realIndex := 0
+	if s.isFreeRound {
+		return s.getSceneSymbolFree(rollCfg)
+	}
+	return s.getSceneSymbolBase(rollCfg)
+}
+
+// selectRealIndex 按权重选择 realData 下标
+func (s *betOrderService) selectRealIndex(rollCfg RollCfgType) int {
 	r := rand.IntN(rollCfg.WTotal)
 	for i, w := range rollCfg.Weight {
 		if r < w {
-			realIndex = rollCfg.UseKey[i]
-			break
+			return rollCfg.UseKey[i]
 		}
 		r -= w
 	}
+	return 0
+}
+
+// 基础模式：纯随机填充
+func (s *betOrderService) getSceneSymbolBase(rollCfg RollCfgType) [_rollerColCount]SymbolRoller {
+	realIndex := s.selectRealIndex(rollCfg)
 	if realIndex < 0 || realIndex >= len(s.gameConfig.RealData) {
 		panic("real data index out of range: " + strconv.Itoa(realIndex))
 	}
@@ -113,8 +125,6 @@ func (s *betOrderService) getSceneSymbol(rollCfg RollCfgType) [_rollerColCount]S
 		}
 
 		start := rand.IntN(dataLen)
-		end := (start + _boardSize - 1) % dataLen
-
 		// 往后取4个
 		dataIndex := 0
 		board := [_boardSize]int64{}
@@ -124,10 +134,89 @@ func (s *betOrderService) getSceneSymbol(rollCfg RollCfgType) [_rollerColCount]S
 			dataIndex++
 		}
 
+		end := (start + dataIndex - 1) % dataLen // 固定4个
+		roller := SymbolRoller{Real: realIndex, Start: start, Fall: end, Col: col, Len: dataLen, BoardSymbol: board}
+		symbols[col] = roller
+	}
+	return symbols
+}
+
+// 免费模式：先落位保留 wild，再填充剩余空位
+func (s *betOrderService) getSceneSymbolFree(rollCfg RollCfgType) [_rollerColCount]SymbolRoller {
+	// 预处理保留的 wild 坐标
+	var topReserved [4]bool
+	var colReserved [_colCount][4]bool
+	if len(s.scene.LsatWildPos) > 0 {
+		for _, p := range s.scene.LsatWildPos {
+			rp, cp := p[0], p[1]
+			if rp == 0 && cp > 0 && cp < _colCount-1 {
+				topReserved[_boardSize-cp] = true
+				continue
+			}
+			if rp >= 1 && rp < _rowCount && cp >= 0 && cp < _colCount {
+				colReserved[cp][rp-1] = true
+			}
+		}
+	}
+
+	realIndex := s.selectRealIndex(rollCfg)
+	if realIndex < 0 || realIndex >= len(s.gameConfig.RealData) {
+		panic("real data index out of range: " + strconv.Itoa(realIndex))
+	}
+	realData := s.gameConfig.RealData[realIndex]
+	if len(realData) < _rollerColCount {
+		panic("real data must have at least 7 columns")
+	}
+
+	var symbols [_rollerColCount]SymbolRoller
+	for col := 0; col < _rollerColCount; col++ {
+		data := realData[col]
+		dataLen := len(data)
+		if len(data) == 0 {
+			panic("real data column is empty")
+		}
+
+		start := rand.IntN(dataLen)
+		dataIndex := 0
+		board := [_boardSize]int64{}
+
+		// 先落位保留 wild
+		if col == _colCount { // 顶行中间4列
+			for i := 0; i < _boardSize; i++ {
+				if topReserved[i] {
+					board[i] = _wild
+				}
+			}
+		} else {
+			for i := 0; i < _boardSize; i++ {
+				if colReserved[col][i] {
+					board[i] = _wild
+				}
+			}
+		}
+
+		// 再填充剩余空位
+		for row := 0; row < _rowCount-1; row++ {
+			if board[row] != 0 {
+				continue
+			}
+			symbol := data[(start+dataIndex)%dataLen]
+			board[row] = symbol
+			dataIndex++
+		}
+
+		// end 与实际取出的符号数量对应
+		end := start
+		if dataIndex > 0 {
+			end = (start + dataIndex - 1) % dataLen
+		}
+
 		roller := SymbolRoller{Real: realIndex, Start: start, Fall: end, Col: col, Len: dataLen, BoardSymbol: board}
 		symbols[col] = roller
 	}
 
+	// 用完即清
+	s.scene.LsatWildPos = nil
 	return symbols
 }
 
@@ -147,4 +236,14 @@ func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64
 		starN = len(table)
 	}
 	return table[starN-1]
+}
+
+// calcNewFreeGameNum 计算触发免费游戏的次数
+func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
+	if scatterCount < s.gameConfig.TriggerFreeGameNeedScatter {
+		return 0
+	}
+	// 规则：4个夺宝触发8次免费，每多1个夺宝增加2次免费
+	//return 8 + (scatterCount-4)*2
+	return s.gameConfig.FreeGameTimes + (scatterCount-s.gameConfig.TriggerFreeGameNeedScatter)*s.gameConfig.ExtraAddFreeTimes
 }

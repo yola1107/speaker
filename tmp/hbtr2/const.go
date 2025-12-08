@@ -29,11 +29,11 @@ const (
 	_thorin   int64 = 8  // 索林
 	_elfQueen int64 = 9  // 精灵女王
 	_gandalf  int64 = 10 // 甘道夫
-	_wild     int64 = 11 // 百搭
-	_scatter  int64 = 12 // 夺宝
-	_freePlus int64 = 13 // 免费次数+1
-	_scaWild  int64 = 14 // 夺宝+百搭
-	_freeWild int64 = 15 // 免费次数+1+百搭                //
+	_wild     int64 = 12 // 百搭
+	_scatter  int64 = 11 // 夺宝          (基础模式的夺宝符号)
+	_freePlus int64 = 13 // 免费次数+1     (免费模式的夺宝符号)
+	_scaWild  int64 = 14 // 夺宝+百搭      (基础模式，wild移动到夺宝上展示 12+11->14)
+	_freeWild int64 = 15 // 免费次数+1+百搭 (免费模式，wild移动到夺宝上展示 12+13->15)           //
 )
 
 const _minMatchCount = 3 // 最小中奖数量

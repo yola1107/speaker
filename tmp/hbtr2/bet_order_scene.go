@@ -18,6 +18,7 @@ type SpinSceneData struct {
 	FreeNum         int64                         `json:"freeNum"`    // 剩余免费次数
 	ScatterNum      int64                         `json:"scatterNum"` // 夺宝符数量
 	RoundMultiplier int64                         `json:"rMul"`       // 回合倍数
+	LsatWildPos     [][2]int64                    `json:"lWildPos"`   // 免费模式 Wild 位置继承机制
 	SymbolRoller    [_rollerColCount]SymbolRoller `json:"sRoller"`    // 滚轮符号表 长度为7
 }
 
@@ -82,7 +83,7 @@ func (s *betOrderService) syncGameStage() {
 		s.scene.NextStage = 0
 	}
 
-	s.isFreeRound = s.scene.Stage == _spinTypeFree
+	s.isFreeRound = s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeFreeEli
 
 	if s.scene.Steps == 0 {
 		s.scene.RoundMultiplier = 0

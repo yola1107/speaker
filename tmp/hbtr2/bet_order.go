@@ -52,6 +52,7 @@ func newBetOrderService() *betOrderService {
 	s := &betOrderService{}
 	s.selectGameRedis()
 	s.initGameConfigs()
+	s.gameMultiple = 1
 	return s
 }
 
