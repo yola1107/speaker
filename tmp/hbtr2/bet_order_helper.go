@@ -247,10 +247,9 @@ func (s *betOrderService) eliminateWinSymbols() *int64Grid {
 // moveWildSymbols wild符号向左下移动，遇到scatter跳过，目标位置有符号则转成wild
 // 返回：所有wild的移动记录（Bat数组）
 func (s *betOrderService) moveWildSymbols(nextGrid *int64Grid) []Bat {
-	var bats []Bat
+	wildPositions := make([]position, 0, _totalCells/2)
 
 	// 先收集所有wild的位置 从下到上
-	var wildPositions []position
 	for c := int64(_colCount - 1); c >= 0; c-- {
 		for r := int64(_rowCount - 1); r >= 0; r-- {
 			if isWild(nextGrid[r][c]) {
@@ -260,9 +259,9 @@ func (s *betOrderService) moveWildSymbols(nextGrid *int64Grid) []Bat {
 	}
 
 	// 移动每个wild
+	bats := make([]Bat, 0, len(wildPositions))
 	for _, pos := range wildPositions {
-		bat := s.moveSingleWild(nextGrid, pos.Row, pos.Col)
-		if bat != nil {
+		if bat := s.moveSingleWild(nextGrid, pos.Row, pos.Col); bat != nil {
 			bats = append(bats, *bat)
 		}
 	}
@@ -351,37 +350,67 @@ func (s *betOrderService) moveSymbols(grid *int64Grid) *int64Grid {
 	}
 
 	/*
-		处理第1-4行：垂直下落（对应roller下标[0-5]）
-		逻辑：从下往上扫描每列，将非wild非0符号向下压缩到底部，wild位置保持不变，允许符号穿过wild下落
-		示例：初始 [5, 0, 7, 0, 9] → 结果 [0, 0, 5, 7, 9]
-		示例：初始 [5, 0, 12, 0, 9] → 结果 [0, 0, 12, 5, 9]
+			处理第1-4行：垂直下落（对应roller下标[0-5]）
+			逻辑：从下往上扫描每列，将非wild非0符号向下压缩到底部，wild位置保持不变，允许符号穿过wild下落
+			优化：单遍扫描，同时处理收集和重新放置
+			示例：初始 [5, 0, 7, 0, 9] → 结果 [0, 0, 5, 7, 9]
+		    示例：初始 [5, 0, 12, 0, 9] → 结果 [0, 0, 12, 5, 9]
+	*/
+	/*
+		for col := int64(0); col < _colCount; col++ {
+				// 第一步：收集所有非wild非空符号，并清空这些位置
+				var symbols []int64
+				for row := int64(_rowCount - 1); row >= 1; row-- {
+					if isBlockedCell(row, col) {
+						continue
+					}
+					val := grid[row][col]
+					if val != 0 && !isWild(val) {
+						symbols = append(symbols, val)
+						grid[row][col] = 0
+					}
+				}
+
+				// 第二步：从底部开始重新放置符号，跳过wild位置
+				writePos := int64(_rowCount - 1)
+				for _, symbol := range symbols {
+					// 找到下一个可写位置（不是wild的空位）
+					for writePos >= 1 && (isWild(grid[writePos][col]) || isBlockedCell(writePos, col)) {
+						writePos--
+					}
+					if writePos >= 1 {
+						grid[writePos][col] = symbol
+						writePos--
+					}
+					// 如果没地方放，符号被丢弃
+				}
+			}
 	*/
 	for col := int64(0); col < _colCount; col++ {
-		// 第一步：收集所有非wild非空符号，并清空这些位置
-		var symbols []int64
-		for row := int64(_rowCount - 1); row >= 1; row-- {
-			if isBlockedCell(row, col) {
+		writePos := int64(_rowCount - 1)
+
+		for readPos := int64(_rowCount - 1); readPos >= 1; readPos-- {
+			if isBlockedCell(readPos, col) {
 				continue
 			}
-			val := grid[row][col]
-			if val != 0 && !isWild(val) {
-				symbols = append(symbols, val)
-				grid[row][col] = 0
-			}
-		}
 
-		// 第二步：从底部开始重新放置符号，跳过wild位置
-		writePos := int64(_rowCount - 1)
-		for _, symbol := range symbols {
-			// 找到下一个可写位置（不是wild的空位）
-			for writePos >= 1 && (isWild(grid[writePos][col]) || isBlockedCell(writePos, col)) {
-				writePos--
+			val := grid[readPos][col]
+			if val != 0 && !isWild(val) {
+				// 找到可写位置（跳过wild和墙格）
+				for writePos >= 1 && (isWild(grid[writePos][col]) || isBlockedCell(writePos, col)) {
+					writePos--
+				}
+				if writePos >= 1 {
+					if writePos != readPos {
+						grid[writePos][col] = val
+						grid[readPos][col] = 0
+					}
+					writePos--
+				} else {
+					// 没地方放，清空
+					grid[readPos][col] = 0
+				}
 			}
-			if writePos >= 1 {
-				grid[writePos][col] = symbol
-				writePos--
-			}
-			// 如果没地方放，符号被丢弃
 		}
 	}
 	return grid

@@ -2,6 +2,7 @@ package hbtr2
 
 func (s *betOrderService) baseSpin() error {
 	if s.debug.open {
+		s.debug.mark = 0  // 每轮开始时重置mark
 		s.syncGameStage() // RTP测试模式需要手动状态转换
 	}
 	if err := s.initialize(); err != nil {

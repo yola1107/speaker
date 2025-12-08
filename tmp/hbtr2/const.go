@@ -16,6 +16,11 @@ const (
 	_boardSize      = _rowCount - 1 // 滚轮盘面符号个数（每列4个符号）
 )
 
+// 预计算常量，避免重复计算
+const (
+	_totalCells = _rowCount * _colCount // 总格子数 30
+)
+
 // 符号定义
 const (
 	_blank    int64 = 0  // 空
