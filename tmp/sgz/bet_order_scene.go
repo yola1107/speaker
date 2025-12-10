@@ -90,7 +90,7 @@ func (s *betOrderService) syncGameStage() {
 		s.scene.RoundMultiplier = 0
 
 		// 每局开始判断是否解锁英雄id
-		if ok, id := s.cityUnlockHero(s.scene.CityValue); ok && id >= _heroID1 && id <= _heroID8 {
+		if _, id := s.cityUnlockHero(s.scene.CityValue); id >= _heroID1 && id <= _heroID8 {
 			s.scene.HeroID = id
 		}
 	}

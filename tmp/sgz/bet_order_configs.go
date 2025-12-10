@@ -235,40 +235,25 @@ func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
 }
 
 // cityUnlockHero 根据城市变更数字查找对应的解锁英雄ID
-// 返回 (是否找到, 英雄ID)，如果未找到返回 (false, -1)
-func (s *betOrderService) cityUnlockHero(cNumber int64) (bool, int64) {
+// cNumber 是累计值，通过 getCityMapIndex 找到对应下标，再从 city_unlock_hero 获取英雄ID
+// 示例：
+// cNumber=50,  city_change_number=[0,100,200,...] -> 返回 0 (对应区间 [0,100))
+// cNumber=150, city_change_number=[0,100,200,...] -> 返回 1 (对应区间 [100,200))
+func (s *betOrderService) cityUnlockHero(cNumber int64) (int, int64) {
+	//"city_unlock_hero":  [1, 2,  3,  4,  0,  0,  5,  0,  0,  6,  0,   0,   7,   0,   0,   8],
+	//"city_change_number":[0,100,200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500],
 	cityNumbers := s.gameConfig.CityChangeNumber
 	unlockHeroes := s.gameConfig.CityUnlockHero
 
-	// 边界检查
-	if len(cityNumbers) == 0 || len(unlockHeroes) == 0 {
-		return false, -1
+	// 找到第一个 >= cNumber 的位置，然后取前一个
+	idx := 0
+	for idx < len(cityNumbers) && cNumber >= cityNumbers[idx] {
+		idx++
 	}
+	idx-- // 回退到正确的区间
 
-	// 如果小于最小值，返回未找到
-	if cNumber < cityNumbers[0] {
-		return false, -1
-	}
-
-	// 使用二分查找找到最大的满足条件的索引
-	// 查找最大的 i 使得 cityNumbers[i] <= cNumber
-	left, right := 0, len(cityNumbers)-1
-	idx := -1
-
-	for left <= right {
-		mid := (left + right) / 2
-		if cityNumbers[mid] <= cNumber {
-			idx = mid
-			left = mid + 1 // 继续向右查找更大的值
-		} else {
-			right = mid - 1
-		}
-	}
-
-	// 如果找到索引，确保不越界并返回对应的英雄ID
 	if idx >= 0 && idx < len(unlockHeroes) {
-		return true, unlockHeroes[idx]
+		return idx, unlockHeroes[idx]
 	}
-
-	return false, -1
+	return -1, -1
 }
