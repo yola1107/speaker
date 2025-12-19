@@ -12,14 +12,14 @@ import (
 )
 
 type SpinSceneData struct {
-	Steps           uint64                        `json:"steps"`      // step步数
-	Stage           int8                          `json:"stage"`      // 运行阶段
-	NextStage       int8                          `json:"nStage"`     // 下一阶段
-	FreeNum         int64                         `json:"freeNum"`    // 剩余免费次数
-	ScatterNum      int64                         `json:"scatterNum"` // 夺宝符数量
-	RoundMultiplier int64                         `json:"rMul"`       // 回合倍数
-	LsatWildPos     [][2]int64                    `json:"lWildPos"`   // 免费模式 Wild 位置继承机制
-	SymbolRoller    [_rollerColCount]SymbolRoller `json:"sRoller"`    // 滚轮符号表 长度为7
+	Steps           uint64                        `json:"steps"`    // step步数
+	Stage           int8                          `json:"stage"`    // 运行阶段
+	NextStage       int8                          `json:"nStage"`   // 下一阶段
+	FreeNum         int64                         `json:"freeNum"`  // 剩余免费次数
+	ContinueNum     int64                         `json:"cNum"`     // 免费模式连续局数 用于算gameMultiple
+	RoundMultiplier int64                         `json:"rMul"`     // 回合倍数
+	LsatWildPos     [][2]int64                    `json:"lWildPos"` // 免费模式 Wild 位置继承机制
+	SymbolRoller    [_rollerColCount]SymbolRoller `json:"sRoller"`  // 滚轮符号表 长度为7
 }
 
 var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", _gameID)

@@ -68,7 +68,6 @@ func (s *memberLoginService) doMemberLogin() (string, error) {
 	site := global.GVA_CONFIG.System.Site
 	merchantID, memberID := s.req.MerchantId, s.req.MemberId
 	key := fmt.Sprintf("%v:%v:%v:%v:lastBetRecord", site, merchantID, memberID, _gameID)
-
 	orderBytes, err := s.orderRedis.Get(context.Background(), key).Result()
 	if err != nil {
 		global.GVA_LOG.Error("doMemberLogin", zap.Error(err))
@@ -77,13 +76,11 @@ func (s *memberLoginService) doMemberLogin() (string, error) {
 	if len(orderBytes) == 0 {
 		return "", nil
 	}
-
 	var orderMap map[string]any
 	if err = json.CJSON.Unmarshal([]byte(orderBytes), &orderMap); err != nil {
 		global.GVA_LOG.Error("doMemberLogin", zap.Error(err))
 		return "", InternalServerError
 	}
-
 	orderMap["lastOrder"] = s.lastOrder
 	data, err := json.CJSON.MarshalToString(orderMap)
 	if err != nil {

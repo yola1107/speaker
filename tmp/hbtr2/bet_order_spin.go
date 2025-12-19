@@ -38,10 +38,11 @@ func (s *betOrderService) processWin() {
 	s.scene.RoundMultiplier += s.stepMultiplier
 
 	// 执行消除和移动流程：消除 -> wild移动 -> 下落+左移动 -> 同步roller
-	nextGrid := s.eliminateWinSymbols()
-	s.bats = s.moveWildSymbols(nextGrid)
-	nextGrid = s.moveSymbols(nextGrid)
-	s.nextSymbolGrid = s.fallingWinSymbols(nextGrid)
+	nextGrid := s.symbolGrid
+	s.eliminateWinSymbols(&nextGrid)
+	s.moveWildSymbols(&nextGrid)
+	s.moveSymbols(&nextGrid)
+	s.nextSymbolGrid = s.fallingWinSymbols(&nextGrid)
 
 	if s.isFreeRound {
 		s.scene.NextStage = _spinTypeFreeEli
@@ -51,10 +52,12 @@ func (s *betOrderService) processWin() {
 	s.updateBonusAmount(s.stepMultiplier)
 }
 
-// processNoWin 处理未中奖情况
+// processNoWin 处理未中奖
 func (s *betOrderService) processNoWin() {
 	// 重置游戏状态
-	s.gameMultiple = 1
+	if !s.isFreeRound {
+		s.gameMultiple = 0
+	}
 	s.lineMultiplier = 0
 	s.stepMultiplier = 0
 	s.isRoundOver = true
@@ -78,7 +81,8 @@ func (s *betOrderService) processNoWin() {
 
 		if s.scene.FreeNum <= 0 {
 			s.scene.FreeNum = 0
-			s.scene.ScatterNum = 0
+			s.scene.ContinueNum = 0   // 清理
+			s.scene.LsatWildPos = nil // 免费模式结束，清理 wild 位置
 			s.scene.NextStage = _spinTypeBase
 		} else {
 			s.scene.NextStage = _spinTypeFree
@@ -93,12 +97,13 @@ func (s *betOrderService) processNoWin() {
 		} else {
 			s.scene.NextStage = _spinTypeBase
 		}
-		s.scene.ScatterNum = s.scatterCount
+		s.scene.ContinueNum = 0   // 清理
+		s.scene.LsatWildPos = nil // 清理 wild 位置
 	}
 
-	// 免费模式回合结束，记录 wild 位置（左下偏移后）供下局继承
 	if s.isFreeRound && s.isRoundOver {
-		s.saveLsatWildPosForFree()
+		s.saveLsatWildPosForFree() // 免费模式结束时记录wild位置
+		s.scene.ContinueNum++      // 免费模式连续局数 用于计算gameMultiple
 	}
 }
 
@@ -110,29 +115,16 @@ func (s *betOrderService) handleWinElemsMultiplier(elems []WinInfo) int64 {
 	return total
 }
 
-// getStreakMultiplier 获取连击倍数（当前固定为1）
+// getStreakMultiplier 获取连击倍数
 func (s *betOrderService) getStreakMultiplier() int64 {
+	if s.isFreeRound {
+		return s.scene.ContinueNum + 1
+	}
 	return 1
 }
 
-/*
-	免费模式 Wild 位置继承机制：
-	当前局结束时：
-		收集所有 Wild 的位置
-		每个 Wild 左下移动一格（r+1, c–1）
-		过滤掉移动后落出盘面的 Wild
-		将结果写入 scene.LastWildPositions
-
-	下局初始化符号时（getSceneSymbol）：
-		先标记上次免费模式中保存的wild的pos
-		根据pos设置对应roller board的位置为wild
-		再按原逻辑将roller board里非_wild的位置填充上
-
-	作用：
-	实现免费模式下 Wild 的延迟留存与移动，确保 Wild 不被随机逻辑覆盖。
-*/
-
-// 保存免费模式中一局结束后，当前盘面的wild并做一次左下移动后的坐标到scene，（剔除落出盘面的wild位置）
+// 免费模式 Wild 位置继承：收集并移动 Wild 位置，用于下局初始化
+// saveLsatWildPosForFree 保存免费模式Wild位置
 func (s *betOrderService) saveLsatWildPosForFree() {
 	var pos [][2]int64
 	for r := int64(0); r < _rowCount; r++ {

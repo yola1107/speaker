@@ -1,7 +1,7 @@
 package hbtr2
 
 const _gameID = 8918 // 霍比特人2
-const GameId = 8918
+const GameID = 8918
 
 const _baseMultiplier = 20 // 虚拟中奖线倍数
 
@@ -11,14 +11,8 @@ const (
 )
 
 const (
-	_rollerRowCount = 5             // 滚轮行数
 	_rollerColCount = 7             // 滚轮列数
 	_boardSize      = _rowCount - 1 // 滚轮盘面符号个数（每列4个符号）
-)
-
-// 预计算常量，避免重复计算
-const (
-	_totalCells = _rowCount * _colCount // 总格子数 30
 )
 
 // 符号定义
@@ -34,11 +28,11 @@ const (
 	_thorin   int64 = 8  // 索林
 	_elfQueen int64 = 9  // 精灵女王
 	_gandalf  int64 = 10 // 甘道夫
-	_wild     int64 = 12 // 百搭
-	_scatter  int64 = 11 // 夺宝          (基础模式的夺宝符号)
+	_wild     int64 = 11 // 百搭
+	_scatter  int64 = 12 // 夺宝          (基础模式的夺宝符号)
 	_freePlus int64 = 13 // 免费次数+1     (免费模式的夺宝符号)
 	_scaWild  int64 = 14 // 夺宝+百搭      (基础模式，wild移动到夺宝上展示 12+11->14)
-	_freeWild int64 = 15 // 免费次数+1+百搭 (免费模式，wild移动到夺宝上展示 12+13->15)           //
+	_freeWild int64 = 15 // 免费次数+1+百搭 (免费模式，wild移动到夺宝上展示 12+13->15)
 )
 
 const _minMatchCount = 3 // 最小中奖数量
@@ -49,3 +43,5 @@ const (
 	_spinTypeFree    = 21 // 免费
 	_spinTypeFreeEli = 22 // 免费消除
 )
+
+var _checkList = []int64{_diamond, _club, _heart, _spade, _shield, _hat, _ring, _thorin, _elfQueen, _gandalf}

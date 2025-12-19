@@ -100,7 +100,6 @@ func (s *betOrderService) updateGameOrder() error {
 		Multiple:          s.req.Multiple,
 		LineMultiple:      s.lineMultiplier,
 		BonusHeadMultiple: s.gameMultiple,
-		BonusMultiple:     s.gameMultiple,
 		BaseAmount:        s.req.BaseMoney,
 		Amount:            s.amount.Round(2).InexactFloat64(),
 		ValidAmount:       s.amount.Round(2).InexactFloat64(),
@@ -110,13 +109,13 @@ func (s *betOrderService) updateGameOrder() error {
 		ParentOrderSn:     s.parentOrderSN,
 		FreeOrderSn:       s.freeOrderSN,
 		State:             1,
-		BonusTimes:        0,
 		HuNum:             s.scatterCount,
 		FreeNum:           s.scene.FreeNum,
-		FreeTimes:         s.addFreeTime, // 对齐hbtr：新增免费次数
+		FreeTimes:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
 	}
 	if s.isFreeRound {
 		gameOrder.IsFree = 1
+		gameOrder.BonusTimes = int64(s.scene.Steps - 1) // 免费模式下的消除次数
 	}
 
 	s.gameOrder = &gameOrder
@@ -125,17 +124,15 @@ func (s *betOrderService) updateGameOrder() error {
 
 func (s *betOrderService) fillInGameOrderDetails() error {
 	var err error
-	if s.gameOrder.BetRawDetail, err = json.CJSON.MarshalToString(s.symbolGrid); err != nil {
+	if s.gameOrder.BetRawDetail, err = json.CJSON.MarshalToString(s.reversalSymbolGrid); err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails: marshal symbolGrid", zap.Error(err))
 		return err
 	}
-	if s.gameOrder.BonusRawDetail, err = json.CJSON.MarshalToString(s.winGrid); err != nil {
-		global.GVA_LOG.Error("fillInGameOrderDetails: marshal WinGridReward", zap.Error(err))
+	if s.gameOrder.WinDetails, err = json.CJSON.MarshalToString(s.buildWinInfoDetail()); err != nil {
+		global.GVA_LOG.Error("fillInGameOrderDetails: marshal winDetails", zap.Error(err))
 		return err
 	}
-	s.gameOrder.BetDetail = symbolGridToString(s.symbolGrid)
-	s.gameOrder.BonusDetail = symbolGridToString(s.winGrid)
-	s.gameOrder.WinDetails = s.getWinDetail()
+	s.gameOrder.BetDetail = symbolGridToString(s.reversalSymbolGrid)
 	return nil
 }
 

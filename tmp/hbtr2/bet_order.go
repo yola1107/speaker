@@ -44,8 +44,10 @@ type betOrderService struct {
 	nextSymbolGrid *int64Grid           // 下一把 step 符号网格
 	symbolGrid     int64Grid            // 符号网格
 	winGrid        int64Grid            // 中奖网格
-	bats           []Bat                // Wild移动记录
 	debug          rtpDebugData         // 是否为RTP测试流程
+
+	reversalSymbolGrid int64Grid // 反转符号网格
+	reversalWinGrid    int64Grid // 反转中奖网格
 }
 
 func newBetOrderService() *betOrderService {
@@ -79,15 +81,18 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 	if s.lastOrder == nil {
 		s.cleanScene()
 	}
-
 	if err = s.reloadScene(); err != nil {
 		global.GVA_LOG.Error("betOrder: reloadScene failed", zap.Error(err))
 		return nil, InternalServerError
 	}
-
 	if err = s.baseSpin(); err != nil {
 		return nil, err
 	}
+
+	// 上下对称下网格 用于填充 客户端和GameOrder订单信息
+	s.reversalSymbolGrid = reverseGridRows(&s.symbolGrid)
+	s.reversalWinGrid = reverseGridRows(&s.winGrid)
+
 	if err = s.updateGameOrder(); err != nil {
 		return nil, err
 	}
@@ -102,37 +107,16 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) (map[string]any, er
 }
 
 func (s *betOrderService) getBetResultMap() map[string]any {
-	var freeTotalMoney float64
-	var isFreeInt int
-	if s.isFreeRound {
-		freeTotalMoney = s.client.ClientOfFreeGame.GetFreeTotalMoney()
-		isFreeInt = 1
-	}
-
-	currentWin := s.bonusAmount.Round(2).InexactFloat64()
-	accWin := s.client.ClientOfFreeGame.GetFreeTotalMoney()
-	sumFreeWin := s.client.ClientOfFreeGame.GetRoundBonus()
-	winInfo := s.buildWinInfoDetail()
-
+	global.GVA_LOG.Debug("betOrder: getBetResultMap", zap.Any("currentWin ", s.bonusAmount.Round(2).InexactFloat64()))
 	return map[string]any{
-		// 对齐 hbtr BetOrder 返回字段
 		"sn":         s.orderSN,
 		"balance":    s.gameOrder.CurBalance,
-		"free":       isFreeInt,                                      // 是否免费 0：否，1:是
-		"cards":      reverseGridRows(&s.symbolGrid),                 // 当前牌型（上下翻转对称）
-		"winInfo":    winInfo,                                        // 中奖路线信息（对齐 hbtr，map 结构）
-		"currentWin": currentWin,                                     // 当前回合赢得
+		"free":       btoi(s.isFreeRound),                            // 是否免费 0：否，1:是
+		"cards":      s.reversalSymbolGrid,                           // 当前牌型（上下翻转对称）
+		"winInfo":    s.buildWinInfoDetail(),                         // 中奖路线信息（对齐 hbtr，字符串 JSON）
+		"currentWin": s.bonusAmount.Round(2).InexactFloat64(),        // 当前回合赢得
 		"totalWin":   s.client.ClientOfFreeGame.GetGeneralWinTotal(), //
-		"accWin":     accWin,                                         // 当前轮共赢得
-		"sumFreeWin": sumFreeWin,                                     // 免费共赢得（暂无则为0）
-
-		// 新增字段（hbtr2扩展，前端可选用）
-		"betMoney":       s.betAmount.Round(2).InexactFloat64(), // 新增
-		"review":         0,                                     // 新增
-		"freeNum":        uint64(s.scene.FreeNum),               // 新增
-		"win":            currentWin,                            // 新增：等同 currentWin
-		"freeTotalMoney": freeTotalMoney,                        // 新增：等同 accWin
-		"wincards":       s.winGrid,                             // 新增
-		"scatterCount":   s.scatterCount,                        // 新增
+		"accWin":     s.client.ClientOfFreeGame.GetFreeTotalMoney(),  // 当前轮共赢得
+		"sumFreeWin": s.client.ClientOfFreeGame.GetRoundBonus(),      // 免费共赢得（暂无则为0）
 	}
 }

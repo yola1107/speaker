@@ -36,6 +36,8 @@ type SymbolRoller struct {
 	Start       int               `json:"start"` // 开始索引
 	Fall        int               `json:"fall"`  // 开始索引
 	BoardSymbol [_boardSize]int64 `json:"board"` // 盘面符号
+
+	OriginStart int `json:"_"` // 用于标记起始的start，避免后续start--后导致值不是最新的
 }
 
 func (s *betOrderService) initGameConfigs() {
@@ -70,20 +72,10 @@ func (s *betOrderService) calculateRollWeight(rollCfg *RollCfgType) {
 }
 
 func (s *betOrderService) initSpinSymbol() [_rollerColCount]SymbolRoller {
-	var rollCfg RollCfgType
 	if s.isFreeRound {
-		rollCfg = s.gameConfig.RollCfg.Free
-	} else {
-		rollCfg = s.gameConfig.RollCfg.Base
+		return s.getSceneSymbolFree(s.gameConfig.RollCfg.Free)
 	}
-	return s.getSceneSymbol(rollCfg)
-}
-
-func (s *betOrderService) getSceneSymbol(rollCfg RollCfgType) [_rollerColCount]SymbolRoller {
-	if s.isFreeRound {
-		return s.getSceneSymbolFree(rollCfg)
-	}
-	return s.getSceneSymbolBase(rollCfg)
+	return s.getSceneSymbolBase(s.gameConfig.RollCfg.Base)
 }
 
 // selectRealIndex 按权重选择 realData 下标
@@ -135,7 +127,7 @@ func (s *betOrderService) getSceneSymbolBase(rollCfg RollCfgType) [_rollerColCou
 		}
 
 		end := (start + dataIndex - 1) % dataLen // 固定4个
-		roller := SymbolRoller{Real: realIndex, Start: start, Fall: end, Col: col, Len: dataLen, BoardSymbol: board}
+		roller := SymbolRoller{Real: realIndex, Start: start, Fall: end, Col: col, Len: dataLen, BoardSymbol: board, OriginStart: start}
 		symbols[col] = roller
 	}
 	return symbols
@@ -144,8 +136,8 @@ func (s *betOrderService) getSceneSymbolBase(rollCfg RollCfgType) [_rollerColCou
 // 免费模式：先落位保留 wild，再填充剩余空位
 func (s *betOrderService) getSceneSymbolFree(rollCfg RollCfgType) [_rollerColCount]SymbolRoller {
 	// 预处理保留的 wild 坐标
-	var topReserved [4]bool
-	var colReserved [_colCount][4]bool
+	var topReserved [_boardSize]bool
+	var colReserved [_colCount][_boardSize]bool
 	if len(s.scene.LsatWildPos) > 0 {
 		for _, p := range s.scene.LsatWildPos {
 			rp, cp := p[0], p[1]
@@ -211,7 +203,7 @@ func (s *betOrderService) getSceneSymbolFree(rollCfg RollCfgType) [_rollerColCou
 			end = (start + dataIndex - 1) % dataLen
 		}
 
-		roller := SymbolRoller{Real: realIndex, Start: start, Fall: end, Col: col, Len: dataLen, BoardSymbol: board}
+		roller := SymbolRoller{Real: realIndex, Start: start, Fall: end, Col: col, Len: dataLen, BoardSymbol: board, OriginStart: start}
 		symbols[col] = roller
 	}
 
@@ -239,11 +231,11 @@ func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64
 }
 
 // calcNewFreeGameNum 计算触发免费游戏的次数
+// 规则：4个夺宝触发8次免费，每多1个夺宝增加2次免费
 func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
 	if scatterCount < s.gameConfig.TriggerFreeGameNeedScatter {
 		return 0
 	}
-	// 规则：4个夺宝触发8次免费，每多1个夺宝增加2次免费
 	//return 8 + (scatterCount-4)*2
 	return s.gameConfig.FreeGameTimes + (scatterCount-s.gameConfig.TriggerFreeGameNeedScatter)*s.gameConfig.ExtraAddFreeTimes
 }

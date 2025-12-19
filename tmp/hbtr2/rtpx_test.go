@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	testRounds       = 1e6
+	testRounds       = 1e8
 	progressInterval = 1e7
-	debugFileOpen    = 10
+	debugFileOpen    = 0
 	freeModeLogOnly  = 0
 )
 
@@ -35,9 +35,13 @@ func TestRtp2(t *testing.T) {
 	interval := int64(min(testRounds, progressInterval))
 
 	var fileBuf *strings.Builder
+	var reportBuf *strings.Builder
 	if debugFileOpen > 0 {
 		fileBuf = &strings.Builder{}
+		reportBuf = &strings.Builder{}
 	}
+
+	var totalWinAccumulator float64 // 累计总赢分
 
 	for baseRounds < testRounds {
 		var cascadeCount, gameNum int
@@ -72,6 +76,18 @@ func TestRtp2(t *testing.T) {
 				} else {
 					baseGameCount++
 					gameNum = baseGameCount
+				}
+
+				// 记录报告格式日志：局号和初始索引（baseSpin后SymbolRoller已初始化）
+				if reportBuf != nil {
+					triggerRound := 0
+					if isFree {
+						triggerRound = triggeringBaseRound
+						if triggerRound == 0 {
+							triggerRound = baseGameCount
+						}
+					}
+					writeReportRoundHeader(reportBuf, svc, gameNum, isFree, triggerRound)
 				}
 			}
 
@@ -110,6 +126,22 @@ func TestRtp2(t *testing.T) {
 
 			// Round 结束处理
 			if svc.isRoundOver {
+				// 更新累计总赢分
+				totalWinAccumulator = baseTotalWin + freeTotalWin
+
+				if reportBuf != nil {
+					var currentRoundWin float64
+					var freeMultiple int64
+					if isFree {
+						currentRoundWin = freeRoundWin
+						freeMultiple = int64(gameNum) // freeMultiple = svc.gameMultiple
+					} else {
+						currentRoundWin = roundWin
+						freeMultiple = 0 // 基础模式 freeMultiple 为 0
+					}
+					writeReportRoundSummary(reportBuf, totalWinAccumulator, freeMultiple, int64(currentRoundWin), isFree)
+				}
+
 				// 统计连消步数
 				if isFree {
 					freeCascadeSteps += int64(cascadeCount)
@@ -162,8 +194,8 @@ func TestRtp2(t *testing.T) {
 		freeRounds, freeTotalWin, freeWinRounds, freeCascadeSteps, freeMaxCascadeSteps, freeTreasureInFree, freeExtraFreeRounds, freeMaxFreeStreak, totalBet, start)
 	result := buf.String()
 	fmt.Print(result)
-	if debugFileOpen > 0 && fileBuf != nil {
-		saveDebugFile(result, fileBuf.String(), start)
+	if debugFileOpen > 0 {
+		saveDebugFiles(result, fileBuf, reportBuf, start)
 	}
 }
 
@@ -196,11 +228,8 @@ func writeReelInfo(buf *strings.Builder, svc *betOrderService) {
 	}
 	fprintf(buf, "滚轴配置Index: %d\n转轮信息长度/起始：", svc.scene.SymbolRoller[0].Real)
 	for c := 0; c < len(svc.scene.SymbolRoller); c++ {
-		roller := svc.scene.SymbolRoller[c]
-		fprintf(buf, "%d[%d～%d]  ", roller.Len, roller.Start, roller.Fall)
-		// rc := svc.scene.SymbolRoller[c]
-		// fprintf(buf, "idx=%d, Real:%d Col:%d Len:%-3d Start:%2d Fall:%2d \n",
-		//	c, rc.Real, rc.Col, rc.Len, rc.Start, rc.Fall)
+		rc := svc.scene.SymbolRoller[c]
+		fprintf(buf, "%d[%d～%d]  ", rc.OriginStart, rc.Start, rc.Fall)
 	}
 	fprintf(buf, "\n")
 }
@@ -276,11 +305,57 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 	}
 }
 
-func saveDebugFile(statsResult, detailResult string, start time.Time) {
-	_ = os.MkdirAll("logs", 0755)
-	filename := fmt.Sprintf("logs/%s.txt", time.Now().Format("20060102_150405"))
-	_ = os.WriteFile(filename, []byte(statsResult+detailResult), 0644)
-	fmt.Printf("\n📄 调试信息已保存到: %s\n", filename)
+// saveDebugFiles 统一保存调试日志和报告日志
+func saveDebugFiles(statsResult string, fileBuf, reportBuf *strings.Builder, start time.Time) {
+	timestamp := time.Now().Format("20060102_150405")
+
+	// 保存调试详细日志
+	if fileBuf != nil {
+		_ = os.MkdirAll("logs", 0755)
+		debugFile := fmt.Sprintf("logs/%s.txt", timestamp)
+		_ = os.WriteFile(debugFile, []byte(statsResult+fileBuf.String()), 0644)
+		fmt.Printf("\n📄 调试信息已保存到: %s\n", debugFile)
+	}
+
+	// 保存报告格式日志
+	if reportBuf != nil {
+		_ = os.MkdirAll("logs", 0755)
+		debugFile := fmt.Sprintf("logs/%s_report.txt", timestamp)
+		_ = os.WriteFile(debugFile, []byte(reportBuf.String()), 0644)
+		fmt.Printf("\n📄 调试信息已保存到: %s\n", debugFile)
+	}
+}
+
+// writeReportRoundHeader 记录报告格式的局号和初始索引
+func writeReportRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggerRound int) {
+	if isFree {
+		// 免费模式格式：基础模式第 X 局-免费模式第 Y 局（数字前后有空格）
+		fprintf(buf, "基础模式第 %d 局-免费模式第 %d 局\n", triggerRound, gameNum)
+	} else {
+		fprintf(buf, "基础模式第 %d 局\n", gameNum)
+	}
+
+	// 记录7个滚轴的初始索引（Start值）- 使用原始起始位置
+	fprintf(buf, "初始索引-")
+	for c := 0; c < _rollerColCount; c++ {
+		if c > 0 {
+			fprintf(buf, ",")
+		}
+		if svc.scene != nil && c < len(svc.scene.SymbolRoller) {
+			// 使用 OriginStart 显示原始起始位置
+			fprintf(buf, "%d", svc.scene.SymbolRoller[c].OriginStart)
+		} else {
+			fprintf(buf, "0")
+		}
+	}
+	fprintf(buf, "\n")
+}
+
+// writeReportRoundSummary 记录报告格式的回合总结数据
+func writeReportRoundSummary(buf *strings.Builder, totalWin float64, freeMultiple int64, stepMultiplier int64, isFree bool) {
+	fprintf(buf, "totalWin-%d\n", int64(totalWin))
+	fprintf(buf, "freeMultiple-%d\n", freeMultiple)
+	fprintf(buf, "stepMultiplier-%d\n", stepMultiplier)
 }
 
 func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float64, baseWinRounds int64,
