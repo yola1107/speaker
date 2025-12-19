@@ -1,4 +1,4 @@
-package champ2
+package champv2
 
 import (
 	"container/heap"
@@ -10,6 +10,48 @@ import (
 
 	log "github.com/sirupsen/logrus"
 )
+
+/*import (
+	"context"
+	"time"
+)
+
+type DelayScheduler struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func NewDelayScheduler() *DelayScheduler {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &DelayScheduler{
+		ctx:    ctx,
+		cancel: cancel,
+	}
+}
+
+// Schedule 延迟执行任务
+func (s *DelayScheduler) Schedule(t time.Time, fn func()) {
+	delay := time.Until(t)
+	if delay <= 0 {
+		// 如果时间已经过去，直接执行
+		go fn()
+		return
+	}
+
+	go func() {
+		select {
+		case <-time.After(delay):
+			fn()
+		case <-s.ctx.Done():
+			return
+		}
+	}()
+}
+
+func (s *DelayScheduler) Stop() {
+	s.cancel()
+}
+*/
 
 // Scheduler 定时任务调度器接口
 type Scheduler interface {
@@ -134,6 +176,11 @@ func (q *taskQueue) NextExecDuration(now time.Time) time.Duration {
 // ==================== HeapSchedulerOption ====================
 
 type HeapSchedulerOption func(*heapScheduler)
+
+// WithWorkerPool 任务池并发模式，size 个 worker，队列容量 queueSize
+func WithWorkerPool(pool *WorkerPool) HeapSchedulerOption {
+	return func(s *heapScheduler) { s.workerPool = pool }
+}
 
 // WithHeapSerial 任务池串行模式（一个 goroutine 顺序跑任务）
 func WithHeapSerial() HeapSchedulerOption {

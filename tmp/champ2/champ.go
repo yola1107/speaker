@@ -1,81 +1,119 @@
-package champ2
+package champv2
 
 import (
 	"context"
-
-	"github.com/go-redis/redis"
-	log "github.com/sirupsen/logrus"
+	"log"
+	"sync"
+	"time"
 )
 
-type ChampNotifyCallback func(players []*Player, tables [][]int64, stageID int32, round int32, clientTableId int32)
+type Championship struct {
+	ID         string
+	Name       string
+	config     *ChampConfig
+	current    ChampState
+	listener   Listener
+	workerPool *WorkerPool
+	scheduler  Scheduler
+	mu         sync.RWMutex
+	ctx        context.Context
+	cancel     context.CancelFunc
 
-type Champ struct {
-	ctx                context.Context
-	cancel             context.CancelFunc
-	cfg                *ChampConfig
-	subscriber         *RedisSubscriber
-	persistence        *RedisPersistence
-	fsm                *FSM
-	onEnterTableNotify ChampNotifyCallback
-	players            map[int64]*Player
+	runtime map[ChampState]time.Time
 }
 
-func NewChamp(cfg *ChampConfig, redisClient *redis.Client) *Champ {
-	if cfg == nil {
-		cfg = GetDefaultChampConfig(118, 200)
-	}
+func NewChampionship(id, name string, config *ChampConfig) *Championship {
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Champ{
+	workerPool := NewWorkerPool(8, 64)
+
+	c := &Championship{
+		ID:         id,
+		Name:       name,
+		config:     config,
+		current:    StateIdle,
+		listener:   NewPhaseListener(),
+		workerPool: workerPool,
+		scheduler: NewHeapScheduler(
+			WithHeapContext(ctx),
+			WithWorkerPool(workerPool),
+		),
+		runtime: make(map[ChampState]time.Time),
 		ctx:     ctx,
 		cancel:  cancel,
-		cfg:     cfg,
-		players: make(map[int64]*Player),
 	}
-	c.persistence = NewRedisPersistence(redisClient, cfg.GameId, cfg.RoomId)
-	c.subscriber = NewRedisSubscriber(redisClient, c)
-	c.fsm = NewFSM(c.persistence, cfg)
+	c.scheduleAll()
+
+	log.Printf("NewChampionship. id=%s, name=%s, current=%q", c.ID, c.Name, c.current)
 	return c
 }
 
-func (c *Champ) Start() {
-	c.fsm.Start()
-	c.loadPlayersByStage()
-	c.subscriber.Start()
-	log.Infof("Championship started: gameID=%d roomID=%d", c.cfg.GameId, c.cfg.RoomId)
-}
-
-func (c *Champ) Stop() {
-	c.fsm.Stop()
-	c.subscriber.Stop()
+func (c *Championship) Stop() {
+	c.scheduler.Stop()
+	c.workerPool.Stop()
 	c.cancel()
-	log.Infof("Championship stopped: gameID=%d roomID=%d", c.cfg.GameId, c.cfg.RoomId)
 }
 
-// 根据当前 FSM 状态加载玩家
-func (c *Champ) loadPlayersByStage() {
-	stage := c.fsm.State()
-	var uids []int64
-	switch stage {
-	case StateQualifying:
-		// 全量
-		uids, _ = c.persistence.TopN(10000)
-	case StateKnockout64:
-		uids, _ = c.persistence.TopN(64)
-	case StateKnockout32:
-		uids, _ = c.persistence.TopN(32)
-	case StateKnockout16:
-		uids, _ = c.persistence.TopN(16)
-	case StateKnockout8:
-		uids, _ = c.persistence.TopN(8)
-	case StateFinal:
-		uids, _ = c.persistence.TopN(8)
+func (c *Championship) CurrentState() ChampState {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.current
+}
+
+// 调度所有阶段
+func (c *Championship) scheduleAll() {
+	phases := []struct {
+		state ChampState
+		cfg   PhaseConfig
+	}{
+		{StateRegistering, c.config.Register},
+		{StateQualifying, c.config.Qualify},
+		{StateKO64, c.config.KO64},
+		{StateKO32, c.config.KO32},
+		{StateKO16, c.config.KO16},
+		{StateFinal, c.config.Final},
 	}
-	for _, uid := range uids {
-		data, err := c.persistence.LoadPlayer(uid)
-		if err != nil {
-			log.Errorf("load player failed, uid=%d, err=%v", uid, err)
-			continue
+
+	for _, p := range phases {
+		// enter
+		c.scheduler.ScheduleAt(p.cfg.Start, func(s ChampState, t time.Time) func() {
+			return func() { c.enterPhase(s, t) }
+		}(p.state, p.cfg.Start))
+
+		// leave
+		c.scheduler.ScheduleAt(p.cfg.End, func(s ChampState, t time.Time) func() {
+			return func() { c.leavePhase(s, t) }
+		}(p.state, p.cfg.End))
+
+		// reminders
+		for _, sec := range p.cfg.ReminderSeconds {
+			notifyAt := p.cfg.Start.Add(-time.Duration(sec) * time.Second)
+			if notifyAt.Before(time.Now()) {
+				continue
+			}
+			c.scheduler.ScheduleAt(notifyAt, func(s ChampState, sec int, t time.Time) func() {
+				return func() { c.listener.OnReminder(c, s, sec, t) }
+			}(p.state, sec, notifyAt))
 		}
-		c.players[uid] = data
 	}
+}
+
+func (c *Championship) enterPhase(s ChampState, at time.Time) {
+	c.mu.Lock()
+	c.current = s
+	c.runtime[s] = at
+	c.mu.Unlock()
+	log.Printf("[%s] >>> enter %s\n", c.Name, s)
+	c.listener.OnEnterPhase(c, s, at)
+}
+
+func (c *Championship) leavePhase(s ChampState, at time.Time) {
+	c.mu.RLock()
+	start, ok := c.runtime[s]
+	c.mu.RUnlock()
+	duration := time.Duration(0)
+	if ok {
+		duration = at.Sub(start)
+	}
+	c.listener.OnLeavePhase(c, s, at, duration)
+	log.Printf("[%s] <<< leave %s (%v)\n\n", c.Name, s, duration)
 }
