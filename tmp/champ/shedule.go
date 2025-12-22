@@ -7,8 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	log "github.com/sirupsen/logrus"
+	//log "github.com/sirupsen/logrus"
 )
 
 /*import (
@@ -474,7 +473,7 @@ func safeCall(fn func()) {
 // RecoverFromError 捕获 panic 并打印堆栈
 func RecoverFromError(cb func(e any)) {
 	if e := recover(); e != nil {
-		log.Printf("Recover => %v\n%s\n", e, debug.Stack())
+		log.Errorf("Recover => %v\n%s\n", e, debug.Stack())
 		if cb != nil {
 			cb(e)
 		}
