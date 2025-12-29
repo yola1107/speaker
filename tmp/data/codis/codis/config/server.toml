@@ -1,0 +1,5 @@
+# Default server config - not used directly
+product_name = "codis-test"
+
+coordinator_name = "etcd"
+coordinator_addr = "etcd:2379"

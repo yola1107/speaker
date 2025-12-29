@@ -3,10 +3,12 @@ module speaker
 go 1.24.5
 
 require (
+	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/google/wire v0.6.0
 	github.com/json-iterator/go v1.1.12
 	github.com/shopspring/decimal v1.4.0
+	github.com/streadway/amqp v1.1.0
 	github.com/yola1107/kratos/contrib/log/zap/v2 v2.0.0-20250427101520-31f92cf577e8
 	github.com/yola1107/kratos/v2 v2.8.8-0.20251207171705-db74f324f9a3
 	go.uber.org/automaxprocs v1.6.0

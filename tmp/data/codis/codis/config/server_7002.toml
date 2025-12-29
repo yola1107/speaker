@@ -1,0 +1,24 @@
+# Codis Server 7002 配置
+product_name = "codis-test"
+product_auth = ""
+server_id = 3
+
+coordinator_name = "etcd"
+coordinator_addr = "etcd:2379"
+
+# Dashboard 地址
+dashboard_addr = "http://codis-dashboard:18080"
+
+# 后端 Redis 节点地址
+backend_addr = "redis-7002:7002"
+
+# 连接池配置
+backend_primary_parallel = 1
+backend_primary_idle_timeout = 30
+backend_replica_parallel = 1
+backend_replica_idle_timeout = 30
+
+# 会话配置
+session_max_timeout = 1800
+session_max_bufsize = 131072
+session_max_pipeline = 1000
