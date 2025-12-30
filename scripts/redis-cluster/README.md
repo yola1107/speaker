@@ -91,3 +91,15 @@ docker-compose down -v
 
 ---
 
+
+## Linux 系统调优
+# 增大文件描述符限制
+ulimit -n 65535
+
+# TCP 参数优化
+sysctl -w net.core.somaxconn=65535
+sysctl -w net.ipv4.tcp_max_syn_backlog=65535
+sysctl -w net.ipv4.tcp_fin_timeout=15
+sysctl -w net.ipv4.tcp_tw_reuse=1
+
+

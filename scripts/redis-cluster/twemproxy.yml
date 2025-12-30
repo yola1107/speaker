@@ -1,0 +1,15 @@
+alpha:
+  listen: 0.0.0.0:22121
+  hash: fnv1a_64
+  distribution: ketama
+  auto_eject_hosts: true
+  redis: true
+  server_retry_timeout: 2000
+  server_failure_limit: 1
+  servers:
+    - redis-7000:7000:1
+    - redis-7001:7001:1
+    - redis-7002:7002:1
+    - redis-7003:7003:1
+    - redis-7004:7004:1
+    - redis-7005:7005:1
