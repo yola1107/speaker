@@ -21,9 +21,9 @@ sleep 5
 echo "创建 Redis Cluster..."
 docker run -it --rm --network redis-cluster-net redis:7-alpine \
   redis-cli --cluster create \
-  127.0.0.1:7000 127.0.0.1:7001 127.0.0.1:7002 \
-  127.0.0.1:7003 127.0.0.1:7004 127.0.0.1:7005 \
-  --cluster-replicas 1 -a YOURPASSWORD
+  redis-7000:7000 redis-7001:7001 redis-7002:7002 \
+  redis-7003:7003 redis-7004:7004 redis-7005:7005 \
+  --cluster-replicas 1 -a "A12345!"
 
 echo "=== Redis Cluster 部署完成 ==="
 echo "节点: 7000~7005"
