@@ -11,141 +11,105 @@ services:
     container_name: redis-7000
     command: ["redis-server", "/conf/redis_7000.conf"]
     volumes:
-      - ./conf/redis_7000.conf:/conf/redis_7000.conf
+      - ./conf/redis_7000.conf:/conf/redis_7000.conf:ro
       - ./data/7000:/data
     ports:
-      - "7000:7000"
+      - "7000:7000"   # 可选，测试用
     networks:
       - redis-cluster-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "-a", "A12345!", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   redis-7001:
     image: redis:7-alpine
     container_name: redis-7001
     command: ["redis-server", "/conf/redis_7001.conf"]
     volumes:
-      - ./conf/redis_7001.conf:/conf/redis_7001.conf
+      - ./conf/redis_7001.conf:/conf/redis_7001.conf:ro
       - ./data/7001:/data
     ports:
       - "7001:7001"
     networks:
       - redis-cluster-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "-a", "A12345!", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   redis-7002:
     image: redis:7-alpine
     container_name: redis-7002
     command: ["redis-server", "/conf/redis_7002.conf"]
     volumes:
-      - ./conf/redis_7002.conf:/conf/redis_7002.conf
+      - ./conf/redis_7002.conf:/conf/redis_7002.conf:ro
       - ./data/7002:/data
     ports:
       - "7002:7002"
     networks:
       - redis-cluster-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "-a", "A12345!", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   redis-7003:
     image: redis:7-alpine
     container_name: redis-7003
     command: ["redis-server", "/conf/redis_7003.conf"]
     volumes:
-      - ./conf/redis_7003.conf:/conf/redis_7003.conf
+      - ./conf/redis_7003.conf:/conf/redis_7003.conf:ro
       - ./data/7003:/data
     ports:
       - "7003:7003"
     networks:
       - redis-cluster-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "-a", "A12345!", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   redis-7004:
     image: redis:7-alpine
     container_name: redis-7004
     command: ["redis-server", "/conf/redis_7004.conf"]
     volumes:
-      - ./conf/redis_7004.conf:/conf/redis_7004.conf
+      - ./conf/redis_7004.conf:/conf/redis_7004.conf:ro
       - ./data/7004:/data
     ports:
       - "7004:7004"
     networks:
       - redis-cluster-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "-a", "A12345!", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   redis-7005:
     image: redis:7-alpine
     container_name: redis-7005
     command: ["redis-server", "/conf/redis_7005.conf"]
     volumes:
-      - ./conf/redis_7005.conf:/conf/redis_7005.conf
+      - ./conf/redis_7005.conf:/conf/redis_7005.conf:ro
       - ./data/7005:/data
     ports:
       - "7005:7005"
     networks:
       - redis-cluster-net
     restart: unless-stopped
-
-  # ---------------- Twemproxy ----------------
-  twemproxy1:
-    image: malexer/twemproxy
-    container_name: twemproxy1
-    ports:
-      - "22121:22121"
-    volumes:
-      - ./twemproxy.yml:/etc/twemproxy.yml
-    command: /usr/local/bin/nutcracker -c /etc/twemproxy.yml
-    networks:
-      - redis-cluster-net
-    restart: unless-stopped
-
-  twemproxy2:
-    image: malexer/twemproxy
-    container_name: twemproxy2
-    ports:
-      - "22122:22121"
-    volumes:
-      - ./twemproxy.yml:/etc/twemproxy.yml
-    command: /usr/local/bin/nutcracker -c /etc/twemproxy.yml
-    networks:
-      - redis-cluster-net
-    restart: unless-stopped
-
-  twemproxy3:
-    image: malexer/twemproxy
-    container_name: twemproxy3
-    ports:
-      - "22123:22121"
-    volumes:
-      - ./twemproxy.yml:/etc/twemproxy.yml
-    command: /usr/local/bin/nutcracker -c /etc/twemproxy.yml
-    networks:
-      - redis-cluster-net
-    restart: unless-stopped
-
-  twemproxy4:
-    image: malexer/twemproxy
-    container_name: twemproxy4
-    ports:
-      - "22124:22121"
-    volumes:
-      - ./twemproxy.yml:/etc/twemproxy.yml
-    command: /usr/local/bin/nutcracker -c /etc/twemproxy.yml
-    networks:
-      - redis-cluster-net
-    restart: unless-stopped
-
-  # ---------------- Nginx TCP 负载 ----------------
-  nginx:
-    image: nginx:alpine
-    container_name: redis-nginx
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    ports:
-      - "22121:22121"
-    networks:
-      - redis-cluster-net
-    depends_on:
-      - twemproxy1
-      - twemproxy2
-      - twemproxy3
-      - twemproxy4
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "-a", "A12345!", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
