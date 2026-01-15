@@ -1,0 +1,95 @@
+variables:
+  REGISTRY: "192.168.10.67"
+  USER: "admin"
+  PASS: "P8jF3sH6vQ1yL5nT"
+  DEPLOY_HOST: "192.168.10.87"
+  DEPLOY_USER: "dzz"
+  DEPLOY_PASSWORD: "Dzz12345!@#"
+  IMAGE_VERSION_BASE: "v0.0.1"   # 公共 version
+  APP_NAME: "egame-grpc03"
+  APP_BINARY: "egame-grpc03.bin"
+  PORT: "8889"
+
+stages:
+  - build
+  - deploy
+
+# ---------------- Build 模板 ----------------
+.build_template: &build_template
+  stage: build
+  image: 192.168.10.67/egame/ci-tools:go1.24.5-podman
+  script:
+    - export STORAGE_DRIVER=vfs
+    - echo "🔨 构建 $APP_BINARY"
+    - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $APP_BINARY .
+    - echo "📦 确保 conf 目录存在"
+    - ls -la conf/
+    - |
+      # 替换分支名中的 '/' 为 '-'，生成合法 tag
+      IMAGE_TAG="${CI_COMMIT_REF_NAME//\//-}-${IMAGE_VERSION_BASE}"
+      echo "📦 构建镜像 $REGISTRY/$APP_NAME:$IMAGE_TAG"
+      podman login --tls-verify=false -u "$USER" -p "$PASS" $REGISTRY
+      podman build --tls-verify=false -t $REGISTRY/$APP_NAME:$IMAGE_TAG .
+      podman push --tls-verify=false $REGISTRY/$APP_NAME:$IMAGE_TAG
+    - rm -f $APP_BINARY
+  artifacts:
+    paths:
+      - $APP_BINARY
+
+# ---------------- Deploy 模板 ----------------
+.deploy_template: &deploy_template
+  stage: deploy
+  image: 192.168.10.67/egame/ci-tools:go1.24.5-podman
+  before_script:
+    - apk add --no-cache openssh-client sshpass
+  script:
+    - |
+      # 仅在指定分支部署
+      if [ "$CI_COMMIT_REF_NAME" != "dzz/local-dev" ]; then
+        echo "⏩ 当前分支不是 local-dev，跳过部署"
+        exit 0
+      fi
+
+      IMAGE_TAG="${CI_COMMIT_REF_NAME//\//-}-${IMAGE_VERSION_BASE}"
+      CONTAINER_NAME="${APP_NAME//\//-}-${CI_COMMIT_REF_NAME//\//-}"
+
+      sshpass -p "$DEPLOY_PASSWORD" ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
+        set -e
+        echo '$DEPLOY_PASSWORD' | sudo -S mkdir -p $APP_PATH/{conf,logs}
+        echo '$DEPLOY_PASSWORD' | sudo -S docker login --username $USER --password-stdin $REGISTRY <<< '$PASS'
+        echo '$DEPLOY_PASSWORD' | sudo -S docker pull $REGISTRY/$APP_NAME:$IMAGE_TAG
+
+        # 停止旧容器
+        echo '$DEPLOY_PASSWORD' | sudo -S docker stop $CONTAINER_NAME 2>/dev/null || true
+        echo '$DEPLOY_PASSWORD' | sudo -S docker rm $CONTAINER_NAME 2>/dev/null || true
+
+        # 启动新容器
+        echo '$DEPLOY_PASSWORD' | sudo -S docker run -d \
+          --name $CONTAINER_NAME \
+          --restart=unless-stopped \
+          -p $HOST_PORT:$CONTAINER_PORT \
+          -v $APP_PATH/conf:/app/conf \
+          -v $APP_PATH/logs:/app/logs \
+          $REGISTRY/$APP_NAME:$IMAGE_TAG
+
+        sudo docker ps --filter name=$CONTAINER_NAME
+      "
+  only:
+    - dzz/local-dev
+
+# ---------------- 服务列表 ----------------
+build-grpc03:
+  <<: *build_template
+  variables:
+    APP_PATH: "/home/dzz/egame-grpc03"
+    HOST_PORT: "8889"
+    CONTAINER_PORT: "8889"
+
+deploy-grpc03:
+  <<: *deploy_template
+  variables:
+    APP_PATH: "/home/dzz/egame-grpc03"
+    HOST_PORT: "8889"
+    CONTAINER_PORT: "8889"
+  needs:
+    - build-grpc03
