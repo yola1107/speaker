@@ -39,25 +39,25 @@ stages:
     - |
       sshpass -p "$DEPLOY_PASSWORD" ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
         set -e
-        echo '$DEPLOY_PASSWORD' | sudo -S mkdir -p $APP_PATH/logs
+        echo '$DEPLOY_PASSWORD' | sudo -S mkdir -p $APP_PATH/{conf,logs}
 
         # 登录并拉取镜像
-        echo '$REPO_HARBOR_PASS' | docker login --username $REPO_HARBOR_USER --password-stdin $REPO_HARBOR
-        echo '$DEPLOY_PASSWORD' | sudo -S docker pull $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
+        echo '$REPO_HARBOR_PASS' | sudo -S docker login --username $REPO_HARBOR_USER --password-stdin $REPO_HARBOR
+        sudo -S docker pull $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
 
         # 停止旧容器
-        echo '$DEPLOY_PASSWORD' | sudo -S docker stop $CONTAINER_NAME 2>/dev/null || true
-        echo '$DEPLOY_PASSWORD' | sudo -S docker rm $CONTAINER_NAME 2>/dev/null || true
+        sudo -S docker stop $CONTAINER_NAME 2>/dev/null || true
+        sudo -S docker rm $CONTAINER_NAME 2>/dev/null || true
 
         # 启动新容器
-        echo '$DEPLOY_PASSWORD' | sudo -S docker run -d \
+        sudo -S docker run -d \
           --name $CONTAINER_NAME \
           --restart=unless-stopped \
           -p $APP_PORT:$APP_PORT \
           -v $APP_PATH/logs:/app/logs \
           $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
 
-        echo '$DEPLOY_PASSWORD' | sudo -S docker ps --filter name=$CONTAINER_NAME
+        sudo -S docker ps --filter name=$CONTAINER_NAME
       "
 
 # ---------- 开发环境 (dzz/local-dev) ----------

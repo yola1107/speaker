@@ -39,10 +39,10 @@ stages:
     - |
       sshpass -p "$DEPLOY_PASSWORD" ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
         set -e
-        echo '$DEPLOY_PASSWORD' | sudo -S mkdir -p $APP_PATH/logs
+        echo '$DEPLOY_PASSWORD' | sudo -S mkdir -p $APP_PATH/{conf,logs}
 
         # 登录并拉取镜像
-        echo '$REPO_HARBOR_PASS' | docker login --username $REPO_HARBOR_USER --password-stdin $REPO_HARBOR
+        echo '$REPO_HARBOR_PASS' | sudo -S docker login --username $REPO_HARBOR_USER --password-stdin $REPO_HARBOR
         echo '$DEPLOY_PASSWORD' | sudo -S docker pull $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
 
         # 停止旧容器
