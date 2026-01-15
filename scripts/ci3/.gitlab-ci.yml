@@ -5,16 +5,13 @@ variables:
   REPO_HARBOR_PASS: "P8jF3sH6vQ1yL5nT"
   REPO_PATH: "egame"
   REPO_PROJECT: "egame-grpc03"
-  DEPLOY_HOST: "192.168.10.87"
   DEPLOY_USER: "dzz"
   DEPLOY_PASSWORD: "Dzz12345!@#"
-  IMAGE_VERSION: "local-dev-v0.0.1"
+  APP_PATH: "/home/dzz/egame-grpc03"
 
 stages:
   - build
   - deploy
-
-# 镜像完整路径: 192.168.10.67/egame/egame-grpc03:local-dev-v0.0.1
 
 # ---------- Build 模板 ----------
 .build_template: &build_template
@@ -27,8 +24,6 @@ stages:
     - podman build --tls-verify=false -t $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION .
     - podman push --tls-verify=false $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
     - rm -f $APP_BINARY
-  only:
-    - dzz/local-dev
 
 # ---------- Deploy 模板 ----------
 .deploy_template: &deploy_template
@@ -60,24 +55,50 @@ stages:
 
         echo '$DEPLOY_PASSWORD' | sudo -S docker ps --filter name=$CONTAINER_NAME
       "
-  only:
-    - dzz/local-dev
 
-# ---------- 服务列表 ----------
-build-grpc03:
+# ---------- 开发环境 (dzz/local-dev) ----------
+build-local-dev:
   <<: *build_template
   variables:
     APP_BINARY: "egame-grpc03.bin"
+    IMAGE_VERSION: "dev-v0.0.1"
+  only:
+    - dzz/local-dev
 
-deploy-grpc03:
+deploy-local-dev:
   <<: *deploy_template
   variables:
+    IMAGE_VERSION: "dev-v0.0.1"
     CONTAINER_NAME: "egame-grpc03-${CI_COMMIT_REF_SLUG}"
+    DEPLOY_HOST: "192.168.10.87"
     HOST_PORT: "8889"
     CONTAINER_PORT: "8889"
-    APP_PATH: "/home/dzz/egame-grpc03"
+  only:
+    - dzz/local-dev
   needs:
-    - job: build-grpc03
+    - job: build-local-dev
+
+# ---------- 测试环境 (dzz/local-test) ----------
+build-local-test:
+  <<: *build_template
+  variables:
+    APP_BINARY: "egame-grpc03.bin"
+    IMAGE_VERSION: "test-v0.1.0"
+  only:
+    - dzz/local-test
+
+deploy-local-test:
+  <<: *deploy_template
+  variables:
+    IMAGE_VERSION: "test-v0.1.0"
+    CONTAINER_NAME: "egame-grpc03-${CI_COMMIT_REF_SLUG}"
+    DEPLOY_HOST: "192.168.10.88"
+    HOST_PORT: "8889"
+    CONTAINER_PORT: "8889"
+  only:
+    - dzz/local-test
+  needs:
+    - job: build-local-test
 
 
 
