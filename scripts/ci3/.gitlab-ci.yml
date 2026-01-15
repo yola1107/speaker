@@ -83,14 +83,14 @@ build-local-test:
   <<: *build_template
   variables:
     APP_BINARY: "egame-grpc03.bin"
-    IMAGE_VERSION: "test-v0.1.0"
+    IMAGE_VERSION: "test-v0.0.1"
   only:
     - dzz/local-test
 
 deploy-local-test:
   <<: *deploy_template
   variables:
-    IMAGE_VERSION: "test-v0.1.0"
+    IMAGE_VERSION: "test-v0.0.1"
     CONTAINER_NAME: "egame-grpc03-${CI_COMMIT_REF_SLUG}"
     DEPLOY_HOST: "192.168.10.88"
     HOST_PORT: "8889"

@@ -8,10 +8,10 @@ cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
 echo "Asia/Shanghai" > /etc/timezone
 
 WORKDIR /app
-COPY egame-grpc03.bin /app
+COPY egame-logic03.bin /app
 COPY conf/*.yaml /app/conf/
 
 EXPOSE 8889
 
 # 确保配置文件存在后，使用正确的配置文件路径
-ENTRYPOINT ["/app/egame-grpc03.bin","-f=/app/conf/config_local.yaml"]
+ENTRYPOINT ["/app/egame-logic03.bin","-f=/app/conf/config_local.yaml"]
