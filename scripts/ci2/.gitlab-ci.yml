@@ -1,0 +1,43 @@
+
+variables:
+  REPO_HARBOR: "repo.qianz.com"
+  REPO_PATH:  "middle-end"
+  REPO_PROJECT: "ddz"
+  REPO_HARBOR_USER: "ci-user"
+  REPO_HARBOR_PASS: "tGEVCyA56w%$"
+  IMAGE_VERSION: "v0.1.18"
+
+stages:
+  - compile
+  - build
+
+compile:
+  stage: compile
+  tags:
+    - middle-end-runner
+  only:
+    - master
+  artifacts:
+    paths:
+      - cmd/
+  image: repo.qianz.com/middle-end/golangandgit:ci-package
+  script:
+    - echo "machine git.huoys.com login chenxn  password NRL97xyK6LsPuhYC-xjA" > $HOME/.netrc
+    - cd cmd && go build
+
+image_build_push_job:
+  stage: build
+  tags:
+    - middle-end-runner
+  only:
+    - master
+  services:
+    - name: repo.qianz.com/middle-end/docker:stable-dind
+      alias: docker
+  before_script:
+    - docker login -u $REPO_HARBOR_USER -p $REPO_HARBOR_PASS $REPO_HARBOR
+  script:
+    - docker pull $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:latest || true
+    - docker build --cache-from $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:latest -t $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION -t $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:latest .
+    - docker push $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
+    - docker push $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:latest
