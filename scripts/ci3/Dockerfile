@@ -5,9 +5,9 @@ RUN apk add --no-cache tzdata && \
     echo "Asia/Shanghai" > /etc/timezone
 
 WORKDIR /app
-COPY egame-grpc03.bin /app
+COPY grpc03.bin /app
 COPY conf/*.yaml /app/conf/
 
 EXPOSE 8889
 
-ENTRYPOINT ["/app/egame-grpc03.bin","-f=/app/conf/config_local.yaml"]
+ENTRYPOINT ["/app/grpc03.bin","-f=/app/conf/config_local.yaml"]
