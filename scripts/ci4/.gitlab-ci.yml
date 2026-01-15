@@ -9,8 +9,9 @@ variables:
   DEPLOY_PASSWORD: "Dzz12345!@#"
   APP_PATH: "/home/dzz/egame-logic03"
   APP_BINARY: "egame-logic03.bin"
-  CONTAINER_NAME: "egame-logic03-${CI_COMMIT_REF_SLUG}"
   APP_PORT: "8889"
+  CONTAINER_NAME: "egame-logic03-${CI_COMMIT_REF_SLUG}"
+  IMAGE_VERSION: "${CI_COMMIT_REF_SLUG}-v0.0.1"
 
 stages:
   - build
@@ -62,15 +63,12 @@ stages:
 # ---------- 开发环境 (dzz/local-dev) ----------
 build-local-dev:
   <<: *build_template
-  variables:
-    IMAGE_VERSION: "dev-v0.0.1"
   only:
     - dzz/local-dev
 
 deploy-local-dev:
   <<: *deploy_template
   variables:
-    IMAGE_VERSION: "dev-v0.0.1"
     DEPLOY_HOST: "192.168.10.87"
   only:
     - dzz/local-dev
@@ -80,15 +78,12 @@ deploy-local-dev:
 # ---------- 测试环境 (dzz/local-test) ----------
 build-local-test:
   <<: *build_template
-  variables:
-    IMAGE_VERSION: "test-v0.0.1"
   only:
     - dzz/local-test
 
 deploy-local-test:
   <<: *deploy_template
   variables:
-    IMAGE_VERSION: "test-v0.0.1"
     DEPLOY_HOST: "192.168.10.88"
   only:
     - dzz/local-test
