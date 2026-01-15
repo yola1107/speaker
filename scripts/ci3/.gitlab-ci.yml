@@ -42,8 +42,8 @@ stages:
         set -e
         echo '$DEPLOY_PASSWORD' | sudo -S mkdir -p $APP_PATH/{conf,logs}
 
-        # 拉取最新镜像
-        echo '$REPO_HARBOR_PASS' | echo '$DEPLOY_PASSWORD' | sudo -S docker login --username $REPO_HARBOR_USER --password-stdin $REPO_HARBOR
+        # 登录并拉取镜像
+        echo '$REPO_HARBOR_PASS' | sudo -S docker login --username $REPO_HARBOR_USER --password-stdin $REPO_HARBOR
         echo '$DEPLOY_PASSWORD' | sudo -S docker pull $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
 
         # 初始化配置（仅第一次）
