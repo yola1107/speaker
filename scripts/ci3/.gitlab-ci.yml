@@ -8,6 +8,9 @@ variables:
   DEPLOY_USER: "dzz"
   DEPLOY_PASSWORD: "Dzz12345!@#"
   APP_PATH: "/home/dzz/egame-grpc03"
+  APP_BINARY: "egame-grpc03.bin"
+  CONTAINER_NAME: "egame-grpc03-${CI_COMMIT_REF_SLUG}"
+  APP_PORT: "8889"
 
 stages:
   - build
@@ -49,7 +52,7 @@ stages:
         echo '$DEPLOY_PASSWORD' | sudo -S docker run -d \
           --name $CONTAINER_NAME \
           --restart=unless-stopped \
-          -p $HOST_PORT:$CONTAINER_PORT \
+          -p $APP_PORT:$APP_PORT \
           -v $APP_PATH/logs:/app/logs \
           $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
 
@@ -60,7 +63,6 @@ stages:
 build-local-dev:
   <<: *build_template
   variables:
-    APP_BINARY: "egame-grpc03.bin"
     IMAGE_VERSION: "dev-v0.0.1"
   only:
     - dzz/local-dev
@@ -69,10 +71,7 @@ deploy-local-dev:
   <<: *deploy_template
   variables:
     IMAGE_VERSION: "dev-v0.0.1"
-    CONTAINER_NAME: "egame-grpc03-${CI_COMMIT_REF_SLUG}"
     DEPLOY_HOST: "192.168.10.87"
-    HOST_PORT: "8889"
-    CONTAINER_PORT: "8889"
   only:
     - dzz/local-dev
   needs:
@@ -82,7 +81,6 @@ deploy-local-dev:
 build-local-test:
   <<: *build_template
   variables:
-    APP_BINARY: "egame-grpc03.bin"
     IMAGE_VERSION: "test-v0.0.1"
   only:
     - dzz/local-test
@@ -91,10 +89,7 @@ deploy-local-test:
   <<: *deploy_template
   variables:
     IMAGE_VERSION: "test-v0.0.1"
-    CONTAINER_NAME: "egame-grpc03-${CI_COMMIT_REF_SLUG}"
     DEPLOY_HOST: "192.168.10.88"
-    HOST_PORT: "8889"
-    CONTAINER_PORT: "8889"
   only:
     - dzz/local-test
   needs:
