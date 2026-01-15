@@ -1,109 +1,91 @@
 
+variables:
+  REPO_HARBOR: "192.168.10.67"
+  REPO_HARBOR_USER: "admin"
+  REPO_HARBOR_PASS: "P8jF3sH6vQ1yL5nT"
+  REPO_PATH: "egame"
+  REPO_PROJECT: "egame-grpc03"
+  IMAGE_VERSION: "local-dev-v0.0.1"
+  DEPLOY_HOST: "192.168.10.87"
+  DEPLOY_USER: "dzz"
+  DEPLOY_PASSWORD: "Dzz12345!@#"
+
+stages:
+  - build
+  - deploy
+
+# 镜像完整路径: 192.168.10.67/egame/egame-grpc03:local-dev-v0.0.1
+
+# ---------- Build 模板 ----------
+.build_template: &build_template
+  stage: build
+  image: $REPO_HARBOR/$REPO_PATH/ci-tools:go1.24.5-podman
+  script:
+    - export STORAGE_DRIVER=vfs
+    - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $APP_BINARY .
+    - podman login --tls-verify=false -u "$REPO_HARBOR_USER" -p "$REPO_HARBOR_PASS" $REPO_HARBOR
+    - podman build --tls-verify=false -t $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION .
+    - podman push --tls-verify=false $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
+    - rm -f $APP_BINARY
+  only:
+    - dzz/local-dev
+
+# ---------- Deploy 模板 ----------
+.deploy_template: &deploy_template
+  stage: deploy
+  image: $REPO_HARBOR/$REPO_PATH/ci-tools:go1.24.5-podman
+  before_script:
+    - apk add --no-cache openssh-client sshpass
+  script:
+    - |
+      sshpass -p "$DEPLOY_PASSWORD" ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
+        set -e
+        echo '$DEPLOY_PASSWORD' | sudo -S mkdir -p $APP_PATH/{conf,logs}
+
+        # 拉取最新镜像
+        echo '$REPO_HARBOR_PASS' | echo '$DEPLOY_PASSWORD' | sudo -S docker login --username $REPO_HARBOR_USER --password-stdin $REPO_HARBOR
+        echo '$DEPLOY_PASSWORD' | sudo -S docker pull $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
+
+        # 初始化配置（仅第一次）
+        if [ ! -d $APP_PATH/conf ] || [ -z \"\$(ls -A $APP_PATH/conf 2>/dev/null)\" ]; then
+          TMP=\$(echo '$DEPLOY_PASSWORD' | sudo -S docker create $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION)
+          echo '$DEPLOY_PASSWORD' | sudo -S docker cp \$TMP:/app/conf/. $APP_PATH/conf/
+          echo '$DEPLOY_PASSWORD' | sudo -S docker rm \$TMP
+        fi
+
+        # 停止旧容器
+        echo '$DEPLOY_PASSWORD' | sudo -S docker stop $CONTAINER_NAME 2>/dev/null || true
+        echo '$DEPLOY_PASSWORD' | sudo -S docker rm $CONTAINER_NAME 2>/dev/null || true
+
+        # 启动新容器
+        echo '$DEPLOY_PASSWORD' | sudo -S docker run -d \
+          --name $CONTAINER_NAME \
+          --restart=unless-stopped \
+          -p $HOST_PORT:$CONTAINER_PORT \
+          -v $APP_PATH/conf:/app/conf \
+          -v $APP_PATH/logs:/app/logs \
+          $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
+
+        echo '$DEPLOY_PASSWORD' | sudo -S docker ps --filter name=$CONTAINER_NAME
+      "
+  only:
+    - dzz/local-dev
+
+# ---------- 服务列表 ----------
+build-grpc03:
+  <<: *build_template
   variables:
-    REPO_HARBOR: "192.168.10.67"
-    REPO_HARBOR_USER: "admin"
-    REPO_HARBOR_PASS: "P8jF3sH6vQ1yL5nT"
-    REPO_PATH: "egame"
-    REPO_PROJECT: "egame-grpc03"
-    IMAGE_VERSION: "local-dev-v0.0.1"
-    DEPLOY_HOST: "192.168.10.87"
-    DEPLOY_USER: "dzz"
-    DEPLOY_PASSWORD: "Dzz12345!@#"
+    APP_BINARY: "egame-grpc03.bin"
 
-  stages:
-    - build
-    - deploy
-  #镜像完整路径: 192.168.10.67/egame/egame-grpc03:local-dev-v0.0.1
-  # ---------- Build 模板 ----------
-  .build_template: &build_template
-    stage: build
-    image: $REPO_HARBOR/$REPO_PATH/ci-tools:go1.24.5-podman
-    script:
-      - echo "🔨 构建 $APP_BINARY"
-      - export STORAGE_DRIVER=vfs
-      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $APP_BINARY .
-      - echo "📦 构建镜像 $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION"
-      - podman login --tls-verify=false -u "$REPO_HARBOR_USER" -p "$REPO_HARBOR_PASS" $REPO_HARBOR
-      - podman build --tls-verify=false -t $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION .
-      - podman push --tls-verify=false $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION
-      - rm -f $APP_BINARY
-    only:
-      - dzz/local-dev
-
-  # ---------- Deploy 模板 ----------
-  .deploy_template: &deploy_template
-    stage: deploy
-    image: $REPO_HARBOR/$REPO_PATH/ci-tools:go1.24.5-podman
-    before_script:
-      - apk add --no-cache openssh-client sshpass
-    script:
-      - |
-        sshpass -p "$DEPLOY_PASSWORD" ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
-          # 创建必要目录和配置文件
-          echo '$DEPLOY_PASSWORD' | sudo -S mkdir -p $APP_PATH/{conf,logs} &&
-          # 检查并复制配置文件到远端服务器
-          if [ ! -f $APP_PATH/conf/config_local.yaml ]; then
-            echo '配置文件 config_local.yaml 不存在，从镜像中提取...'
-            # 拉取最新的镜像
-            echo '$DEPLOY_PASSWORD' | sudo -S docker pull $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION &&
-            # 临时运行容器并复制配置文件
-            TEMP_CONTAINER=\$(sudo docker create $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION) &&
-            sudo docker cp \$TEMP_CONTAINER:/app/conf/config_local.yaml $APP_PATH/conf/config_local.yaml &&
-            sudo docker rm -v \$TEMP_CONTAINER > /dev/null 2>&1
-            echo '已从镜像中提取 config_local.yaml'
-          else
-            echo 'config_local.yaml 已存在'
-          fi &&
-          # 同样确保 config.yaml 也存在
-          if [ ! -f $APP_PATH/conf/config.yaml ]; then
-            echo '配置文件 config.yaml 不存在，从镜像中提取...'
-            if [ -n \"\$TEMP_CONTAINER\" ] && [ \"\$(sudo docker ps -aq -f id=\$TEMP_CONTAINER 2>/dev/null)\" ]; then
-              sudo docker cp \$TEMP_CONTAINER:/app/conf/config.yaml $APP_PATH/conf/config.yaml 2>/dev/null || echo '{}' > $APP_PATH/conf/config.yaml
-            else
-              TEMP_CONTAINER_NEW=\$(sudo docker create $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION) &&
-              sudo docker cp \$TEMP_CONTAINER_NEW:/app/conf/config.yaml $APP_PATH/conf/config.yaml &&
-              sudo docker rm -v \$TEMP_CONTAINER_NEW > /dev/null 2>&1 || echo '{}' > $APP_PATH/conf/config.yaml
-            fi
-          fi &&
-        
-          # 登录 Harbor 并拉取镜像
-          echo '$DEPLOY_PASSWORD' | sudo -S docker login --username $REPO_HARBOR_USER --password-stdin $REPO_HARBOR <<< '$REPO_HARBOR_PASS' &&
-          echo '$DEPLOY_PASSWORD' | sudo -S docker pull $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION &&
-        
-          # 停止并删除旧容器
-          echo '$DEPLOY_PASSWORD' | sudo -S docker stop $CONTAINER_NAME 2>/dev/null || true &&
-          echo '$DEPLOY_PASSWORD' | sudo -S docker rm $CONTAINER_NAME 2>/dev/null || true &&
-        
-          # 启动新容器
-          echo '$DEPLOY_PASSWORD' | sudo -S docker run -d --name $CONTAINER_NAME --restart=unless-stopped \
-          -p $HOST_PORT:$CONTAINER_PORT -v $APP_PATH/conf:/app/conf -v $APP_PATH/logs:/app/logs \
-          $REPO_HARBOR/$REPO_PATH/$REPO_PROJECT:$IMAGE_VERSION &&
-        
-          # 检查状态
-          echo '$DEPLOY_PASSWORD' | sudo -S docker ps -a --filter name=$CONTAINER_NAME &&
-          sleep 3 &&
-          echo '$DEPLOY_PASSWORD' | sudo -S docker logs $CONTAINER_NAME | tail -5
-        "
-    only:
-      - dzz/local-dev
-
-  # ---------- 服务列表 ----------
-  # grpc03
-  build-grpc03:
-    <<: *build_template
-    variables:
-      APP_BINARY: "egame-grpc03.bin"
-      PORT: "8889"
-  deploy-grpc03:
-    <<: *deploy_template
-    variables:
-      APP_BINARY: "egame-grpc03.bin"
-      CONTAINER_NAME: "egame-grpc03-dev"
-      HOST_PORT: "8889"
-      CONTAINER_PORT: "8889"
-      APP_PATH: "/home/dzz/egame-grpc03"
-    needs:
-      - job: build-grpc03
+deploy-grpc03:
+  <<: *deploy_template
+  variables:
+    CONTAINER_NAME: "egame-grpc03-dev"
+    HOST_PORT: "8889"
+    CONTAINER_PORT: "8889"
+    APP_PATH: "/home/dzz/egame-grpc03"
+  needs:
+    - job: build-grpc03
 
 
 
