@@ -1,8 +1,10 @@
-FROM golang:1.19 AS builder
+FROM golang:1.24.5 AS builder
 
-COPY . /src
 WORKDIR /src
+COPY go.mod go.sum ./
+RUN GOPROXY=https://goproxy.cn go mod download
 
+COPY . .
 RUN GOPROXY=https://goproxy.cn make build
 
 FROM debian:stable-slim
@@ -14,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         && apt-get autoremove -y && apt-get autoclean -y
 
 COPY --from=builder /src/bin /app
+COPY configs /data/conf
 
 WORKDIR /app
 

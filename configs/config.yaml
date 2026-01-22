@@ -17,8 +17,15 @@ server:
 data:
   database:
     driver: mysql
-    source: root:root@tcp(127.0.0.1:3306)/test?parseTime=True&loc=Local
+    source: root:123456@tcp(192.168.152.128:3306)/user_demo?parseTime=True&loc=Local
   redis:
-    addr: 127.0.0.1:6379
+    addr: 192.168.152.128:6379
+    password: ""
     read_timeout: 0.2s
     write_timeout: 0.2s
+  rabbitmq:
+    host: 192.168.152.128
+    port: "5672"
+    username: admin
+    password: myMQ#@g3359Blue#@test.com
+    vhost: /

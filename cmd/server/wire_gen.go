@@ -24,8 +24,20 @@ import (
 
 // wireApp init kratos application.
 func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger) (*kratos.App, func(), error) {
-	dataData, cleanup, err := data.NewData(confData, logger)
+	engine, cleanup, err := data.NewMysql(confData, logger)
 	if err != nil {
+		return nil, nil, err
+	}
+	universalClient := data.NewRedis(confData, logger)
+	publisher, cleanup2, err := data.NewRabbitMQ(confData, logger)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	dataData, cleanup3, err := data.NewData(confData, logger, engine, universalClient, publisher)
+	if err != nil {
+		cleanup2()
+		cleanup()
 		return nil, nil, err
 	}
 	speakerRepo := data.NewSpeakerRepo(dataData, logger)
@@ -38,6 +50,8 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger) (*
 	gnetServer := server.NewGNETServer(confServer, speakerService, logger)
 	app := newApp(logger, grpcServer, httpServer, tcpServer, websocketServer, gnetServer)
 	return app, func() {
+		cleanup3()
+		cleanup2()
 		cleanup()
 	}, nil
 }

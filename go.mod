@@ -5,28 +5,35 @@ go 1.24.5
 require (
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
+	github.com/go-sql-driver/mysql v1.9.3
 	github.com/google/wire v0.6.0
 	github.com/json-iterator/go v1.1.12
+	github.com/redis/go-redis/v9 v9.11.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/streadway/amqp v1.1.0
 	github.com/yola1107/kratos/contrib/log/zap/v2 v2.0.0-20250427101520-31f92cf577e8
-	github.com/yola1107/kratos/v2 v2.8.8-0.20251207171705-db74f324f9a3
+	github.com/yola1107/kratos/v2 v2.8.8-0.20260122145507-3c6f027cb223
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20250603155806-513f23925822
 	google.golang.org/grpc v1.73.0
 	google.golang.org/protobuf v1.36.6
+	xorm.io/xorm v1.3.11
 )
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/RussellLuo/timingwheel v0.0.0-20220218152713-54845bda3108 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-kratos/aegis v0.2.0 // indirect
 	github.com/go-playground/form/v4 v4.2.1 // indirect
+	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/golang/glog v1.2.5 // indirect
+	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
@@ -36,6 +43,7 @@ require (
 	github.com/panjf2000/ants/v2 v2.11.3 // indirect
 	github.com/panjf2000/gnet/v2 v2.9.5 // indirect
 	github.com/r3labs/diff/v3 v3.0.1 // indirect
+	github.com/syndtr/goleveldb v1.0.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
@@ -46,7 +54,9 @@ require (
 	golang.org/x/sync v0.15.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
+	golang.org/x/time v0.12.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	xorm.io/builder v0.3.13 // indirect
 )
