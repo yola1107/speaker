@@ -54,7 +54,7 @@ api:
 .PHONY: wire
 # wire
 wire:
-	cd cmd/speaker && wire
+	cd cmd/server && wire
 
 .PHONY: build
 # build
@@ -72,7 +72,8 @@ generate:
 all:
 	make api;
 	make config;
-	make generate;
+	make wire;
+	# make generate;
 
 # show help
 help:
