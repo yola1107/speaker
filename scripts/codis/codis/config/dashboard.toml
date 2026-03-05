@@ -1,0 +1,8 @@
+
+product_name = "codis-test"
+product_auth = ""
+
+dashboard_addr = "0.0.0.0:18080"
+
+coordinator_name = "etcd"
+coordinator_addr = "etcd:2379"

@@ -1,0 +1,140 @@
+version: "3.8"
+
+networks:
+  codis-net:
+    driver: bridge
+
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: codis-etcd
+    command: >
+      sh -c "/usr/local/bin/etcd --listen-client-urls=http://0.0.0.0:2379 --advertise-client-urls=http://etcd:2379"
+    ports:
+      - "2379:2379"
+    networks:
+      - codis-net
+
+  redis-7000:
+    image: redis:7.2
+    container_name: redis-7000
+    command: >
+      sh -c "mkdir -p /data && exec redis-server /conf/redis.conf"
+    volumes:
+      - ./redis/redis_7000.conf:/conf/redis.conf
+      - ./data/7000:/data
+    networks:
+      - codis-net
+
+  redis-7001:
+    image: redis:7.2
+    container_name: redis-7001
+    command: >
+      sh -c "mkdir -p /data && exec redis-server /conf/redis.conf"
+    volumes:
+      - ./redis/redis_7001.conf:/conf/redis.conf
+      - ./data/7001:/data
+    networks:
+      - codis-net
+
+  redis-7002:
+    image: redis:7.2
+    container_name: redis-7002
+    command: >
+      sh -c "mkdir -p /data && exec redis-server /conf/redis.conf"
+    volumes:
+      - ./redis/redis_7002.conf:/conf/redis.conf
+      - ./data/7002:/data
+    networks:
+      - codis-net
+
+  redis-7003:
+    image: redis:7.2
+    container_name: redis-7003
+    command: >
+      sh -c "mkdir -p /data && exec redis-server /conf/redis.conf"
+    volumes:
+      - ./redis/redis_7003.conf:/conf/redis.conf
+      - ./data/7003:/data
+    networks:
+      - codis-net
+
+  codis-dashboard:
+    image: codislabs/codis:3.2.2
+    container_name: codis-dashboard
+    command: ["codis-dashboard", "-c", "/config/dashboard.toml"]
+    volumes:
+      - ./codis/config:/config
+    ports:
+      - "18080:18080"
+    depends_on:
+      - etcd
+    networks:
+      - codis-net
+
+  codis-server-7000:
+    image: codislabs/codis:3.2.2
+    container_name: codis-server-7000
+    command: ["codis-server", "-c", "/config/server_7000.toml"]
+    volumes:
+      - ./codis/config:/config
+    depends_on:
+      - etcd
+      - redis-7000
+    networks:
+      - codis-net
+
+  codis-server-7001:
+    image: codislabs/codis:3.2.2
+    container_name: codis-server-7001
+    command: ["codis-server", "-c", "/config/server_7001.toml"]
+    volumes:
+      - ./codis/config:/config
+    depends_on:
+      - etcd
+      - redis-7001
+    networks:
+      - codis-net
+
+  codis-server-7002:
+    image: codislabs/codis:3.2.2
+    container_name: codis-server-7002
+    command: ["codis-server", "-c", "/config/server_7002.toml"]
+    volumes:
+      - ./codis/config:/config
+    depends_on:
+      - etcd
+      - redis-7002
+    networks:
+      - codis-net
+
+  codis-server-7003:
+    image: codislabs/codis:3.2.2
+    container_name: codis-server-7003
+    command: ["codis-server", "-c", "/config/server_7003.toml"]
+    volumes:
+      - ./codis/config:/config
+    depends_on:
+      - etcd
+      - redis-7003
+    networks:
+      - codis-net
+
+  codis-proxy:
+    image: codislabs/codis:3.2.2
+    container_name: codis-proxy
+    command: ["codis-proxy", "-c", "/config/proxy.toml"]
+    volumes:
+      - ./codis/config:/config
+    ports:
+      - "19000:19000"
+      - "11080:11080"
+    depends_on:
+      - etcd
+      - codis-dashboard
+      - codis-server-7000
+      - codis-server-7001
+      - codis-server-7002
+      - codis-server-7003
+    networks:
+      - codis-net

@@ -1,0 +1,212 @@
+syntax            = "proto3";
+option go_package = "./;protocol";
+package protocol;
+
+// ==================================================
+// Enums (枚举定义)
+// ==================================================
+//
+//// 1=海选轮, 2=淘汰赛, 3=决赛桌
+//
+//enum ChampStatus {
+//    PENDING  = 0;  // 未开始
+//    RUNNING  = 1;  // 进行中
+//    FINISHED = 2;  // 已结束
+//}
+//
+//enum PlayerChampStatus {
+//    REGISTERED = 0;  // 已报名
+//    PLAYING    = 1;  // 游戏中
+//    ELIMINATED = 2;  // 淘汰
+//}
+
+//// ==================================================
+////  阶段配置
+//// ==================================================
+//
+//// 锦标赛配置 (暂时废弃，使用json代替)
+//message ChampConfig {
+//    int32 game_id                  = 1;  // 游戏ID
+//    int32 room_id                  = 2;  // 房间ID
+//    map<int32, StageConfig> stages = 3;  // 阶段配置映射
+//}
+//
+//message StageConfig {
+//    int64 start_time      = 1;  // 开始时间（Unix时间戳）
+//    int64 end_time        = 2;  // 结束时间（Unix时间戳）
+//    repeated int64 scores = 3;  // 排名积分配置
+//    repeated int32 rounds = 4;  // 轮次配置
+//}
+
+/*
+    // 锦标赛相关命令（从50开始）
+    CMD_CHAMP_REGISTER_REQ = 50;  // 锦标赛报名请求
+    CMD_CHAMP_REGISTER_RSP = 51;  // 锦标赛报名响应
+    CMD_CHAMP_INFO_REQ     = 52;  // 锦标赛信息查询请求
+    CMD_CHAMP_INFO_RSP     = 53;  // 锦标赛信息查询响应
+    CMD_CHAMP_RANK_REQ     = 54;  // 锦标赛排名查询请求
+    CMD_CHAMP_RANK_RSP     = 55;  // 锦标赛排名查询响应
+    CMD_CHAMP_STATUS_REQ   = 56;  // 锦标赛状态查询请求
+    CMD_CHAMP_STATUS_RSP   = 57;  // 锦标赛状态查询响应
+    CMD_CHAMP_ERROR_RSP    = 58;  // 锦标赛错误响应
+    CMD_CHAMP_ENTER_TABLE_NTF = 59;  // 锦标赛进入桌子通知
+*/
+
+// ==================================================
+// WebSocket Messages (WebSocket消息)
+// ==================================================
+
+// 锦标赛元信息
+message ChampMeta {
+    int64 game_id     = 1;  // 游戏ID
+    int64 room_id     = 2;  // 房间ID
+    string champ_id   = 3;  // 锦标赛唯一标识符
+    int64 phase_id    = 4;  // 当前阶段ID (1=报名, 2=海选, 3=KO64, 4=KO32, 5=KO16, 6=决赛)
+    int64 start_time  = 5;  // 锦标赛开始时间 (Unix秒级时间戳)
+    int64 end_time    = 6;  // 锦标赛结束时间 (Unix秒级时间戳)
+    int32 max_players = 7;  // 最大参赛人数限制
+}
+
+// 锦标赛报名请求
+message ChampRegisterReq {
+    int64 game_id = 1;  // 游戏ID
+    int64 room_id = 2;  // 房间ID
+}
+
+// 锦标赛报名响应
+message ChampRegisterRsp {
+    int32 code      = 1;  // 错误码（0=成功，其他=失败）
+    string message  = 2;  // 错误信息描述
+    int64 game_id   = 3;  // 游戏ID
+    int64 room_id   = 4;  // 房间ID
+    string champ_id = 5;  // 锦标赛唯一标识符
+    int64 user_id   = 6;  // 用户ID
+}
+
+// 锦标赛信息查询请求
+message ChampInfoReq {
+    int64 game_id = 1;  // 游戏ID
+    int64 room_id = 2;  // 房间ID
+}
+
+// 锦标赛信息响应
+message ChampInfoRsp {
+    int32 code      = 1;  // 错误码（0=成功，其他=失败）
+    string message  = 2;  // 错误信息描述
+    ChampMeta champ = 3;  // 锦标赛元信息
+}
+
+// 锦标赛排名查询请求
+message ChampRankReq {
+    int64 game_id = 1;  // 游戏ID
+    int64 room_id = 2;  // 房间ID
+}
+
+// 锦标赛排名响应
+message ChampRankRsp {
+    int32 code                   = 1;  // 错误码（0=成功，其他=失败）
+    string message               = 2;  // 错误信息描述
+    ChampMeta champ              = 3;  // 锦标赛元信息
+    repeated ChampRankInfo ranks = 4;  // 排名信息列表（按排名顺序）
+}
+
+// 锦标赛排名信息
+message ChampRankInfo {
+    int32 rank       = 1;  // 排名位置（从1开始）
+    int64 user_id    = 2;  // 用户ID
+    string user_name = 3;  // 用户昵称
+    int32 score      = 4;  // 当前积分
+    int64 prize      = 5;  // 奖金金额（分）
+}
+
+// 锦标赛状态查询请求
+message ChampStatusReq {
+    int64 game_id = 1;  // 游戏ID
+    int64 room_id = 2;  // 房间ID
+    //    string champ_id = 3;  // 锦标赛ID
+    //    int64 phase_id  = 4;  // 锦标赛当前阶段 （1-6：报名，海选，ko64，ko32，ko16，final, 其余空闲状态）
+}
+
+// 锦标赛状态响应
+message ChampStatusRsp {
+    int32 code                  = 1;  // 错误码（0=成功，其他=失败）
+    string message              = 2;  // 错误信息描述
+    ChampMeta champ             = 3;  // 锦标赛元信息
+    ChampUserStatus user_status = 4;  // 用户参赛状态（未报名时为空）
+}
+
+// 用户锦标赛状态
+message ChampUserStatus {
+    int64 user_id       = 1;  // 用户ID
+    int32 status        = 2;  // 参赛状态 (0=已报名, 1=比赛中, 2=已淘汰, 3=已晋级)
+    int32 current_score = 3;  // 当前积分
+    int64 current_match = 4;  // 当前对局ID (0表示未在比赛中)
+    int32 rank          = 5;  // 当前排名 (0表示未排名)
+    int32 last_phase_id = 6;  // 最后晋级到的阶段ID
+}
+
+// 锦标赛阶段提醒通知
+message ChampReminder {
+    ChampMeta champ     = 1;  // 锦标赛信息 （即将要开局）
+    repeated int64 uids = 2;  // 需要接收提醒的用户ID列表
+}
+
+// ==================================================
+// Redis Communication Messages (Redis通信消息)
+// ==================================================
+
+// 进入比赛桌通知（推送给客户端）
+message ChampEnterTableNotify {
+    ChampMeta champ           = 1;  // 锦标赛元信息
+    repeated int64 player_ids = 2;  // 该桌所有玩家ID列表
+}
+
+// 对局结果通知（游戏层上报给hallSlot）
+message ChampGameResult {
+    ChampMeta champ                    = 1;  // 锦标赛元信息
+    repeated ChampPlayerResult players = 2;  // 该局所有玩家的结果列表
+    int64 timestamp                    = 3;  // 对局完成时间 (Unix秒级时间戳)
+}
+
+// 玩家对局结果
+message ChampPlayerResult {
+    int64 uid      = 1;  // 玩家用户ID
+    int32 rank     = 2;  // 该局排名 (1=第1名, 2=第2名, 3=第3名, 4=第4名)
+    bool is_winner = 3;  // 是否晋级下一轮
+    int64 score    = 4;  // 本局获得的积分
+}
+
+// 开局通知（hallSlot通知游戏层开始比赛）
+message ChampStartGameNotify {
+    ChampMeta champ           = 1;  // 锦标赛元信息
+    int32 table_id            = 2;  // 比赛桌ID
+    int32 round               = 3;  // 当前轮次编号
+    repeated int64 player_ids = 4;  // 该桌玩家ID列表
+    int64 start_time          = 5;  // 比赛开始时间 (Unix秒级时间戳)
+}
+
+// 锦标赛状态更新通知
+message ChampStatusUpdate {
+    ChampMeta champ      = 1;  // 锦标赛元信息
+    int32 status         = 2;  // 锦标赛状态 (0=未开始, 1=进行中, 2=已结束)
+    int32 current_round  = 3;  // 当前轮次编号
+    int32 active_players = 4;  // 当前活跃玩家数量
+    int64 timestamp      = 5;  // 更新时间 (Unix秒级时间戳)
+}
+
+//// 对局结果消息
+//message ChampMatchResult {
+//    int64 game_id           = 1;  // 游戏ID
+//    int64 room_id           = 2;  // 房间ID
+//    int64 match_id          = 3;  // 对局ID
+//    map<int64, int32> scores = 4;  // 用户ID -> 积分
+//    int64 winner_id         = 5;  // 获胜者ID
+//    int64 timestamp         = 6;  // 时间戳
+//}
+
+//// 锦标赛开始通知
+//message ChampStartNotification {
+//    int64 game_id   = 1;  // 游戏ID
+//    int64 room_id   = 2;  // 房间ID
+//    int64 timestamp = 3;  // 时间戳
+//}

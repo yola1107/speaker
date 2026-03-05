@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>悦读书城 - 让阅读成为一种享受</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        /* 导航栏 */
+        .navbar {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px 50px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 30px;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: #333;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: #667eea;
+        }
+
+        /* 主横幅 */
+        .hero {
+            text-align: center;
+            padding: 100px 20px;
+            color: white;
+        }
+
+        .hero h1 {
+            font-size: 56px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .hero p {
+            font-size: 22px;
+            opacity: 0.9;
+            margin-bottom: 40px;
+        }
+
+        .cta-button {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        /* 特色区域 */
+        .features {
+            background: white;
+            padding: 80px 50px;
+            display: flex;
+            justify-content: center;
+            gap: 50px;
+        }
+
+        .feature-card {
+            text-align: center;
+            padding: 40px;
+            max-width: 300px;
+            border-radius: 20px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .feature-icon {
+            font-size: 50px;
+            margin-bottom: 20px;
+        }
+
+        .feature-card h3 {
+            font-size: 22px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .feature-card p {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        /* 书籍展示 */
+        .books-section {
+            background: #f8f9fa;
+            padding: 80px 50px;
+            text-align: center;
+        }
+
+        .books-section h2 {
+            font-size: 36px;
+            margin-bottom: 50px;
+            color: #333;
+        }
+
+        .books-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .book-card {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+
+        .book-card:hover {
+            transform: translateY(-10px);
+        }
+
+        .book-cover {
+            width: 100%;
+            height: 300px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .book-info {
+            padding: 20px;
+        }
+
+        .book-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .book-author {
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .book-price {
+            font-size: 22px;
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        .buy-button {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 25px;
+            margin-top: 15px;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+
+        .buy-button:hover {
+            opacity: 0.9;
+        }
+
+        /* 页脚 */
+        .footer {
+            background: #2c3e50;
+            color: white;
+            padding: 40px 50px;
+            text-align: center;
+        }
+
+        .footer p {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="logo">悦读书城</div>
+        <div class="nav-links">
+            <a href="#">首页</a>
+            <a href="#">分类</a>
+            <a href="#">排行榜</a>
+            <a href="#">会员</a>
+            <a href="#">我的</a>
+        </div>
+    </nav>
+
+    <!-- 主横幅 -->
+    <section class="hero">
+        <h1>欢迎来到悦读书城</h1>
+        <p>海量图书，品质阅读，让每一次翻阅都是心灵的旅行</p>
+        <button class="cta-button">立即探索</button>
+    </section>
+
+    <!-- 特色区域 -->
+    <section class="features">
+        <div class="feature-card">
+            <div class="feature-icon">📚</div>
+            <h3>精选好书</h3>
+            <p>严格甄选10万+优质图书，涵盖文学、科技、艺术、生活等各个领域</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🚀</div>
+            <h3>极速配送</h3>
+            <p>全国2亿+用户的选择，下单后24小时内发货，3-7天送达</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">👑</div>
+            <h3>会员特权</h3>
+            <p>开通会员享受专属折扣、免费试读、专属客服等尊享服务</p>
+        </div>
+    </section>
+
+    <!-- 推荐书籍 -->
+    <section class="books-section">
+        <h2>热门推荐</h2>
+        <div class="books-grid">
+            <div class="book-card">
+                <div class="book-cover">活着</div>
+                <div class="book-info">
+                    <div class="book-title">活着</div>
+                    <div class="book-author">余华</div>
+                    <div class="book-price">¥35.00</div>
+                    <button class="buy-button">加入购物车</button>
+                </div>
+            </div>
+            <div class="book-card">
+                <div class="book-cover">百年孤独</div>
+                <div class="book-info">
+                    <div class="book-title">百年孤独</div>
+                    <div class="book-author">马尔克斯</div>
+                    <div class="book-price">¥55.00</div>
+                    <button class="buy-button">加入购物车</button>
+                </div>
+            </div>
+            <div class="book-card">
+                <div class="book-cover">三体</div>
+                <div class="book-info">
+                    <div class="book-title">三体</div>
+                    <div class="book-author">刘慈欣</div>
+                    <div class="book-price">¥89.00</div>
+                    <button class="buy-button">加入购物车</button>
+                </div>
+            </div>
+            <div class="book-card">
+                <div class="book-cover">人类简史</div>
+                <div class="book-info">
+                    <div class="book-title">人类简史</div>
+                    <div class="book-author">尤瓦尔·赫拉利</div>
+                    <div class="book-price">¥68.00</div>
+                    <button class="buy-button">加入购物车</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 页脚 -->
+    <footer class="footer">
+        <p>© 2026 悦读书城 - 让阅读成为一种享受</p>
+    </footer>
+
+    <script>
+        // API 调用示例 (连接后端)
+        const API_BASE = 'http://localhost:8000';
+
+        async function loadBooks() {
+            try {
+                const response = await fetch(`${API_BASE}/v1/books?page=1&page_size=10`);
+                const data = await response.json();
+                console.log('Books loaded:', data);
+            } catch (error) {
+                console.log('API not available, using mock data');
+            }
+        }
+
+        // 页面加载时获取书籍
+        loadBooks();
+
+        // 购买按钮点击
+        document.querySelectorAll('.buy-button').forEach(btn => {
+            btn.addEventListener('click', function() {
+                alert('已加入购物车！');
+            });
+        });
+    </script>
+</body>
+</html>

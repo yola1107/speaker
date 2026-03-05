@@ -6,11 +6,13 @@ import (
 
 	"speaker/internal/conf"
 
-	"github.com/yola1107/kratos/contrib/log/zap/v2"
 	"github.com/yola1107/kratos/v2"
 	"github.com/yola1107/kratos/v2/config"
 	"github.com/yola1107/kratos/v2/config/file"
+	"github.com/yola1107/kratos/v2/library/log/zap"
+	zconf "github.com/yola1107/kratos/v2/library/log/zap/conf"
 	"github.com/yola1107/kratos/v2/log"
+	"github.com/yola1107/kratos/v2/transport/gnet"
 	"github.com/yola1107/kratos/v2/transport/grpc"
 	"github.com/yola1107/kratos/v2/transport/http"
 	"github.com/yola1107/kratos/v2/transport/tcp"
@@ -34,7 +36,7 @@ func init() {
 	flag.StringVar(&flagconf, "conf", "../../configs", "config path, eg: -conf config.yaml")
 }
 
-func newApp(logger log.Logger, gs *grpc.Server, hs *http.Server, ts *tcp.Server, ws *websocket.Server) *kratos.App {
+func newApp(logger log.Logger, gs *grpc.Server, hs *http.Server, ts *tcp.Server, ws *websocket.Server, gns *gnet.Server) *kratos.App {
 	return kratos.New(
 		kratos.ID(id),
 		kratos.Name(Name),
@@ -46,6 +48,7 @@ func newApp(logger log.Logger, gs *grpc.Server, hs *http.Server, ts *tcp.Server,
 			hs,
 			ts,
 			ws,
+			gns,
 		),
 	)
 }
@@ -62,10 +65,18 @@ func main() {
 	//	"span.id", tracing.SpanID(),
 	//)
 
-	logger := zap.New(nil)
-	defer logger.Close()
+	//logger := zap.New(nil)
+	//defer logger.Close()
+	//
+	//log.SetLogger(logger)
 
-	log.SetLogger(logger)
+	logger := zap.NewLogger(zconf.DefaultConfig(
+		zconf.WithProduction(),
+		zconf.WithAppName(Name),
+		zconf.WithLevel("debug"),
+		zconf.WithDirectory("./logs"),
+		zconf.WithSensitive([]string{"pwd", "password", "token"}),
+	))
 
 	c := config.New(
 		config.WithSource(

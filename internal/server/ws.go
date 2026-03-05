@@ -17,13 +17,13 @@ func NewWebsocketServer(c *conf.Server, greeter *service.SpeakerService, logger 
 			recovery.Recovery(),
 		),
 	}
-	if c.Tcp.Network != "" {
+	if c.Websocket.Network != "" {
 		opts = append(opts, websocket.Network(c.Websocket.Network))
 	}
-	if c.Tcp.Addr != "" {
+	if c.Websocket.Addr != "" {
 		opts = append(opts, websocket.Address(c.Websocket.Addr))
 	}
-	if c.Tcp.Timeout != nil {
+	if c.Websocket.Timeout != nil {
 		opts = append(opts, websocket.Timeout(c.Websocket.Timeout.AsDuration()))
 	}
 	srv := websocket.NewServer(opts...)

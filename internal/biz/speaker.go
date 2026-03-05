@@ -14,12 +14,12 @@ var (
 	ErrUserNotFound = errors.NotFound(v1.ErrorReason_USER_NOT_FOUND.String(), "user not found")
 )
 
-// Greeter is a Greeter model.
+// Speaker is a Speaker model.
 type Speaker struct {
 	Hello string
 }
 
-// GreeterRepo is a Greater repo.
+// SpeakerRepo is a Speaker repo.
 type SpeakerRepo interface {
 	Save(context.Context, *Speaker) (*Speaker, error)
 	Update(context.Context, *Speaker) (*Speaker, error)
@@ -41,6 +41,7 @@ func NewSpeakerUsecase(repo SpeakerRepo, logger log.Logger) *SpeakerUsecase {
 
 // CreateSpeaker creates a Speaker, and returns the new Speaker.
 func (uc *SpeakerUsecase) CreateSpeaker(ctx context.Context, g *Speaker) (*Speaker, error) {
-	uc.log.WithContext(ctx).Infof("CreateSpeaker: %v", g.Hello)
+	log.Infof("CreateSpeaker: %v", g.Hello)
+	// uc.log.WithContext(ctx).Infof("CreateSpeaker: %v", g.Hello)
 	return uc.repo.Save(ctx, g)
 }

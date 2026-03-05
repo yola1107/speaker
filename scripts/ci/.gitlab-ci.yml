@@ -1,0 +1,40 @@
+variables:
+  REPO_HARBOR: "repo.qianz.com"
+  REPO_PATH:  "sa/games"
+  REPO_HARBOR_USER: "ci-user"
+  REPO_HARBOR_PASS: "tGEVCyA56w%$"
+  REPO_PROJECT: "ckokey"
+  IMAGE_VERSION: "dev0.0.1" 
+ 
+stages:
+  - compile
+  - build
+
+compile:
+  stage: compile
+  tags:
+    - turkey-runner
+  only:
+    - dev
+  artifacts:
+    paths:
+      - cmd
+  image: repo.qianz.com/middle-end/golangandgit:ci-package
+  before_script:
+    - go version
+  script:
+    - echo "machine git.huoys.com login chenxn  password NRL97xyK6LsPuhYC-xjA" > $HOME/.netrc
+    - cd cmd && go build
+
+build_image:
+  stage: build
+  tags:
+    - turkey-runner
+  only:
+    - dev
+  before_script:
+    - docker login -u $REPO_HARBOR_USER -p $REPO_HARBOR_PASS $REPO_HARBOR
+  script:
+    - echo $(pwd)
+    - docker build -t ${REPO_HARBOR}/${REPO_PATH}/${REPO_PROJECT}:$IMAGE_VERSION .
+    - docker push ${REPO_HARBOR}/${REPO_PATH}/${REPO_PROJECT}:${IMAGE_VERSION}

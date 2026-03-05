@@ -1,0 +1,44 @@
+{
+  "_comment": "MCP 服务器配置 - 重启 Claude Code 生效",
+
+  "github": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "在这里填入你的GitHub Token"
+    }
+  },
+
+  "mysql": {
+    "command": "npx",
+    "args": ["-y", "@benborla29/mcp-server-mysql"],
+    "env": {
+      "MYSQL_HOST": "192.168.152.128",
+      "MYSQL_PORT": "3306",
+      "MYSQL_USER": "root",
+      "MYSQL_PASSWORD": "123456",
+      "MYSQL_DATABASE": "user_demo"
+    }
+  },
+
+  "mongodb": {
+    "command": "npx",
+    "args": ["-y", "mongodb-mcp-server"],
+    "env": {
+      "MONGODB_URI": "mongodb://admin:123456@192.168.152.128:27017/?connect=direct"
+    }
+  },
+
+  "redis": {
+    "command": "npx",
+    "args": ["-y", "@liangshanli/mcp-server-redis"],
+    "env": {
+      "REDIS_URL": "redis://192.168.152.128:6379"
+    }
+  },
+
+  "puppeteer": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+  }
+}
