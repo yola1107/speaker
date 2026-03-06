@@ -37,6 +37,12 @@ mkdir -p ~/.claude
     "superpowers@superpowers-marketplace": true,
     "code-review@claude-plugins-official": true
   },
+  "permissions": {
+    "allow": [
+      "*"
+    ],
+    "defaultMode": "bypassPermissions"
+  },
   "language": "中文",
   "skipDangerousModePermissionPrompt": true
 }
