@@ -121,3 +121,33 @@ https://zhuanlan.zhihu.com/p/1997766309396633154
 | Git worktree隔离 | using-git-worktrees            | `/using-git-worktrees`              |
 | 完成开发分支      | finishing-a-development-branch | `/finishing-a-development-branch`   |
 | 并行任务分发      | dispatching-parallel-agents    | `/dispatching-parallel-agents`      |
+
+
+
+ 快速开始
+在 2 分钟内快速上手：
+
+第一步：安装插件
+# 添加市场
+/plugin marketplace add affaan-m/everything-claude-code
+
+# 安装插件
+/plugin install everything-claude-code@everything-claude-code
+第二步：安装规则（必需）
+⚠️ 重要提示： Claude Code 插件无法自动分发 rules，需要手动安装：
+
+# 首先克隆仓库
+git clone https://github.com/affaan-m/everything-claude-code.git
+
+# 复制规则（应用于所有项目）
+cp -r everything-claude-code/rules/* ~/.claude/rules/
+第三步：开始使用
+# 尝试一个命令（插件安装使用命名空间形式）
+/everything-claude-code:plan "添加用户认证"
+
+# 手动安装（选项2）使用简短形式：
+# /plan "添加用户认证"
+
+# 查看可用命令
+/plugin list everything-claude-code@everything-claude-code
+✨ 完成！ 你现在可以使用 13 个代理、43 个技能和 31 个命令。
