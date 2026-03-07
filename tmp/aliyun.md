@@ -32,18 +32,19 @@ mkdir -p ~/.claude
     "ANTHROPIC_BASE_URL": "https://coding.dashscope.aliyuncs.com/apps/anthropic",
     "ANTHROPIC_MODEL": "glm-5"
   },
+  "language": "中文",
   "model": "glm-5",
   "enabledPlugins": {
     "superpowers@superpowers-marketplace": true,
     "code-review@claude-plugins-official": true
   },
+  "autoApprove": true,
   "permissions": {
     "allow": [
       "*"
     ],
     "defaultMode": "bypassPermissions"
   },
-  "language": "中文",
   "skipDangerousModePermissionPrompt": true
 }
 ```
