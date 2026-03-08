@@ -93,6 +93,8 @@ source ~/.bashrc  # 或 source ~/.zshrc
 
 支持的模型：
 ```bash
+/model qwen3-coder-plus
+/model qwen3-coder-next
 /model qwen3.5-plus
 /model glm-5
 /model glm-4.7
