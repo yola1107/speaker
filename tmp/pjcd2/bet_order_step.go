@@ -7,19 +7,16 @@ import (
 	"egame-grpc/gamelogic"
 	"egame-grpc/global"
 	"egame-grpc/model/game"
-	"egame-grpc/model/pool"
 	"egame-grpc/utils/json"
 
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
+var _baseMultiplierDec = decimal.NewFromInt(_baseMultiplier)
+
 func (s *betOrderService) initialize() error {
 	s.client.ClientOfFreeGame.ResetFreeClean()
-	if !s.debug.open {
-		s.orderSn = common.GenerateOrderSn(s.member, s.lastOrder, s.scene.Stage == _spinTypeBase, s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeFreeEli)
-	}
-
 	switch {
 	case !s.isFreeRound && s.scene.Steps == 0:
 		return s.initFirstStepForSpin()
@@ -30,7 +27,7 @@ func (s *betOrderService) initialize() error {
 
 func (s *betOrderService) initFirstStepForSpin() error {
 	if s.debug.open {
-		s.betAmount = decimal.NewFromInt(_baseMultiplier)
+		s.betAmount = _baseMultiplierDec // decimal.NewFromInt(_baseMultiplier)
 		s.amount = s.betAmount
 		return nil
 	}
@@ -57,7 +54,7 @@ func (s *betOrderService) initStepForNextStep() error {
 		s.req.BaseMoney = 1
 		s.req.Multiple = 1
 
-		s.betAmount = decimal.NewFromInt(_baseMultiplier)
+		s.betAmount = _baseMultiplierDec // decimal.NewFromInt(_baseMultiplier)
 		s.amount = decimal.Zero
 		return nil
 	}
@@ -67,28 +64,17 @@ func (s *betOrderService) initStepForNextStep() error {
 
 	s.betAmount = decimal.NewFromFloat(s.client.ClientOfFreeGame.GetBetAmount())
 	s.amount = decimal.Zero
-
-	if s.isFreeRound {
-		switch {
-		case s.lastOrder.FreeOrderSn != "":
-			s.freeOrderSN = s.lastOrder.FreeOrderSn
-		case s.lastOrder.ParentOrderSn != "":
-			s.freeOrderSN = s.lastOrder.ParentOrderSn
-		default:
-			s.freeOrderSN = s.lastOrder.OrderSn
-		}
-	} else {
-		if s.lastOrder.ParentOrderSn != "" {
-			s.parentOrderSN = s.lastOrder.ParentOrderSn
-		} else {
-			s.parentOrderSN = s.lastOrder.OrderSn
-		}
-	}
 	return nil
 }
 
 func (s *betOrderService) updateGameOrder() error {
-	gameOrder := game.GameOrder{
+	if !s.debug.open {
+		s.orderSn = common.GenerateOrderSn(s.member, s.lastOrder, s.scene.Stage == _spinTypeBase, s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeFreeEli)
+	}
+	if s.orderSn == nil {
+		s.orderSn = &common.OrderSN{}
+	}
+	s.gameOrder = &game.GameOrder{
 		MerchantID:        s.merchant.ID,
 		Merchant:          s.merchant.Merchant,
 		MemberID:          s.member.ID,
@@ -115,10 +101,8 @@ func (s *betOrderService) updateGameOrder() error {
 		FreeTimes:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
 	}
 	if s.isFreeRound {
-		gameOrder.IsFree = 1
+		s.gameOrder.IsFree = 1
 	}
-
-	s.gameOrder = &gameOrder
 	return s.fillInGameOrderDetails()
 }
 
@@ -135,43 +119,17 @@ func (s *betOrderService) fillInGameOrderDetails() error {
 	}
 	s.gameOrder.BetDetail = s.symbolGridToString(s.symbolGrid)
 	s.gameOrder.BonusDetail = s.winGridToString(s.winGridReward)
-	s.gameOrder.WinDetails = s.getWinDetailProto()
+	winDetails, err := json.CJSON.MarshalToString(s.buildWinInfo())
+	if err != nil {
+		global.GVA_LOG.Error("fillInGameOrderDetails", zap.Error(err))
+		return err
+	}
+	s.gameOrder.WinDetails = winDetails
 	return nil
 }
 
-// getWinDetailProto 返回 proto 格式的 WinDetails JSON，与 Sgz_WinInfo 结构一致
-func (s *betOrderService) getWinDetailProto() string {
-	winInfo := s.buildWinInfo()
-	if winInfo == nil {
-		return ""
-	}
-	b, err := json.CJSON.MarshalToString(winInfo)
-	if err != nil {
-		global.GVA_LOG.Error("getWinDetailProto: marshal", zap.Error(err))
-		return ""
-	}
-	return b
-}
-
 func (s *betOrderService) settleStep() error {
-	poolRecord := pool.GamePoolRecord{
-		OrderId:      s.gameOrder.OrderSn,
-		MemberId:     s.gameOrder.MemberID,
-		GameType:     1,
-		GameId:       s.game.ID,
-		GameName:     s.game.GameName,
-		MerchantID:   s.merchant.ID,
-		Merchant:     s.merchant.Merchant,
-		Amount:       0,
-		BeforeAmount: 0,
-		AfterAmount:  0,
-		EventType:    1,
-		EventName:    "自然蓄水",
-		EventDesc:    "",
-		CreatedBy:    "SYSTEM",
-	}
 	s.gameOrder.CreatedAt = time.Now().Unix()
-	poolRecord.CreatedAt = time.Now().Unix()
 	saveParam := &gamelogic.SaveTransferParam{
 		Client:      s.client,
 		GameOrder:   s.gameOrder,

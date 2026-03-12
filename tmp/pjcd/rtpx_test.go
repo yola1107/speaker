@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	testRounds       = 1e2
+	testRounds       = 1e4
 	progressInterval = 1e7
 	debugFileOpen    = 10
 	freeModeLogOnly  = 0
@@ -23,13 +23,13 @@ func TestRtp2(t *testing.T) {
 
 	// 免费模式统计
 	var freeRounds, freeWinRounds, freeCascadeSteps int64
-	var freeScatterInFree, freeExtraFreeRounds, freeMaxFreeStreak int64
+	var freeTreasureInFree, freeExtraFreeRounds, freeMaxFreeStreak int64
 	var freeTotalWin float64
 	var freeMaxCascadeSteps int
 
 	totalBet, start := 0.0, time.Now()
 	buf := &strings.Builder{}
-	svc := newBetService()
+	svc := newBerService()
 	svc.initGameConfigs()
 	baseGameCount, freeRoundIdx := 0, 0
 	interval := int64(min(testRounds, progressInterval))
@@ -76,7 +76,7 @@ func TestRtp2(t *testing.T) {
 			}
 
 			cascadeCount++
-			stepWin := float64(svc.stepMultiplier)
+			stepWin := float64(svc.stepMultiplier) // svc.bonusAmount.Round(2).InexactFloat64()
 			roundWin += stepWin
 
 			// 更新最大免费次数
@@ -101,7 +101,7 @@ func TestRtp2(t *testing.T) {
 				freeTotalWin += stepWin
 				freeRoundWin += stepWin
 				if svc.addFreeTime > 0 {
-					freeScatterInFree++
+					freeTreasureInFree++
 					freeExtraFreeRounds += svc.addFreeTime
 				}
 			} else {
@@ -110,6 +110,7 @@ func TestRtp2(t *testing.T) {
 
 			// Round 结束处理
 			if svc.isRoundOver {
+				// 统计连消步数
 				if isFree {
 					freeCascadeSteps += int64(cascadeCount)
 					if cascadeCount > freeMaxCascadeSteps {
@@ -130,15 +131,18 @@ func TestRtp2(t *testing.T) {
 						baseWinRounds++
 					}
 					totalBet += float64(_baseMultiplier)
+					// 基础模式回合结束时，如果触发了免费游戏
 					if svc.addFreeTime > 0 {
 						baseFreeTriggered++
 					}
+					// 记录触发免费游戏的基础局数
 					if svc.isFreeRound {
 						triggeringBaseRound = baseGameCount
 					}
 				}
 				roundWin = 0
 
+				// 只有当免费游戏完全结束时才重置服务并退出内层循环
 				if svc.scene.FreeNum <= 0 {
 					resetBetServiceForNextRound(svc)
 					freeRoundIdx = 0
@@ -155,7 +159,7 @@ func TestRtp2(t *testing.T) {
 	}
 
 	printFinalStats(buf, baseRounds, baseTotalWin, baseWinRounds, baseCascadeSteps, baseMaxCascadeSteps, baseFreeTriggered,
-		freeRounds, freeTotalWin, freeWinRounds, freeCascadeSteps, freeMaxCascadeSteps, freeScatterInFree, freeExtraFreeRounds, freeMaxFreeStreak, totalBet, start)
+		freeRounds, freeTotalWin, freeWinRounds, freeCascadeSteps, freeMaxCascadeSteps, freeTreasureInFree, freeExtraFreeRounds, freeMaxFreeStreak, totalBet, start)
 	result := buf.String()
 	fmt.Print(result)
 	if debugFileOpen > 0 && fileBuf != nil {
@@ -186,14 +190,14 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum, step i
 }
 
 func writeReelInfo(buf *strings.Builder, svc *betOrderService) {
-	if svc.scene == nil || len(svc.scene.SymbolRoller) == 0 {
+	if svc.scene == nil {
 		fprintf(buf, "滚轴配置Index: 0\n转轮信息长度/起始：未初始化\n")
 		return
 	}
-	fprintf(buf, "滚轴配置: ")
+	fprintf(buf, "滚轴配置Index: %d\n转轮信息长度/起始：", svc.scene.SymbolRoller[0].Real)
 	for c := 0; c < len(svc.scene.SymbolRoller); c++ {
 		rc := svc.scene.SymbolRoller[c]
-		fprintf(buf, "len=%d,pos=%d  ", rc.Length, rc.Position)
+		fprintf(buf, "%d[%d～%d]  ", rc.Len, rc.Start, rc.Fall)
 	}
 	fprintf(buf, "\n")
 }
@@ -213,45 +217,61 @@ func writeRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, i
 
 func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFree bool, stepWin, roundWin float64) {
 	fprintf(buf, "Step%d 中奖详情:\n", step)
-	scatterCount := svc.getScatterCount()
+	treasureCount := svc.getScatterCount()
 
 	if len(svc.winInfos) == 0 {
 		fprintf(buf, "\t未中奖\n")
 		if svc.isRoundOver {
-			if isFree && scatterCount > 0 {
-				fprintf(buf, "\t夺宝数量: %d, 增加免费次数: %d\n", scatterCount, svc.addFreeTime)
+			if isFree && treasureCount > 0 {
+				fprintf(buf, "\t💎 当前盘面夺宝数量: %d\n", treasureCount)
 			} else if !isFree && svc.scene.NextStage == _spinTypeFree {
-				fprintf(buf, "\t夺宝=%d 触发免费游戏=%d\n", scatterCount, svc.scene.FreeNum)
+				fprintf(buf, "\t💎💎💎 基础模式。 夺宝=%d 触发免费游戏=%d\n", treasureCount, svc.scene.FreeNum)
 			}
 		}
 		return
 	}
 
+	totalMultiplier := int64(0)
 	for _, elem := range svc.winInfos {
-		fprintf(buf, "\t符号:%2d, 支付线:%2d, 连数: %d, 赔率: %d\n",
-			elem.Symbol, elem.LineIndex+1, elem.SymbolCount, elem.Odds)
+		totalMultiplier += elem.Odds * svc.gameMultiple
 	}
 
-	fprintf(buf, "\tStepMul: %d, RoundMul: %d, 累计中奖: %.2f\n",
-		svc.stepMultiplier, svc.scene.RoundMultiplier, roundWin)
+	for _, elem := range svc.winInfos {
+		lineWin := 0.0
+		if totalMultiplier > 0 {
+			lineWin = stepWin * float64(elem.Odds*svc.gameMultiple) / float64(totalMultiplier)
+		}
+		fprintf(buf, "\t符号:%2d, 支付线:%2d, 乘积: %d, 赔率: %4.2f, 下注: %g×%d, 奖金: %4.2f\n",
+			elem.Symbol, elem.LineCount+1, elem.SymbolCount, float64(elem.Odds), svc.req.BaseMoney, svc.req.Multiple, lineWin)
+	}
 
+	isFreeMode := 0
+	multipliers := svc.gameConfig.BaseRoundMultipliers
+	if svc.isFreeRound {
+		isFreeMode = 1
+		multipliers = svc.gameConfig.FreeRoundMultipliers
+	}
+	fprintf(buf, "\tMode=%d, RoundMul: %d, stepMul: %d, lineMul: %d, gameMul: %d, 累计中奖: %.2f\n",
+		isFreeMode, svc.scene.RoundMultiplier, svc.stepMultiplier, svc.lineMultiplier, svc.gameMultiple, roundWin)
+	fprintf(buf, "\tMulList:%v, ContinueNum: %d, gameMul: %d, butterflyMul: %d, addButterflyCnt: %d, TotalWildEliCount: %d\n",
+		multipliers, svc.scene.ContinueNum, svc.gameMultiple, svc.wildMultiplier, svc.addWildEliCount, svc.scene.TotalWildEliCount)
 	if !svc.isRoundOver {
-		fprintf(buf, "\t连消继续 → Step%d\n", step+1)
+		fprintf(buf, "\t🔁 连消继续 → Step%d\n", step+1)
 		return
 	}
 
-	fprintf(buf, "\t连消结束\n")
-	if isFree && scatterCount > 0 {
-		fprintf(buf, "\t夺宝数量: %d, 增加免费次数: %d\n", scatterCount, svc.addFreeTime)
-	}
+	fprintf(buf, "\t🛑 连消结束（无后续可消除）\n\n")
 	if isFree {
+		if treasureCount > 0 {
+			fprintf(buf, "\t💎 当前盘面夺宝数量: %d, 增加免费次数: %d\n", treasureCount, svc.addFreeTime)
+		}
 		if svc.scene.FreeNum == 0 {
-			fprintf(buf, "\t免费模式结束 - RoundMultiplier: %d, 总奖金: %.2f\n", svc.scene.RoundMultiplier, roundWin)
+			fprintf(buf, "\t🎉 免费模式结束 - RoundMultiplier: %d, 总奖金: %.2f\n", svc.scene.RoundMultiplier, roundWin)
 		} else {
-			fprintf(buf, "\t免费模式继续 - 剩余次数: %d, RoundMultiplier: %d\n", svc.scene.FreeNum, svc.scene.RoundMultiplier)
+			fprintf(buf, "\t➡️ 免费模式继续 - 剩余次数: %d, RoundMultiplier: %d\n", svc.scene.FreeNum, svc.scene.RoundMultiplier)
 		}
 	} else if svc.isFreeRound {
-		fprintf(buf, "\t夺宝=%d 触发免费游戏=%d\n", scatterCount, svc.scene.FreeNum)
+		fprintf(buf, "\t💎💎💎 基础模式。 夺宝=%d 触发免费游戏=%d\n", treasureCount, svc.scene.FreeNum)
 	}
 }
 
@@ -259,14 +279,13 @@ func saveDebugFile(statsResult, detailResult string, start time.Time) {
 	_ = os.MkdirAll("logs", 0755)
 	filename := fmt.Sprintf("logs/%s.txt", time.Now().Format("20060102_150405"))
 	_ = os.WriteFile(filename, []byte(statsResult+detailResult), 0644)
-	fmt.Printf("\n调试信息已保存到: %s\n", filename)
+	fmt.Printf("\n📄 调试信息已保存到: %s\n", filename)
 }
 
 func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float64, baseWinRounds int64,
 	baseCascadeSteps int64, baseMaxCascadeSteps int, baseFreeTriggered int64, freeRounds int64, freeTotalWin float64,
-	freeWinRounds int64, freeCascadeSteps int64, freeMaxCascadeSteps int, freeScatterInFree int64,
+	freeWinRounds int64, freeCascadeSteps int64, freeMaxCascadeSteps int, freeTreasureInFree int64,
 	freeExtraFreeRounds int64, freeMaxFreeStreak int64, totalBet float64, start time.Time) {
-
 	w := func(format string, args ...interface{}) { fprintf(buf, format, args...) }
 	elapsed := time.Since(start)
 	speed := safeDiv(baseRounds, int64(elapsed.Seconds()))
@@ -279,21 +298,39 @@ func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float6
 	w("基础模式总游戏局数: %d\n", baseRounds)
 	w("基础模式总投注(倍数): %.2f\n", totalBet)
 	w("基础模式总奖金: %.2f\n", baseTotalWin)
-	w("基础模式RTP: %.2f%%\n", safeDiv(int64(baseTotalWin)*100, int64(totalBet)))
+	w("基础模式RTP: %.2f%% (基础模式奖金/基础模式投注)\n", safeDiv(int64(baseTotalWin)*100, int64(totalBet)))
 	w("基础模式免费局触发次数: %d\n", baseFreeTriggered)
 	w("基础模式触发免费局比例: %.2f%%\n", safeDiv(baseFreeTriggered*100, baseRounds))
+	w("基础模式平均每局免费次数: %.2f\n", safeDiv(freeRounds, baseRounds))
 	w("基础模式中奖率: %.2f%%\n", safeDiv(baseWinRounds*100, baseRounds))
 	w("基础模式平均连消步数: %.2f\n", safeDiv(baseCascadeSteps, baseRounds))
 	w("基础模式最大连消步数: %d\n", baseMaxCascadeSteps)
+	w("基础模式中奖局数: %d\n", baseWinRounds)
 
 	w("\n[免费模式统计]\n")
 	w("免费模式总游戏局数: %d\n", freeRounds)
 	w("免费模式总奖金: %.2f\n", freeTotalWin)
-	w("免费模式RTP: %.2f%%\n", safeDiv(int64(freeTotalWin)*100, int64(totalBet)))
+	w("免费模式RTP: %.2f%% (免费模式奖金/基础模式投注，因为免费模式不投注)\n", safeDiv(int64(freeTotalWin)*100, int64(totalBet)))
+
+	w("免费模式额外增加局数: %d\n", freeExtraFreeRounds)
+	w("免费模式最大连续局数: %d\n", freeMaxFreeStreak)
+	w("免费模式中奖局数: %d\n", freeWinRounds)
 	w("免费模式中奖率: %.2f%%\n", safeDiv(freeWinRounds*100, freeRounds))
+	w("免费模式出现夺宝的次数: %d (%.2f%%)\n", freeTreasureInFree, safeDiv(freeTreasureInFree*100, freeRounds))
+	w("免费模式平均连消步数: %.2f\n", safeDiv(freeCascadeSteps, freeRounds))
+	w("免费模式最大连消步数: %d\n", freeMaxCascadeSteps)
 
 	totalWin := baseTotalWin + freeTotalWin
+	w("\n[免费触发效率]\n")
+	w("  总免费游戏次数: %d (真实的游戏局数，包含中途增加的免费次数)\n", freeRounds)
+	w("  总触发次数: %d (基础模式触发免费游戏的次数)\n", baseFreeTriggered)
+	w("  平均1次触发获得免费游戏: %.2f次 (总免费游戏次数 / 总触发次数)\n", safeDiv(freeRounds, baseFreeTriggered))
+
 	w("\n[总计]\n")
-	w("总回报率(RTP): %.2f%%\n", safeDiv(int64(totalWin)*100, int64(totalBet)))
+	w("  总投注(倍数): %.2f (仅基础模式投注，免费模式不投注)\n", totalBet)
+	w("  总奖金: %.2f (基础模式奖金 + 免费模式奖金)\n", totalWin)
+	totalRTP := safeDiv(int64(totalWin)*100, int64(totalBet))
+	w("  总回报率(RTP): %.2f%% (总奖金/总投注 = %.2f/%.2f)\n", totalRTP, totalWin, totalBet)
+	w("  基础贡献: %.2f%% | 免费贡献: %.2f%%\n", safeDiv(int64(baseTotalWin)*100, int64(totalWin)), safeDiv(int64(freeTotalWin)*100, int64(totalWin)))
 	w("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 }

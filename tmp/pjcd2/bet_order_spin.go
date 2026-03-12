@@ -2,46 +2,69 @@ package pjcd
 
 func (s *betOrderService) baseSpin() error {
 	if s.debug.open {
-		s.syncGameStage() // RTP 测试模式：手动进行状态转换
+		s.syncGameStage()
 	}
 	if err := s.initialize(); err != nil {
 		return err
 	}
-	// 在 Round 首 Step 时扣减免费次数（参考 mahjong 实现）
 	if s.isFreeRound && s.scene.IsRoundFirstStep {
 		s.client.ClientOfFreeGame.IncrFreeTimes()
 		s.client.ClientOfFreeGame.Decr()
 		s.scene.FreeNum--
-		s.scene.IsRoundFirstStep = false // 标记已处理，避免重复执行
+		s.scene.IsRoundFirstStep = false
 	}
-	// 新回合初始化
 	if s.scene.Steps == 0 && (s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeFree) {
 		s.scene.SymbolRoller = s.initSpinSymbol()
-		//s.scene.WildStateGrid = int64Grid{} // 新回合重置百搭状态
-		// 基础模式：重置蝴蝶百搭个数
-		if !s.isFreeRound {
-			s.scene.ButterflyCount = 0
-		}
-		// 免费模式：ButterflyCount 保持累计（不重置）
 	}
 	s.handleSymbolGrid()
-	//s.initWildStateGrid() // 初始化新百搭状态
 	s.checkSymbolGridWin()
-	s.processWinInfos()
+	wildForm := s.calcWildForm()
+	s.processWinInfos(wildForm)
 	return nil
 }
 
-func (s *betOrderService) processWinInfos() {
-	s.addFreeTime = 0 // 重置增加的免费次数
+func (s *betOrderService) processWinInfos(wildForm int64Grid) {
+	s.addFreeTime = 0
+	s.updateGameMultiple()
 	if len(s.winInfos) > 0 {
-		s.processWin()
+		s.processWin(wildForm)
 	} else {
 		s.processNoWin()
 	}
 }
 
-func (s *betOrderService) processWin() {
-	s.gameMultiple, s.gameMultiples, s.gameMultipleIndex, s.butterflyMultiplier = s.getStreakMultiplier()
+func (s *betOrderService) updateGameMultiple() {
+	s.gameMultiple, s.gameMultipleIndex = s.getStreakMultiplier()
+	if s.gameMultipleIndex >= 3 && s.scene.TotalWildEliCount > 0 {
+		s.wildMultiplier = s.gameConfig.WildAddFourthMultiple * s.scene.TotalWildEliCount
+	}
+	s.gameMultiple += s.wildMultiplier
+}
+
+// getStreakMultiplier 获取轮次倍数
+// 返回值：当前倍数、当前索引
+func (s *betOrderService) getStreakMultiplier() (int64, int64) {
+	var multipliers []int64
+	if s.isFreeRound {
+		multipliers = s.gameConfig.FreeRoundMultipliers
+	} else {
+		multipliers = s.gameConfig.BaseRoundMultipliers
+	}
+	if len(multipliers) == 0 {
+		return 0, 0
+	}
+
+	index := s.scene.ContinueNum
+	if index < 0 {
+		index = 0
+	}
+	if index >= int64(len(multipliers)) {
+		index = int64(len(multipliers)) - 1
+	}
+	return multipliers[index], index
+}
+
+func (s *betOrderService) processWin(wildForm int64Grid) {
 	s.lineMultiplier = s.handleWinElemsMultiplier(s.winInfos)
 	s.stepMultiplier = s.lineMultiplier * s.gameMultiple
 	s.isRoundOver = false
@@ -50,10 +73,7 @@ func (s *betOrderService) processWin() {
 	s.scene.ContinueNum++
 	s.scene.RoundMultiplier += s.stepMultiplier
 
-	// 执行消除和移动流程：消除 -> wild移动 -> 下落+左移动 -> 同步roller
-	//s.evolveWilds() // 进化百搭形态
-
-	s.nextSymbolGrid = s.moveSymbols()
+	s.nextSymbolGrid = s.moveSymbols(wildForm)
 	s.fallingWinSymbols(s.nextSymbolGrid)
 
 	if s.isFreeRound {
@@ -76,13 +96,12 @@ func (s *betOrderService) processNoWin() {
 
 	// 基础模式结束，重置蝴蝶百搭个数
 	if !s.isFreeRound {
-		s.scene.ButterflyCount = 0
+		s.scene.TotalWildEliCount = 0
 	}
 
 	s.updateBonusAmount(0)
 	s.client.ClientOfFreeGame.SetLastWinId(0)
 
-	// 免费次数新增
 	if newFree := s.calcNewFreeGameNum(s.scatterCount); newFree > 0 {
 		s.client.ClientOfFreeGame.Incr(uint64(newFree))
 		s.scene.FreeNum += newFree
@@ -93,21 +112,21 @@ func (s *betOrderService) processNoWin() {
 		if s.scene.FreeNum <= 0 {
 			s.scene.FreeNum = 0
 			s.scene.NextStage = _spinTypeBase
-			s.scene.IsRoundFirstStep = false // 免费模式结束
-			s.scene.ButterflyCount = 0       // 免费结束重置
+			s.scene.IsRoundFirstStep = false
+			s.scene.TotalWildEliCount = 0
 		} else {
 			s.scene.NextStage = _spinTypeFree
-			s.scene.IsRoundFirstStep = true // 下一轮免费回合的首 Step
+			s.scene.IsRoundFirstStep = true
 		}
 	} else {
 		if s.scene.FreeNum > 0 {
 			s.scene.NextStage = _spinTypeFree
-			s.scene.IsRoundFirstStep = true // 新进入免费模式，标记为首 Step
-			s.scene.ButterflyCount = 0      // 进入免费时重置
+			s.scene.IsRoundFirstStep = true
+			s.scene.TotalWildEliCount = 0
 		} else {
 			s.scene.FreeNum = 0
 			s.scene.NextStage = _spinTypeBase
-			s.scene.IsRoundFirstStep = false // 普通模式不需要此标志
+			s.scene.IsRoundFirstStep = false
 		}
 	}
 }

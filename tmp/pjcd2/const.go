@@ -30,13 +30,6 @@ const (
 
 const _minMatchCount = 3 // 最小中奖数量
 
-//// 百搭形态
-//const (
-//	_wildFormCaterpillar int64 = 1 // 毛虫百搭
-//	_wildFormChrysalis   int64 = 2 // 蝶茧百搭
-//	_wildFormButterfly   int64 = 3 // 蝴蝶百搭
-//)
-
 const (
 	_spinTypeBase    = 1  // 普通
 	_spinTypeBaseEli = 11 // 普通消除
@@ -44,6 +37,4 @@ const (
 	_spinTypeFreeEli = 22 // 免费消除
 )
 
-const _maxWinLines = 20 // 20条中奖线
-
-const _wildMask = 10 // 百搭掩码
+const _mask = 10 // 百搭掩码

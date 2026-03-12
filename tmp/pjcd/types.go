@@ -1,31 +1,21 @@
 package pjcd
 
-// int64Grid 3行5列符号网格
+// 以'行'为组
 type int64Grid [_rowCount][_colCount]int64
 
-// WildStateGrid 3行5列百搭状态网格
-type WildStateGrid [_rowCount][_colCount]int8
+// 奖励专用少一行
+type int64GridW [_rowCountReward][_colCount]int64
 
-// WinInfo 中奖信息
+// WinInfo 中奖元素
 type WinInfo struct {
-	Symbol      int64     // 中奖符号ID
-	SymbolCount int64     // 连续符号数量
-	LineIndex   int64     // 中奖线索引
-	Odds        int64     // 赔付倍数
-	Multiplier  int64     // 实际倍数（赔率 × 轮次倍数）
-	WinGrid     int64Grid // 中奖网格
+	Symbol      int64     `json:"val"`     // 符号值
+	SymbolCount int64     `json:"starNum"` // 连续相同符号的个数
+	LineCount   int64     `json:"roadNum"` // 路数（支付线编号，从0开始）
+	Odds        int64     `json:"odds"`    // 符号赔率
+	WinGrid     int64Grid `json:"loc"`     // 中奖位置网格
 }
 
-// SymbolRoller 符号滚轮
-type SymbolRoller struct {
-	BoardSymbol []int64 `json:"board"` // 滚轮上的符号（从下到上）
-	Position    int     `json:"pos"`   // 当前位置
-	Length      int     `json:"len"`   // 滚轮长度
-}
-
-// rtpDebugData RTP测试调试数据
+// rtpDebugData RTP调试数据
 type rtpDebugData struct {
-	open   bool
-	symbol int64
-	count  int64
+	open bool // 是否开启调试模式（用于RTP测试时的详细日志输出）
 }

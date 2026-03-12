@@ -118,17 +118,16 @@ func (s *betOrderService) handleSymbolGrid() {
 
 // checkSymbolGridWin 检查符号网格中奖情况
 func (s *betOrderService) checkSymbolGridWin() {
-	var winInfos []WinInfo
-	var totalWinGrid int64Grid        // 完整4行格式（内部使用，保留完整信息）
-	var totalWinGridReward int64GridW // 奖励3行格式（返回客户端）
-
-	//var wildForm int64Grid // 记录参与中奖的百搭形态
+	symbolKinds := int(_wild - _blank - 1)
+	winInfos := make([]WinInfo, 0, len(s.gameConfig.Lines)*symbolKinds)
+	var totalWinGrid int64Grid
+	var totalWinGridReward int64GridW
 
 	for i, line := range s.gameConfig.Lines {
 		for symbol := _blank + 1; symbol < _wild; symbol++ {
-			var count int64
+			var matchedCount int64
 			var winGrid int64Grid
-			//var wildForm int64 // 记录参与中奖的百搭形态
+			var matchedPositions [_rowCountReward * _colCount]int64
 
 			for _, p := range line {
 				r := p / _colCount
@@ -137,42 +136,33 @@ func (s *betOrderService) checkSymbolGridWin() {
 					break
 				}
 				currSymbol := s.symbolGrid[r][c]
-				//if currSymbol == symbol || currSymbol == _wild {
 				if currSymbol == symbol || isWild(currSymbol) {
 					winGrid[r][c] = currSymbol
-					count++
-					//// 记录百搭形态（如果有）
-					//if currSymbol == _wild && s.scene.WildStateGrid[r][c] > 0 {
-					//	wildForm = s.scene.WildStateGrid[r][c]
-					//}
+					matchedPositions[matchedCount] = p
+					matchedCount++
 				} else {
 					break
 				}
 			}
 
-			if count >= _minMatchCount {
-				odds := s.getSymbolBaseMultiplier(symbol, int(count))
+			if matchedCount >= _minMatchCount {
+				odds := s.getSymbolBaseMultiplier(symbol, int(matchedCount))
 				if odds > 0 {
-					// 直接创建最终格式，避免后续转换
 					winInfos = append(winInfos, WinInfo{
 						Symbol:      symbol,
-						SymbolCount: count,
+						SymbolCount: matchedCount,
 						LineCount:   int64(i),
 						Odds:        odds,
-						WinGrid:     winGrid, // 保留完整4行信息
-						//WildForm:    wildForm, // 记录百搭形态
-
-						//Multiplier: odds,
+						WinGrid:     winGrid,
 					})
-					// 同时更新完整4行和奖励3行两种格式
-					for r := int64(0); r < _rowCount; r++ {
-						for c := int64(0); c < _colCount; c++ {
-							if winGrid[r][c] > 0 {
-								totalWinGrid[r][c] = 1 // 完整4行
-								if r < _rowCountReward {
-									totalWinGridReward[r][c] = 1 // 前3行
-								}
-							}
+					for j := int64(0); j < matchedCount; j++ {
+						p := matchedPositions[j]
+						r := p / _colCount
+						c := p % _colCount
+						totalWinGrid[r][c] = 1
+						// 只有奖励行才设置 reward 网格
+						if r < _rowCountReward {
+							totalWinGridReward[r][c] = 1
 						}
 					}
 				}
@@ -185,44 +175,41 @@ func (s *betOrderService) checkSymbolGridWin() {
 	s.winGridReward = totalWinGridReward
 }
 
-func (s *betOrderService) moveSymbols() int64Grid {
-	nextSymbolGrid := s.symbolGrid
-	//var nextWildGrid int64Grid
+func (s *betOrderService) calcWildForm() int64Grid {
+	s.addWildEliCount = 0
+	s.wildMultiplier = 0
+	var wildForm int64Grid
 
+	for r := int64(0); r < _rowCount; r++ {
+		for c := int64(0); c < _colCount; c++ {
+			if s.winGrid[r][c] > 0 && isWild(s.symbolGrid[r][c]) {
+				wildForm[r][c] = s.symbolGrid[r][c] + _mask
+				if isEmiWild(wildForm[r][c]) {
+					s.addWildEliCount++
+				}
+			}
+		}
+	}
+	s.scene.TotalWildEliCount += s.addWildEliCount
+	return wildForm
+}
+
+func (s *betOrderService) moveSymbols(wildForm int64Grid) int64Grid {
+	nextSymbolGrid := s.symbolGrid
 	for r := 0; r < _rowCountReward; r++ {
 		for c := 0; c < _colCount; c++ {
-			//// SCATTER 不参与消除
-			//if s.symbolGrid[r][c] == _treasure {
-			//	continue
-			//}
-			//// 保留百搭状态（非蝴蝶）
-			//if s.scene.WildStateGrid[r][c] > 0 && s.scene.WildStateGrid[r][c] != _wildFormButterfly {
-			//	continue
-			//}
-			// 中奖位置消除
-			if sym := s.winGrid[r][c]; sym > 0 {
-				if !isWild(sym) {
-					nextSymbolGrid[r][c] = 0 // 消除
-					continue
+			if s.winGrid[r][c] > 0 {
+				// 只有当存在wildForm且不是中奖的蝴蝶百搭时才保留，否则置0
+				if wildForm[r][c] > 0 && !isEmiWild(wildForm[r][c]) {
+					nextSymbolGrid[r][c] = wildForm[r][c]
+				} else {
+					nextSymbolGrid[r][c] = 0
 				}
-				// 蝴蝶参与中奖：累加蝴蝶百搭个数，然后消除
-				if isEmiWild(sym) {
-					s.scene.ButterflyCount++
-					nextSymbolGrid[r][c] = 0 // 消除
-					continue
-				}
-				// 保留百搭状态（非蝴蝶），同时状态递增
-				nextSymbolGrid[r][c] += _wildMask
-				continue
 			}
 		}
 	}
 
-	// 保留百搭状态
-	//s.preserveWildStates(&nextSymbolGrid, &nextWildGrid)
 	s.dropSymbols(&nextSymbolGrid)
-	//s.scene.WildStateGrid = nextWildGrid
-
 	return nextSymbolGrid
 }
 
@@ -252,18 +239,6 @@ func (s *betOrderService) fallingWinSymbols(nextSymbolGrid int64Grid) {
 		s.scene.SymbolRoller[i].ringSymbol(s.gameConfig)
 	}
 }
-
-/*
-	func GridToString(grid *int64Grid, winGrid *int64Grid) string {
-		if grid == nil {
-			return "(空)\n"
-		}
-		var buf strings.Builder
-		buf.Grow(512)
-		writeGridToBuilder(&buf, grid, winGrid)
-		return buf.String()
-	}
-*/
 
 func writeGridToBuilder(buf *strings.Builder, grid *int64Grid, winGrid *int64Grid) {
 	if grid == nil {
@@ -311,10 +286,10 @@ func reverseGridRows(grid *int64Grid) int64Grid {
 
 // isWild 检查符号是否为wild符号（可替代、不可消除、下落时占位）
 func isWild(symbol int64) bool {
-	return symbol%_wildMask == _wild
+	return symbol%_mask == _wild
 }
 
 // isEmiWild 是否是可消除百搭 > 蝴蝶百搭 (毛虫→蝶茧→蝴蝶)
 func isEmiWild(symbol int64) bool {
-	return symbol/_wildMask >= 3
+	return symbol/_mask >= 3
 }

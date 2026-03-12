@@ -6,9 +6,6 @@ type int64Grid [_rowCount][_colCount]int64
 // 奖励专用少一行
 type int64GridW [_rowCountReward][_colCount]int64
 
-//// WildStateGrid 百搭状态网格（记录每个位置的百搭形态）
-//type WildStateGrid [_rowCount][_colCount]int64
-
 // WinInfo 中奖元素
 type WinInfo struct {
 	Symbol      int64     `json:"val"`     // 符号值
@@ -16,10 +13,6 @@ type WinInfo struct {
 	LineCount   int64     `json:"roadNum"` // 路数（支付线编号，从0开始）
 	Odds        int64     `json:"odds"`    // 符号赔率
 	WinGrid     int64Grid `json:"loc"`     // 中奖位置网格
-	//WildForm    int64     `json:"wildForm"` // 参与中奖的百搭形态
-
-	//Multiplier  int64     `json:"mul"`      // 倍数
-
 }
 
 // rtpDebugData RTP调试数据

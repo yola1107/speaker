@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	_benchmarkRounds           int64 = 1e7
-	_benchmarkProgressInterval int64 = 1e6
+	_benchmarkRounds           int64 = 1e8
+	_benchmarkProgressInterval int64 = 1e7
 )
 
 func init() {
@@ -33,7 +33,7 @@ func init() {
 }
 
 func TestRtp(t *testing.T) {
-	svc := newBetService()
+	svc := newBerService()
 	svc.initGameConfigs()
 	start := time.Now()
 	buf := &strings.Builder{}
@@ -52,7 +52,7 @@ func TestRtp(t *testing.T) {
 			panic(err)
 		}
 
-		stepWin := float64(svc.stepMultiplier)
+		stepWin := float64(svc.stepMultiplier) // svc.bonusAmount.Round(2).InexactFloat64()
 		roundWin += stepWin
 		totalWin += stepWin
 
@@ -75,6 +75,7 @@ func TestRtp(t *testing.T) {
 				if roundWin > 0 {
 					baseWinTimes++
 				}
+				// 基础模式回合结束时，如果触发了免费游戏
 				if svc.addFreeTime > 0 {
 					freeTriggerCount++
 					freeTime++
@@ -164,14 +165,15 @@ func printBenchmarkSummary(buf *strings.Builder, baseRounds int64, totalBet, bas
 	w("总回报率(RTP): %.2f%%\n", totalRTP)
 	w("总投注金额: %.2f\n", totalBet)
 	w("总奖金金额: %.2f\n\n", totalWin)
+
 }
 
-func newBetService() *betOrderService {
+func newBerService() *betOrderService {
 	return &betOrderService{
 		req: &request.BetOrderReq{
 			MerchantId: 20020,
 			MemberId:   1,
-			GameId:     GameID,
+			GameId:     _gameID,
 			BaseMoney:  1,
 			Multiple:   1,
 		},
@@ -186,7 +188,7 @@ func newBetService() *betOrderService {
 			Currency:   "USD",
 		},
 		game: &game.Game{
-			ID: GameID,
+			ID: _gameID,
 		},
 		client: &client.Client{
 			ClientOfFreeGame: &client.ClientOfFreeGame{},
@@ -201,7 +203,7 @@ func newBetService() *betOrderService {
 }
 
 func resetBetServiceForNextRound(s *betOrderService) {
-	s.roundMultiplier = 0
+	s.gameMultiple = 1
 	s.stepMultiplier = 0
 	s.lineMultiplier = 0
 	s.scatterCount = 0
@@ -209,7 +211,6 @@ func resetBetServiceForNextRound(s *betOrderService) {
 	s.client.ClientOfFreeGame.Reset()
 	s.client.ClientOfFreeGame.ResetGeneralWinTotal()
 	s.client.ClientOfFreeGame.ResetRoundBonus()
-	s.client.ClientOfFreeGame.ResetRoundBonusStaging()
 	s.client.SetLastMaxFreeNum(0)
 }
 

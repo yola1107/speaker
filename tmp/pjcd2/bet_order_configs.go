@@ -10,25 +10,23 @@ import (
 )
 
 type gameConfigJson struct {
-	PayTable                       [][]int64 `json:"pay_table"`                            // 赔付表
-	Lines                          [][]int64 `json:"lines"`                                // 中奖线定义（20条支付线）
-	BaseSymbolWeights              []int     `json:"base_symbol_weights"`                  // 基础模式符号权重（万分比）
-	FreeSymbolWeights              []int     `json:"free_symbol_weights"`                  // 免费模式符号权重（万分比）
-	SymbolPermutationWeights       []int     `json:"symbol_permutation_weights"`           // 符号排列权重（单符号/二连/三连）
-	BaseScatterProb                int       `json:"base_scatter_prob"`                    // 基础模式夺宝符号替换概率（万分比）
-	BaseWildProb                   int       `json:"base_wild_prob"`                       // 基础模式百搭符号替换概率（万分比）
-	FreeScatterProb                int       `json:"free_scatter_prob"`                    // 免费模式夺宝符号替换概率（万分比）
-	FreeWildProb                   int       `json:"free_wild_prob"`                       // 免费模式百搭符号替换概率（万分比）
-	BaseRoundMultipliers           []int64   `json:"base_round_multipliers"`               // 基础模式轮次倍数 [1,2,3,5]
-	FreeRoundMultipliers           []int64   `json:"free_round_multipliers"`               // 免费模式轮次倍数 [3,6,9,15]
-	WildAddFourthMultiple          int64     `json:"wild_add_fourth_multiple"`             // 蝴蝶百搭增加第4轮倍数值
-	BaseReelGenerateInterval       int       `json:"base_reel_generate_interval"`          // 基础轮轴重新生成间隔
-	FreeGameTimes                  int64     `json:"free_game_times"`                      // 免费游戏基础次数
-	FreeGameScatterMin             int64     `json:"free_game_scatter_min"`                // 触发免费游戏最小夺宝符号数
-	FreeGameAddTimesPerScatter     int64     `json:"free_game_add_times_per_scatter"`      // 免费游戏每个额外夺宝符号增加次数
-	FreeGameAddTimes               int64     `json:"free_game_add_times"`                  // 免费模式再触发基础增加次数
-	FreeGameAddTimesScatterMin     int64     `json:"free_game_add_times_scatter_min"`      // 免费模式再触发最小夺宝符号数
-	FreeGameAddMoreTimesPerScatter int64     `json:"free_game_add_more_times_per_scatter"` // 免费模式再触发每个额外夺宝符号增加次数
+	PayTable                   [][]int64 `json:"pay_table"`                       // 赔付表
+	Lines                      [][]int64 `json:"lines"`                           // 中奖线定义（20条支付线）
+	BaseSymbolWeights          []int     `json:"base_symbol_weights"`             // 基础模式符号权重（万分比）
+	FreeSymbolWeights          []int     `json:"free_symbol_weights"`             // 免费模式符号权重（万分比）
+	SymbolPermutationWeights   []int     `json:"symbol_permutation_weights"`      // 符号排列权重（单符号/二连/三连）
+	BaseScatterProb            int       `json:"base_scatter_prob"`               // 基础模式夺宝符号替换概率（万分比）
+	BaseWildProb               int       `json:"base_wild_prob"`                  // 基础模式百搭符号替换概率（万分比）
+	FreeScatterProb            int       `json:"free_scatter_prob"`               // 免费模式夺宝符号替换概率（万分比）
+	FreeWildProb               int       `json:"free_wild_prob"`                  // 免费模式百搭符号替换概率（万分比）
+	BaseRoundMultipliers       []int64   `json:"base_round_multipliers"`          // 基础模式轮次倍数 [1,2,3,5]
+	FreeRoundMultipliers       []int64   `json:"free_round_multipliers"`          // 免费模式轮次倍数 [3,6,9,15]
+	WildAddFourthMultiple      int64     `json:"wild_add_fourth_multiple"`        // 蝴蝶百搭增加第4轮倍数值（配置里拼写为 multipier）
+	BaseReelGenerateInterval   int       `json:"base_reel_generate_interval"`     // 基础轮轴重新生成间隔
+	FreeGameSpins              int64     `json:"free_game_spins"`                 // 免费游戏基础次数
+	FreeGameScatterMin         int64     `json:"free_game_scatter_min"`           // 触发免费游戏最小夺宝符号数
+	FreeGameAddSpinsPerScatter int64     `json:"free_game_add_spins_per_scatter"` // 免费游戏每个额外夺宝符号增加次数
+	FreeGameTwoScatterAddTimes int64     `json:"free_game_two_scatter_add_times"` // 免费模式 2 个夺宝时额外增加次数（再触发基础值）
 
 	RollCfg  RollConf `json:"roll_cfg"`  // 滚轴配置
 	RealData []Reals  `json:"real_data"` // 真实数据
@@ -171,60 +169,24 @@ func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64
 	return table[starN-1]
 }
 
-func (s *betOrderService) calcWinMultiples() {
-
-}
-
-// getStreakMultiplier 获取轮次倍数
-// 返回值：当前倍数、倍数列表、当前索引、蝴蝶百搭贡献的倍数
-// 第4轮(index=3)倍数 = multipliers[3] + ButterflyCount * WildAddFourthMultiple
-func (s *betOrderService) getStreakMultiplier() (int64, []int64, int64, int64) {
-	var multipliers []int64
-	if s.isFreeRound {
-		multipliers = s.gameConfig.FreeRoundMultipliers
-	} else {
-		multipliers = s.gameConfig.BaseRoundMultipliers
-	}
-
-	index := s.scene.ContinueNum
-	if index >= int64(len(multipliers)) {
-		index = int64(len(multipliers)) - 1
-	}
-
-	gameMul := multipliers[index]
-
-	// 计算蝴蝶百搭贡献的倍数
-	// 蝴蝶百搭倍数 = 蝴蝶个数 * WildAddFourthMultiple
-	butterflyMultiplier := int64(0)
-	if s.scene.ButterflyCount > 0 {
-		butterflyMultiplier = s.scene.ButterflyCount * s.gameConfig.WildAddFourthMultiple
-	}
-
-	// 第4轮开始（index>=3）需要加上蝴蝶百搭贡献的倍数
-	if index >= 3 && butterflyMultiplier > 0 {
-		gameMul += butterflyMultiplier
-	}
-
-	return gameMul, multipliers, index, butterflyMultiplier
-}
-
 // calcNewFreeGameNum 计算触发免费游戏的次数
-// 基础模式：scatter >= 3 → 8 + (scatter-3)*2
-// 免费模式：scatter >= 2 → 3 + (scatter-2)*2
+// 基础模式：scatter >= free_game_scatter_min → free_game_spins + (scatter - min) * free_game_add_spins_per_scatter
+// 免费模式再触发：scatter >= 2 → free_game_two_scatter_add_times + (scatter - 2) * free_game_add_spins_per_scatter
 func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
 	if s.isFreeRound {
-		// 免费模式retrigger
-		if scatterCount < s.gameConfig.FreeGameAddTimesScatterMin {
+		// 免费模式再触发：2 个夺宝起算
+		const freeRetriggerScatterMin = 2
+		if scatterCount < freeRetriggerScatterMin {
 			return 0
 		}
-		return s.gameConfig.FreeGameAddTimes +
-			(scatterCount-s.gameConfig.FreeGameAddTimesScatterMin)*s.gameConfig.FreeGameAddMoreTimesPerScatter
+		return s.gameConfig.FreeGameTwoScatterAddTimes +
+			(scatterCount-freeRetriggerScatterMin)*s.gameConfig.FreeGameAddSpinsPerScatter
 	}
 
 	// 基础模式触发
 	if scatterCount < s.gameConfig.FreeGameScatterMin {
 		return 0
 	}
-	return s.gameConfig.FreeGameTimes +
-		(scatterCount-s.gameConfig.FreeGameScatterMin)*s.gameConfig.FreeGameAddTimesPerScatter
+	return s.gameConfig.FreeGameSpins +
+		(scatterCount-s.gameConfig.FreeGameScatterMin)*s.gameConfig.FreeGameAddSpinsPerScatter
 }

@@ -11,26 +11,22 @@ import (
 	"go.uber.org/zap"
 )
 
-// SpinSceneData 游戏场景数据（存储到Redis）
 type SpinSceneData struct {
-	Steps            uint64                  `json:"steps"`   // step步数
-	Stage            int8                    `json:"stage"`   // 当前阶段
-	NextStage        int8                    `json:"nStage"`  // 下一阶段
-	FreeNum          int64                   `json:"freeNum"` // 剩余免费次数
-	ContinueNum      int64                   `json:"cNum"`    // 连续消除次数（本轮）
-	MultipleIndex    int64                   `json:"mIndex"`  // 当前轮次在倍数数组中的索引（0-based）
-	RoundMultiplier  int64                   `json:"rMul"`    // 回合倍数累计
-	SymbolRoller     [_colCount]SymbolRoller `json:"sRoller"` // 5条轮轴（当前盘面）
-	WildStates       WildStateGrid           `json:"wildSt"`  // 百搭状态网格
-	ButterflyBonus   int64                   `json:"bfBonus"` // 蝴蝶百搭累加倍数（免费模式跨spin）
-	IsRoundFirstStep bool                    `json:"isFirst"` // 是否为回合首step
-	// 轮轴持久化（服务器重启后恢复）
-	BaseReelData      [][]int64 `json:"baseReel"` // 基础模式完整轮轴（5列×100符号）
-	FreeReelData      [][]int64 `json:"freeReel"` // 免费模式完整轮轴（5列×100符号）
-	BaseReelSpinCount int64     `json:"brSpin"`   // 基础轮轴已使用次数
+	Steps             uint64                  `json:"steps"`             // step步数
+	Stage             int8                    `json:"stage"`             // 运行阶段
+	NextStage         int8                    `json:"nStage"`            // 下一阶段
+	BaseReelUseCount  int64                   `json:"baseReelUseCount"`  // 基础模式已进行的局数
+	BaseReelData      [][]int64               `json:"baseReelData"`      // 基础模式滚轴数据
+	FreeReelData      [][]int64               `json:"freeReelData"`      // 免费模式滚轴数据
+	FreeNum           int64                   `json:"freeNum"`           // 剩余免费次数（独立统计，不依赖client）
+	ContinueNum       int64                   `json:"cNum"`              // 连续消除次数
+	RoundMultiplier   int64                   `json:"rMul"`              // 回合倍数
+	SymbolRoller      [_colCount]SymbolRoller `json:"sRoller"`           // 滚轮符号表
+	IsRoundFirstStep  bool                    `json:"isFirstStep"`       // 是否为 Round 首 Step（免费次数扣减标志）
+	TotalWildEliCount int64                   `json:"totalWildEliCount"` // 蝴蝶百搭累计消除个数（基础模式每spin清空，免费模式累计）
 }
 
-var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", GameID)
+var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", _gameID)
 
 func (s *betOrderService) sceneKey() string {
 	return fmt.Sprintf("%s:%s:%d", global.GVA_CONFIG.System.Site, sceneDataKeyPrefix, s.member.ID)
@@ -62,28 +58,24 @@ func (s *betOrderService) reloadScene() error {
 		}
 	}
 
-	// 加载场景后进行状态初始化
+	// 加载场景后立即进行状态切换
 	s.syncGameStage()
 	return nil
 }
 
-// syncGameStage 同步游戏阶段状态
 func (s *betOrderService) syncGameStage() {
-	// 初始阶段
 	if s.scene.Stage == 0 {
 		s.scene.Stage = _spinTypeBase
 	}
 
-	// 阶段切换
 	if s.scene.NextStage > 0 {
 		s.scene.Stage = s.scene.NextStage
 		s.scene.NextStage = 0
 	}
 
-	// 判断是否免费回合
 	s.isFreeRound = s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeFreeEli
 
-	// 加载百搭状态
-	s.wildStates = s.scene.WildStates
-	s.butterflyBonus = s.scene.ButterflyBonus
+	if s.scene.Steps == 0 {
+		s.scene.RoundMultiplier = 0
+	}
 }

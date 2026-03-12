@@ -12,17 +12,18 @@ import (
 )
 
 type SpinSceneData struct {
-	Steps            uint64                  `json:"steps"`          // step步数
-	Stage            int8                    `json:"stage"`          // 运行阶段
-	NextStage        int8                    `json:"nStage"`         // 下一阶段
-	FreeNum          int64                   `json:"freeNum"`        // 剩余免费次数（独立统计，不依赖client）
-	ContinueNum      int64                   `json:"cNum"`           // 连续消除次数
-	RoundMultiplier  int64                   `json:"rMul"`           // 回合倍数
-	SymbolRoller     [_colCount]SymbolRoller `json:"sRoller"`        // 滚轮符号表
-	IsRoundFirstStep bool                    `json:"isFirstStep"`    // 是否为 Round 首 Step（免费次数扣减标志）
-	ButterflyCount   int64                   `json:"butterflyCount"` // 蝴蝶百搭累计消除个数（基础模式每spin清空，免费模式累计）
-
-	//WildStateGrid    int64Grid               `json:"wildGrid"`       // 百搭状态网格
+	Steps             uint64                  `json:"steps"`             // step步数
+	Stage             int8                    `json:"stage"`             // 运行阶段
+	NextStage         int8                    `json:"nStage"`            // 下一阶段
+	BaseReelUseCount  int64                   `json:"baseReelUseCount"`  // 基础模式已进行的局数
+	BaseReelData      [][]int64               `json:"baseReelData"`      // 基础模式滚轴数据
+	FreeReelData      [][]int64               `json:"freeReelData"`      // 免费模式滚轴数据
+	FreeNum           int64                   `json:"freeNum"`           // 剩余免费次数（独立统计，不依赖client）
+	ContinueNum       int64                   `json:"cNum"`              // 连续消除次数
+	RoundMultiplier   int64                   `json:"rMul"`              // 回合倍数
+	SymbolRoller      [_colCount]SymbolRoller `json:"sRoller"`           // 滚轮符号表
+	IsRoundFirstStep  bool                    `json:"isFirstStep"`       // 是否为 Round 首 Step（免费次数扣减标志）
+	TotalWildEliCount int64                   `json:"totalWildEliCount"` // 蝴蝶百搭累计消除个数（基础模式每spin清空，免费模式累计）
 }
 
 var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", _gameID)

@@ -18,10 +18,8 @@ var (
 	InsufficientBalance  = errors.New("insufficient balance")
 )
 
-// Game 游戏实例
 type Game struct{}
 
-// NewGame 创建游戏实例
 func NewGame() *Game {
 	return &Game{}
 }
@@ -41,7 +39,6 @@ func (g *Game) NewBetOrder(req *request.BetOrderReq) (pbData []byte, result stri
 	return betService.betOrder(req)
 }
 
-// MemberLogin 用户登录
 func (g *Game) MemberLogin(req *pb.LoginStreamReq, c *client.Client) (result string, err error) {
 	defer func() {
 		if r := recover(); r != nil {

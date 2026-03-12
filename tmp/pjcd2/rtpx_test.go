@@ -233,28 +233,28 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 
 	totalMultiplier := int64(0)
 	for _, elem := range svc.winInfos {
-		totalMultiplier += elem.Multiplier * svc.gameMultiple
+		totalMultiplier += elem.Odds * svc.gameMultiple
 	}
 
 	for _, elem := range svc.winInfos {
 		lineWin := 0.0
 		if totalMultiplier > 0 {
-			lineWin = stepWin * float64(elem.Multiplier*svc.gameMultiple) / float64(totalMultiplier)
+			lineWin = stepWin * float64(elem.Odds*svc.gameMultiple) / float64(totalMultiplier)
 		}
 		fprintf(buf, "\t符号:%2d, 支付线:%2d, 乘积: %d, 赔率: %4.2f, 下注: %g×%d, 奖金: %4.2f\n",
 			elem.Symbol, elem.LineCount+1, elem.SymbolCount, float64(elem.Odds), svc.req.BaseMoney, svc.req.Multiple, lineWin)
 	}
 
 	isFreeMode := 0
+	multipliers := svc.gameConfig.BaseRoundMultipliers
 	if svc.isFreeRound {
 		isFreeMode = 1
+		multipliers = svc.gameConfig.FreeRoundMultipliers
 	}
 	fprintf(buf, "\tMode=%d, RoundMul: %d, stepMul: %d, lineMul: %d, gameMul: %d, 累计中奖: %.2f\n",
 		isFreeMode, svc.scene.RoundMultiplier, svc.stepMultiplier, svc.lineMultiplier, svc.gameMultiple, roundWin)
-	//if svc.isFreeRound {
-	fprintf(buf, "\tMulList:%v, ContinueNum: %d, gameMul: %d, butterflyMul: %d, ButterflyCount: %d\n",
-		svc.gameMultiples, svc.scene.ContinueNum, svc.gameMultiple, svc.butterflyMultiplier, svc.scene.ButterflyCount)
-	//}
+	fprintf(buf, "\tMulList:%v, ContinueNum: %d, gameMul: %d, butterflyMul: %d, addButterflyCnt: %d, TotalWildEliCount: %d\n",
+		multipliers, svc.scene.ContinueNum, svc.gameMultiple, svc.wildMultiplier, svc.addWildEliCount, svc.scene.TotalWildEliCount)
 	if !svc.isRoundOver {
 		fprintf(buf, "\t🔁 连消继续 → Step%d\n", step+1)
 		return
