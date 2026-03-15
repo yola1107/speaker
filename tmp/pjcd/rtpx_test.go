@@ -213,6 +213,12 @@ func writeRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, i
 		fprintf(buf, "\n=============[基础模式] 第%d局 =============\n", gameNum)
 	}
 	writeReelInfo(buf, svc)
+	// 打印5个滚轴的完整数据（每个长度100）
+	fprintf(buf, "滚轴数据:\n")
+	for col := 0; col < _colCount; col++ {
+		fprintf(buf, "  %v\n", svc.scene.SymbolRoller[col].Reel)
+	}
+	fprintf(buf, "\n")
 }
 
 func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFree bool, stepWin, roundWin float64) {

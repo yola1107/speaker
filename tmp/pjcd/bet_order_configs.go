@@ -33,7 +33,7 @@ type SymbolRoller struct {
 	Col         int              `json:"col"`   // 第几列
 	Len         int              `json:"len"`   // 长度
 	Start       int              `json:"start"` // 开始索引
-	Fall        int              `json:"fall"`  // 开始索引
+	Fall        int              `json:"fall"`  // 下落索引（用于连消时获取下一个符号）
 	BoardSymbol [_rowCount]int64 `json:"board"` // 盘面符号
 	Reel        []int64          `json:"reel"`  // 当前列完整轮轴数据
 }

@@ -118,6 +118,75 @@ func (s *betOrderService) handleSymbolGrid() {
 
 // checkSymbolGridWin 检查符号网格中奖情况
 func (s *betOrderService) checkSymbolGridWin() {
+	var winInfos []WinInfo
+	var totalWinGrid int64Grid        // 完整4行格式（内部使用，保留完整信息）
+	var totalWinGridReward int64GridW // 奖励3行格式（返回客户端）
+
+	//var wildForm int64Grid // 记录参与中奖的百搭形态
+
+	for i, line := range s.gameConfig.Lines {
+		for symbol := _blank + 1; symbol < _wild; symbol++ {
+			var count int64
+			var winGrid int64Grid
+			//var wildForm int64 // 记录参与中奖的百搭形态
+
+			for _, p := range line {
+				r := p / _colCount
+				c := p % _colCount
+				if r >= _rowCountReward {
+					break
+				}
+				currSymbol := s.symbolGrid[r][c]
+				//if currSymbol == symbol || currSymbol == _wild {
+				if currSymbol == symbol || isWild(currSymbol) {
+					winGrid[r][c] = currSymbol
+					count++
+					//// 记录百搭形态（如果有）
+					//if currSymbol == _wild && s.scene.WildStateGrid[r][c] > 0 {
+					//	wildForm = s.scene.WildStateGrid[r][c]
+					//}
+				} else {
+					break
+				}
+			}
+
+			if count >= _minMatchCount {
+				odds := s.getSymbolBaseMultiplier(symbol, int(count))
+				if odds > 0 {
+					// 直接创建最终格式，避免后续转换
+					winInfos = append(winInfos, WinInfo{
+						Symbol:      symbol,
+						SymbolCount: count,
+						LineCount:   int64(i),
+						Odds:        odds,
+						WinGrid:     winGrid, // 保留完整4行信息
+						//WildForm:    wildForm, // 记录百搭形态
+
+						//Multiplier: odds,
+					})
+					// 同时更新完整4行和奖励3行两种格式
+					for r := int64(0); r < _rowCount; r++ {
+						for c := int64(0); c < _colCount; c++ {
+							if winGrid[r][c] > 0 {
+								totalWinGrid[r][c] = 1 // 完整4行
+								if r < _rowCountReward {
+									totalWinGridReward[r][c] = 1 // 前3行
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	s.winInfos = winInfos
+	s.winGrid = totalWinGrid
+	s.winGridReward = totalWinGridReward
+}
+
+/*// checkSymbolGridWin 检查符号网格中奖情况
+func (s *betOrderService) checkSymbolGridWin() {
 	symbolKinds := int(_wild - _blank - 1)
 	winInfos := make([]WinInfo, 0, len(s.gameConfig.Lines)*symbolKinds)
 	var totalWinGrid int64Grid
@@ -173,7 +242,7 @@ func (s *betOrderService) checkSymbolGridWin() {
 	s.winInfos = winInfos
 	s.winGrid = totalWinGrid
 	s.winGridReward = totalWinGridReward
-}
+}*/
 
 func (s *betOrderService) calcWildForm() int64Grid {
 	s.addWildEliCount = 0

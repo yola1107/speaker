@@ -18,13 +18,13 @@ func (s *betOrderService) baseSpin() error {
 	}
 	s.handleSymbolGrid()
 	s.checkSymbolGridWin()
-	wildForm := s.calcWildForm()
-	s.processWinInfos(wildForm)
+	s.processWinInfos()
 	return nil
 }
 
-func (s *betOrderService) processWinInfos(wildForm int64Grid) {
+func (s *betOrderService) processWinInfos() {
 	s.addFreeTime = 0
+	wildForm := s.calcWildForm()
 	s.updateGameMultiple()
 	if len(s.winInfos) > 0 {
 		s.processWin(wildForm)

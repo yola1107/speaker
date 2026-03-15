@@ -47,7 +47,6 @@ type betOrderService struct {
 	winGrid           int64Grid            // 中奖网格（4行5列，只包含参与中奖的行）
 	winGridReward     int64GridW           // 奖励网格（3行5列，只包含参与中奖的行）
 	debug             rtpDebugData         // 是否为RTP测试流程
-	//winInfoProto      *pb.Pjcd_WinInfo
 
 	addWildEliCount int64 // 消除的百搭个数
 	wildMultiplier  int64 // 消除的百搭贡献的倍数
@@ -61,7 +60,6 @@ func newBetOrderService() *betOrderService {
 
 func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, error) {
 	s.req = req
-	//s.winInfoProto = nil
 	if !s.getRequestContext() {
 		return nil, "", InternalServerError
 	}
@@ -114,20 +112,12 @@ func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 		TotalWin:     proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
 		Free:         proto.Bool(s.isFreeRound),
 		Review:       proto.Int64(s.req.Review),
-		WinInfo:      s.buildWinInfo(), // s.getWinInfoProto(),
+		WinInfo:      s.buildWinInfo(),
 		Cards:        s.int64GridToPbBoard(s.symbolGrid),
 		ScatterCount: proto.Int64(s.scatterCount),
 	}
 	return s.MarshalData(result)
 }
-
-//func (s *betOrderService) getWinInfoProto() *pb.Pjcd_WinInfo {
-//	if s.winInfoProto != nil {
-//		return s.winInfoProto
-//	}
-//	s.winInfoProto = s.buildWinInfo()
-//	return s.winInfoProto
-//}
 
 // buildWinInfo 构建 WinInfo
 func (s *betOrderService) buildWinInfo() *pb.Pjcd_WinInfo {
