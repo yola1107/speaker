@@ -144,7 +144,7 @@ func (rs *SymbolRoller) ringSymbol(gameConfig *gameConfigJson) {
 			newBoard[i] = s
 		}
 	}
-	for i := int(_rowCount) - 1; i >= 0; i-- {
+	for i := _rowCount - 1; i >= 0; i-- {
 		if newBoard[i] == 0 {
 			newBoard[i] = rs.getFallSymbol(gameConfig)
 		}
