@@ -1,5 +1,7 @@
 package sjxj
 
+import "math/rand/v2"
+
 func (s *betOrderService) baseSpin() error {
 	if s.debug.open {
 		s.syncGameStage()
@@ -15,39 +17,47 @@ func (s *betOrderService) baseSpin() error {
 	}
 	s.scene.SymbolRoller = s.initSpinSymbol()
 	s.handleSymbolGrid()
-	s.checkSymbolGridWin()
 	s.processWinInfos()
 	return nil
 }
 
 func (s *betOrderService) processWinInfos() {
+	// 每局重置：避免上一局 addFreeTime 残留影响统计/日志
+	s.addFreeTime = 0
 	s.isRoundOver = true
-	s.lineMultiplier = s.handleWinElemsMultiplier(s.winInfos)
 	s.scatterCount = s.getScatterCount()
 
-	if len(s.winInfos) == 0 {
-		s.client.ClientOfFreeGame.SetLastWinId(0)
-	}
-
 	if s.isFreeRound {
+		s.winGrid = int64Grid{}
+		s.winInfos = []WinInfo{}
+
 		s.tryUnlockNextRow()
+		isFullScatter, freeGameMul, newScatterCount := s.calcCurrentFreeGameMul()
+		s.scatterCount = newScatterCount // 更新最新解锁后的 Scatter 数
 
-		if newRow := s.scene.UnlockedRows - s.scene.PrevUnlockedRows; newRow > 0 {
-			newFree := int64(newRow) * s.gameConfig.FreeUnlockAddSpins
-			s.client.ClientOfFreeGame.Incr(uint64(newFree))
-			s.scene.FreeNum += newFree
-			s.addFreeTime = newFree
+		if !isFullScatter && s.scene.UnlockedRows > s.scene.PrevUnlockedRows {
+			// 解锁后将“剩余免费次数”补到至少 free_game_times（默认3），而非叠加。
+			if resetNum := s.gameConfig.FreeUnlockResetSpins; s.scene.FreeNum < resetNum {
+				add := resetNum - s.scene.FreeNum
+				s.scene.FreeNum = resetNum
+				s.client.ClientOfFreeGame.Incr(uint64(add))
+				s.addFreeTime = add
+			}
 		}
-
-		if s.scene.FreeNum <= 0 {
+		if s.scene.FreeNum <= 0 || isFullScatter {
+			s.stepMultiplier = freeGameMul // 设置倍数结算
 			s.scene.FreeNum = 0
+			s.client.ClientOfFreeGame.SetFreeNum(0)
 			s.scene.NextStage = _spinTypeBase
-			s.clearFreeScatterLock()
 		} else {
+			s.stepMultiplier = 0
 			s.scene.NextStage = _spinTypeFree
-			s.lockScatter()
 		}
+
 	} else {
+		s.checkSymbolGridWin()
+		s.stepMultiplier = s.handleWinElemsMultiplier(s.winInfos)
+
 		// 基础模式 触发免费
 		if newFree := s.calcNewFreeGameNum(s.scatterCount); newFree > 0 {
 			s.client.ClientOfFreeGame.Incr(uint64(newFree))
@@ -59,12 +69,12 @@ func (s *betOrderService) processWinInfos() {
 			s.scene.UnlockedRows = _rowCountReward
 			s.scene.PrevUnlockedRows = _rowCountReward
 			s.lockScatter()
-
 		} else {
 			s.scene.NextStage = _spinTypeBase
 		}
 	}
-	s.updateBonusAmount(s.lineMultiplier)
+
+	s.updateBonusAmount(s.stepMultiplier)
 }
 
 func (s *betOrderService) handleWinElemsMultiplier(elems []WinInfo) int64 {
@@ -78,22 +88,22 @@ func (s *betOrderService) handleWinElemsMultiplier(elems []WinInfo) int64 {
 	return mul
 }
 
-// 锁定整个盘面的夺宝
+// lockScatter 锁定整个盘面的夺宝并分配固定倍数
 func (s *betOrderService) lockScatter() {
-	s.scene.ScatterLock = [_rowCount][_colCount]int64{}
+	nextLock := [_rowCount][_colCount]int64{}
+	cfg := s.gameConfig.FreeScatterMulByRow
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
 			if s.symbolGrid[r][c] == _treasure {
-				s.scene.ScatterLock[r][c] = 1
+				mul := s.scene.ScatterLock[r][c]
+				if mul == 0 {
+					mul = cfg[r][rand.IntN(len(cfg[r]))]
+				}
+				nextLock[r][c] = mul
 			}
 		}
 	}
-}
-
-func (s *betOrderService) clearFreeScatterLock() {
-	s.scene.ScatterLock = [_rowCount][_colCount]int64{}
-	s.scene.UnlockedRows = _rowCountReward
-	s.scene.PrevUnlockedRows = _rowCountReward
+	s.scene.ScatterLock = nextLock
 }
 
 // tryUnlockNextRow 根据已解锁区 Scatter 数，按阈值逐行推进 UnlockedRows++。
@@ -106,11 +116,12 @@ func (s *betOrderService) tryUnlockNextRow() {
 	s.scene.PrevUnlockedRows = s.scene.UnlockedRows
 	currScatter := s.scatterCount
 
-	for i := s.scene.UnlockedRows - _rowCountReward; i < len(s.gameConfig.FreeUnlockThresholds); i++ {
-		if currScatter >= s.gameConfig.FreeUnlockThresholds[i] {
-			s.scene.UnlockedRows++
-		} else {
+	// free_unlock_thresholds 按 UnlockedRows 索引（推荐长度8）。
+	for s.scene.UnlockedRows < _rowCount {
+		threshold := s.gameConfig.FreeUnlockThresholds[s.scene.UnlockedRows]
+		if currScatter < threshold {
 			break
 		}
+		s.scene.UnlockedRows++
 	}
 }

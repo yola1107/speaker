@@ -2,6 +2,7 @@ package sjxj
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 
@@ -80,7 +81,7 @@ func (s *betOrderService) updateBonusAmount(stepMultiplier int64) {
 
 func (s *betOrderService) getScatterCount() int64 {
 	var count int64
-	startRow := _rowCountReward //_rowCount - _rowCountReward
+	startRow := _rowCountReward
 	if s.isFreeRound {
 		startRow = _rowCount - s.scene.UnlockedRows
 	}
@@ -102,6 +103,38 @@ func (s *betOrderService) handleSymbolGrid() {
 		}
 	}
 	s.symbolGrid = symbolGrid
+}
+
+func (s *betOrderService) calcCurrentFreeGameMul() (bool, int64, int64) {
+	// 免费模式：为当前盘面夺宝生成固定倍数（若尚未生成）
+	cfg := s.gameConfig.FreeScatterMulByRow
+	startRow := _rowCount - s.scene.UnlockedRows
+
+	// 合并两轮遍历：一边补齐 ScatterLock（若当前为0），一边统计本次需要的 mul 和满屏判定。
+	isFullScatter := true
+	var mul int64
+	var newScatterCount int64
+	for r := 0; r < _rowCount; r++ {
+		for c := 0; c < _colCount; c++ {
+			if s.symbolGrid[r][c] != _treasure {
+				if r >= startRow {
+					isFullScatter = false
+				}
+				continue
+			}
+
+			// Scatter：若尚未分配固定倍数，则随机一次并写入 ScatterLock，后续免费期保持不变。
+			if s.scene.ScatterLock[r][c] == 0 {
+				s.scene.ScatterLock[r][c] = cfg[r][rand.IntN(len(cfg[r]))]
+			}
+
+			if r >= startRow {
+				mul += s.scene.ScatterLock[r][c]
+				newScatterCount++
+			}
+		}
+	}
+	return isFullScatter, mul, newScatterCount
 }
 
 // checkSymbolGridWin 检查符号网格中奖情况
@@ -164,11 +197,12 @@ func (s *betOrderService) checkSymbolGridWin() {
 						Odds:        odds,
 						WinGrid:     winGrid, // 保留完整4行信息
 					})
-					for r := 0; r < _rowCount; r++ {
-						for c := 0; c < _colCount; c++ {
-							if winGrid[r][c] > 0 {
-								totalWinGrid[r][c] = 1
-							}
+					// 只标记当前这条线上的命中格子（最多5格），避免额外遍历 8×5。
+					for _, p := range line {
+						r := p / _colCount
+						c := p % _colCount
+						if winGrid[r][c] > 0 {
+							totalWinGrid[r][c] = 1
 						}
 					}
 				}
@@ -178,39 +212,6 @@ func (s *betOrderService) checkSymbolGridWin() {
 
 	s.winInfos = winInfos
 	s.winGrid = totalWinGrid
-}
-
-func writeGridToBuilder(buf *strings.Builder, grid *int64Grid, winGrid *int64Grid) {
-	if grid == nil {
-		buf.WriteString("(空)\n")
-		return
-	}
-	for r := 0; r < _rowCount; r++ {
-		for c := 0; c < _colCount; c++ {
-			symbol := (*grid)[r][c]
-			isWin := winGrid != nil && (*winGrid)[r][c] != 0
-			if symbol == 0 {
-				if isWin {
-					buf.WriteString("   *|")
-				} else {
-					buf.WriteString("    |")
-				}
-			} else {
-				if isWin {
-					_, _ = fmt.Fprintf(buf, " %2d*|", symbol)
-				} else {
-					_, _ = fmt.Fprintf(buf, " %2d |", symbol)
-				}
-			}
-			if c < _colCount-1 {
-				buf.WriteString(" ")
-			}
-		}
-		buf.WriteString("\n")
-		if r == _rowCountReward-1 {
-			buf.WriteString("--------------------------------\n")
-		}
-	}
 }
 
 func btoi(b bool) int64 {

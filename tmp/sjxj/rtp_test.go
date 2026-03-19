@@ -52,7 +52,7 @@ func TestRtp(t *testing.T) {
 			panic(err)
 		}
 
-		stepWin := float64(svc.lineMultiplier) // svc.bonusAmount.Round(2).InexactFloat64()
+		stepWin := float64(svc.stepMultiplier) // svc.bonusAmount.Round(2).InexactFloat64()
 		roundWin += stepWin
 		totalWin += stepWin
 
@@ -203,7 +203,7 @@ func newBerService() *betOrderService {
 }
 
 func resetBetServiceForNextRound(s *betOrderService) {
-	s.lineMultiplier = 0
+	s.stepMultiplier = 0
 	s.scatterCount = 0
 	s.client.IsRoundOver = false
 	s.client.ClientOfFreeGame.Reset()

@@ -37,7 +37,7 @@ type betOrderService struct {
 	isFreeRound    bool                 // 是否为免费回合
 	scatterCount   int64                // 夺宝符个数
 	addFreeTime    int64                // 增加的免费次数
-	lineMultiplier int64                // 线倍数
+	stepMultiplier int64                // Step倍数 基础模式:线倍数 免费模式:freeGameMul
 	winInfos       []WinInfo            // 中奖信息
 	symbolGrid     int64Grid            // 符号网格（8行5列）
 	winGrid        int64Grid            // 中奖网格（8行5列，只包含参与中奖的行）
@@ -100,26 +100,26 @@ func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 		unlocked = _rowCountReward
 	}
 	result := &pb.Sjxj_BetOrderResponse{
-		OrderSN:      proto.String(s.orderSn.OrderSN),
-		Balance:      proto.Float64(s.gameOrder.CurBalance),
-		BetAmount:    proto.Float64(s.betAmount.Round(2).InexactFloat64()),
-		CurrentWin:   proto.Float64(s.bonusAmount.Round(2).InexactFloat64()),
-		FreeWin:      proto.Float64(s.client.ClientOfFreeGame.GetFreeTotalMoney()),
-		TotalWin:     proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
-		Free:         proto.Bool(s.isFreeRound),
-		Review:       proto.Int64(s.req.Review),
-		WinInfo:      s.buildWinInfo(),
-		Cards:        s.int64GridToPbBoard(s.symbolGrid),
-		ScatterCount: proto.Int64(s.scatterCount),
-		IsRoundOver:  proto.Bool(s.isRoundOver),
-		State:        proto.Int64(btoi(s.isFreeRound)),
-		FreeNum:      proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeNum())),
-		FreeTime:     proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeTimes())),
-		WinGrid:      s.int64GridToPbBoard(s.winGrid),
-		IsGameOver:   proto.Bool(s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0),
-		RoundWin:     proto.Float64(s.calcRoundWin()),
-		UnlockedRows: proto.Int32(int32(unlocked)),
-		ScatterLock:  s.int64GridToPbBoard(s.scene.ScatterLock),
+		OrderSN:          proto.String(s.orderSn.OrderSN),
+		Balance:          proto.Float64(s.gameOrder.CurBalance),
+		BetAmount:        proto.Float64(s.betAmount.Round(2).InexactFloat64()),
+		CurrentWin:       proto.Float64(s.bonusAmount.Round(2).InexactFloat64()),
+		FreeWin:          proto.Float64(s.client.ClientOfFreeGame.GetFreeTotalMoney()),
+		TotalWin:         proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
+		Free:             proto.Bool(s.isFreeRound),
+		Review:           proto.Int64(s.req.Review),
+		WinInfo:          s.buildWinInfo(),
+		Cards:            s.int64GridToPbBoard(s.symbolGrid),
+		ScatterCount:     proto.Int64(s.scatterCount),
+		IsRoundOver:      proto.Bool(s.isRoundOver),
+		State:            proto.Int64(btoi(s.isFreeRound)),
+		FreeNum:          proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeNum())),
+		FreeTime:         proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeTimes())),
+		WinGrid:          s.int64GridToPbBoard(s.winGrid),
+		IsGameOver:       proto.Bool(s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0),
+		RoundWin:         proto.Float64(s.calcRoundWin()),
+		UnlockedRows:     proto.Int32(int32(unlocked)),
+		PrevUnlockedRows: proto.Int32(int32(s.scene.PrevUnlockedRows)),
 	}
 	return s.MarshalData(result)
 }
@@ -136,7 +136,7 @@ func (s *betOrderService) buildWinInfo() *pb.Sjxj_WinInfo {
 	return &pb.Sjxj_WinInfo{
 		WinArr:           winArr,
 		AddFreeNum:       proto.Int64(s.addFreeTime),
-		FreeGameMultiple: proto.Int64(0),
+		FreeGameMultiple: proto.Int64(s.stepMultiplier),
 	}
 }
 
@@ -166,6 +166,6 @@ func (s *betOrderService) MarshalData(data proto.Message) ([]byte, string, error
 func (s *betOrderService) calcRoundWin() float64 {
 	return decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
-		Mul(decimal.NewFromInt(s.lineMultiplier)).
+		Mul(decimal.NewFromInt(s.stepMultiplier)).
 		Round(2).InexactFloat64()
 }

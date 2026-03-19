@@ -16,7 +16,7 @@ type SpinSceneData struct {
 	NextStage        int8                    `json:"nStage"`           // 下一阶段
 	FreeNum          int64                   `json:"freeNum"`          // 剩余免费次数（独立统计，不依赖client）
 	SymbolRoller     [_colCount]SymbolRoller `json:"sRoller"`          // 滚轮符号表
-	ScatterLock      int64Grid               `json:"scatterLock"`      // Free 专用：ScatterLock 8×5（0=未锁 1=锁定为Scatter/夺宝）
+	ScatterLock      int64Grid               `json:"scatterLock"`      // Free 专用：ScatterLock 8×5（0=未锁，>0=锁定为夺宝且值即夺宝倍数）
 	UnlockedRows     int                     `json:"unlockedRows"`     // 当前已解锁行数（范围 4-8，初始4行）
 	PrevUnlockedRows int                     `json:"prevUnlockedRows"` // 上一局结束时的解锁行数
 }
@@ -70,25 +70,10 @@ func (s *betOrderService) syncGameStage() {
 
 	s.isFreeRound = s.scene.Stage == _spinTypeFree
 
-	// 兜底：保证解锁行合法且 Prev<=Unlocked，避免数组越界。
-	u := s.scene.UnlockedRows
-	if u < _rowCountReward {
-		u = _rowCountReward
-	} else if u > _rowCount {
-		u = _rowCount
+	// 只要不是免费态，就清理 free 专用状态，避免旧 scatterLock 影响下一次 lockScatter。
+	if !s.isFreeRound {
+		s.scene.ScatterLock = int64Grid{}
+		s.scene.UnlockedRows = _rowCountReward
+		s.scene.PrevUnlockedRows = _rowCountReward
 	}
-
-	p := s.scene.PrevUnlockedRows
-	if p < _rowCountReward {
-		p = _rowCountReward
-	} else if p > _rowCount {
-		p = _rowCount
-	}
-
-	if p > u {
-		p = u
-	}
-
-	s.scene.UnlockedRows = u
-	s.scene.PrevUnlockedRows = p
 }

@@ -2,7 +2,6 @@ package sjxj
 
 import (
 	"math/rand/v2"
-	"strconv"
 
 	"egame-grpc/game/common"
 
@@ -10,25 +9,14 @@ import (
 )
 
 type gameConfigJson struct {
-	PayTable             [][]int64 `json:"pay_table"`              // 赔付表
-	Lines                [][]int64 `json:"lines"`                  // 中奖线定义
-	FreeGameScatterMin   int64     `json:"free_game_scatter_min"`  // 触发免费最少 Scatter（未中线奖时）
-	FreeGameTimes        int64     `json:"free_game_times"`        // 免费游戏基础次数
-	FreeUnlockThresholds []int64   `json:"free_unlock_thresholds"` // 解锁第5-8行所需的夺宝数：[8, 12, 16, 20]
-	FreeUnlockAddSpins   int64     `json:"free_unlock_add_spins"`  // 每新解锁一行增加的免费次数
-	RollCfg              RollConf  `json:"roll_cfg"`               // 滚轴配置
-	RealData             []Reals   `json:"real_data"`              // 真实数据
-}
-
-type RollConf struct {
-	Base RollCfgType `json:"base"` // 普通游戏滚轴配置
-	Free RollCfgType `json:"free"` // 免费游戏滚轴配置
-}
-
-type RollCfgType struct {
-	UseKey []int `json:"use_key"` // 滚轴数据索引
-	Weight []int `json:"weight"`  // 权重
-	WTotal int   `json:"-"`       // 总权重（计算得出）
+	PayTable             [][]int64 `json:"pay_table"`                      // 赔付表
+	Lines                [][]int64 `json:"lines"`                          // 中奖线定义
+	FreeGameScatterMin   int64     `json:"free_game_scatter_min"`          // 触发免费最少 Scatter（未中线奖时）
+	FreeGameTimes        int64     `json:"free_game_times"`                // 免费游戏基础次数
+	FreeUnlockThresholds []int64   `json:"free_unlock_thresholds"`         // 解锁阈值（按 UnlockedRows 索引；推荐长度8）
+	FreeUnlockResetSpins int64     `json:"free_unlock_reset_spins"`        // 免费游戏解锁新行，重置免费次数
+	FreeScatterMulByRow  [][]int64 `json:"free_scatter_multiplier_by_row"` // 夺宝随机倍数范围（按“初始4行、第5~8行”共5列配置）
+	RealData             []Reals   `json:"real_data"`                      // 真实数据
 }
 
 type Reals [][]int64
@@ -62,65 +50,34 @@ func (s *betOrderService) parseGameConfigs() {
 		panic(err)
 	}
 
-	// 预计算基础/免费模式权重总和
-	s.calculateRollWeight(&s.gameConfig.RollCfg.Base)
-	s.calculateRollWeight(&s.gameConfig.RollCfg.Free)
-
-	if len(s.gameConfig.FreeUnlockThresholds) != 4 {
-		panic("len(s.gameConfig.FreeUnlockThresholds) != 4")
+	if s.gameConfig.FreeGameTimes <= 0 {
+		panic("s.gameConfig.FreeGameTimes <= 0 ")
 	}
-	if s.gameConfig.FreeUnlockAddSpins == 0 {
-		panic("s.gameConfig.FreeUnlockAddSpins == 0 ")
+	if s.gameConfig.FreeUnlockResetSpins <= 0 {
+		panic("s.gameConfig.FreeUnlockResetSpins <= 0 ")
 	}
-
-	x := int64(_rowCount * _colCount)
-	for _, line := range s.gameConfig.Lines {
-		for _, p := range line {
-			if p < 0 || p >= x {
-				panic("line position out of range")
-			}
-		}
+	if len(s.gameConfig.FreeUnlockThresholds) != _rowCount {
+		panic("len(s.gameConfig.FreeUnlockThresholds) != 8")
 	}
-}
-
-func (s *betOrderService) calculateRollWeight(rollCfg *RollCfgType) {
-	if len(rollCfg.Weight) != len(rollCfg.UseKey) {
-		panic("roll weight and use_key length not match")
+	if len(s.gameConfig.FreeScatterMulByRow) < 8 {
+		panic("len(s.gameConfig.FreeScatterMulByRow) < 8")
 	}
-	rollCfg.WTotal = 0
-	for _, w := range rollCfg.Weight {
-		rollCfg.WTotal += w
-	}
-	if rollCfg.WTotal <= 0 {
-		panic("roll weight sum <= 0")
+	// 固定索引：base 用 real_data[0]，free 用 real_data[1]
+	if len(s.gameConfig.RealData) < 2 {
+		panic("len(s.gameConfig.RealData) < 2")
 	}
 }
 
 func (s *betOrderService) initSpinSymbol() [_colCount]SymbolRoller {
 	if s.isFreeRound {
-		return s.getSceneSymbolFree(s.gameConfig.RollCfg.Free)
+		return s.getSceneSymbolFree()
 	}
-	return s.getSceneSymbolBase(s.gameConfig.RollCfg.Base)
-}
-
-// selectRealIndex 按权重选择 realData 下标
-func (s *betOrderService) selectRealIndex(rollCfg RollCfgType) int {
-	r := rand.IntN(rollCfg.WTotal)
-	for i, w := range rollCfg.Weight {
-		if r < w {
-			return rollCfg.UseKey[i]
-		}
-		r -= w
-	}
-	return 0
+	return s.getSceneSymbolBase()
 }
 
 // 基础模式：纯随机填充（8×5 权威盘面）
-func (s *betOrderService) getSceneSymbolBase(rollCfg RollCfgType) [_colCount]SymbolRoller {
-	realIndex := s.selectRealIndex(rollCfg)
-	if realIndex < 0 || realIndex >= len(s.gameConfig.RealData) {
-		panic("real data index out of range: " + strconv.Itoa(realIndex))
-	}
+func (s *betOrderService) getSceneSymbolBase() [_colCount]SymbolRoller {
+	realIndex := 0
 	realData := s.gameConfig.RealData[realIndex]
 
 	var symbols [_colCount]SymbolRoller
@@ -146,11 +103,8 @@ func (s *betOrderService) getSceneSymbolBase(rollCfg RollCfgType) [_colCount]Sym
 }
 
 // 免费模式 8×5：ScatterLock 固定夺宝占位，其余格由滚轴填充；ScatterLock 在本局结束统一重建。
-func (s *betOrderService) getSceneSymbolFree(rollCfg RollCfgType) [_colCount]SymbolRoller {
-	realIndex := s.selectRealIndex(rollCfg)
-	if realIndex < 0 || realIndex >= len(s.gameConfig.RealData) {
-		panic("real data index out of range: " + strconv.Itoa(realIndex))
-	}
+func (s *betOrderService) getSceneSymbolFree() [_colCount]SymbolRoller {
+	realIndex := 1
 	realData := s.gameConfig.RealData[realIndex]
 
 	var symbols [_colCount]SymbolRoller
@@ -204,7 +158,7 @@ func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64
 }
 
 // calcNewFreeGameNum 计算触发免费游戏的次数
-// 规则：3个夺宝触发10次免费，每多1个夺宝增加2次免费 -> 10 + (scatterCount-3)*2
+// 规则：夺宝数 >= free_game_scatter_min 时触发，免费次数 = free_game_times
 func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
 	if scatterCount < s.gameConfig.FreeGameScatterMin {
 		return 0

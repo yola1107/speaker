@@ -76,7 +76,7 @@ func TestRtp2(t *testing.T) {
 			}
 
 			cascadeCount++
-			stepWin := float64(svc.lineMultiplier) // svc.bonusAmount.Round(2).InexactFloat64()
+			stepWin := float64(svc.stepMultiplier) // svc.bonusAmount.Round(2).InexactFloat64()
 			roundWin += stepWin
 
 			// 更新最大免费次数
@@ -174,7 +174,7 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum, step i
 		writeReelInfo(buf, svc)
 	}
 	fprintf(buf, "Step%d 初始盘面:\n", step)
-	writeGridToBuilder(buf, &svc.symbolGrid, &svc.winGrid)
+	writeGridToBuilderWithDynamicSplit(buf, svc, &svc.symbolGrid, &svc.winGrid)
 
 	//if len(svc.winInfos) > 0 {
 	//	fprintf(buf, "Step%d 中奖标记:\n", step)
@@ -187,6 +187,50 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum, step i
 	//}
 	writeStepSummary(buf, svc, step, isFree, stepWin, roundWin)
 	fprintf(buf, "\n")
+}
+
+func writeGridToBuilderWithDynamicSplit(buf *strings.Builder, svc *betOrderService, grid *int64Grid, winGrid *int64Grid) {
+	if grid == nil {
+		buf.WriteString("(空)\n")
+		return
+	}
+
+	// 默认按基础模式分割：上4行 / 下4行。
+	// 免费模式按当前已解锁行动态分割：上(8-UnlockedRows)行锁定区 / 下UnlockedRows行已解锁区。
+	splitAfterRow := _rowCountReward - 1
+	if svc != nil && svc.isFreeRound {
+		lockedRows := _rowCount - svc.scene.UnlockedRows
+		if lockedRows > 0 && lockedRows < _rowCount {
+			splitAfterRow = lockedRows - 1
+		}
+	}
+
+	for r := 0; r < _rowCount; r++ {
+		for c := 0; c < _colCount; c++ {
+			symbol := (*grid)[r][c]
+			isWin := winGrid != nil && (*winGrid)[r][c] != 0
+			if symbol == 0 {
+				if isWin {
+					buf.WriteString("   *|")
+				} else {
+					buf.WriteString("    |")
+				}
+			} else {
+				if isWin {
+					_, _ = fmt.Fprintf(buf, " %2d*|", symbol)
+				} else {
+					_, _ = fmt.Fprintf(buf, " %2d |", symbol)
+				}
+			}
+			if c < _colCount-1 {
+				buf.WriteString(" ")
+			}
+		}
+		buf.WriteString("\n")
+		if r == splitAfterRow {
+			buf.WriteString("--------------------------------\n")
+		}
+	}
 }
 
 func writeReelInfo(buf *strings.Builder, svc *betOrderService) {
@@ -218,14 +262,30 @@ func writeRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, i
 func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFree bool, stepWin, roundWin float64) {
 	fprintf(buf, "Step%d 中奖详情:\n", step)
 	treasureCount := svc.getScatterCount()
+	totalTreasureCount := countTreasuresInGrid(&svc.symbolGrid)
+	unlockedStartRow := _rowCount - svc.scene.UnlockedRows
+	if unlockedStartRow < 0 {
+		unlockedStartRow = 0
+	}
+	// ScatterLock 里锁定的夺宝格子数量（锁定全盘夺宝后用于调试核对）
+	var scatterLockTreasureCount int64
+	if svc.scene != nil {
+		for r := 0; r < _rowCount; r++ {
+			for c := 0; c < _colCount; c++ {
+				if svc.scene.ScatterLock[r][c] != 0 {
+					scatterLockTreasureCount++
+				}
+			}
+		}
+	}
 
 	if len(svc.winInfos) == 0 {
 		fprintf(buf, "\t未中奖\n")
 		if svc.isRoundOver {
-			if isFree && treasureCount > 0 {
-				fprintf(buf, "\t💎 当前盘面夺宝数量: %d\n", treasureCount)
-			} else if !isFree && svc.scene.NextStage == _spinTypeFree {
-				fprintf(buf, "\t💎💎💎 基础模式。 夺宝=%d 触发免费游戏=%d\n", treasureCount, svc.scene.FreeNum)
+			if isFree {
+				writeFreeRoundState(buf, svc, treasureCount, totalTreasureCount, unlockedStartRow, scatterLockTreasureCount)
+			} else {
+				writeBaseRoundState(buf, svc, treasureCount, totalTreasureCount, scatterLockTreasureCount)
 			}
 		}
 		return
@@ -249,8 +309,7 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 	if svc.isFreeRound {
 		isFreeMode = 1
 	}
-	fprintf(buf, "\tMode=%d, RoundMul: %d, lineMul: %d, 累计中奖: %.2f\n",
-		isFreeMode, svc.lineMultiplier, svc.lineMultiplier, roundWin)
+	fprintf(buf, "\tMode=%d, RoundMul: %d, lineMul: %d, 累计中奖: %.2f\n", isFreeMode, svc.stepMultiplier, svc.stepMultiplier, roundWin)
 	//if svc.isFreeRound {
 	//	fprintf(buf, "\tHeroID=%d, MulList:%v, ContinueNum: %d, gameMul: %d, CNum=%d\n",
 	//		svc.scene.FreeHeroID, svc.gameConfig.FreeMultipleMap[svc.scene.FreeHeroID], svc.scene.ContinueNum, svc.gameMultiple, svc.scene.CityValue)
@@ -262,17 +321,80 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 
 	//fprintf(buf, "\t🛑 连消结束（无后续可消除）\n\n")
 	if isFree {
-		if treasureCount > 0 {
-			fprintf(buf, "\t💎 当前盘面夺宝数量: %d, 增加免费次数: %d\n", treasureCount, svc.addFreeTime)
-		}
+		writeFreeRoundState(buf, svc, treasureCount, totalTreasureCount, unlockedStartRow, scatterLockTreasureCount)
 		if svc.scene.FreeNum == 0 {
-			fprintf(buf, "\t🎉 免费模式结束 - RoundMultiplier: %d, 总奖金: %.2f\n", svc.lineMultiplier, roundWin)
+			fprintf(buf, "\t🎉 免费模式结束 - RoundMultiplier: %d, 总奖金: %.2f\n", svc.stepMultiplier, roundWin)
 		} else {
-			fprintf(buf, "\t➡️ 免费模式继续 - 剩余次数: %d, RoundMultiplier: %d\n", svc.scene.FreeNum, svc.lineMultiplier)
+			fprintf(buf, "\t➡️ 免费模式继续 - 剩余次数: %d, 本局结算倍数: %d\n", svc.scene.FreeNum, svc.stepMultiplier)
 		}
-	} else if svc.isFreeRound {
-		fprintf(buf, "\t💎💎💎 基础模式。 夺宝=%d 触发免费游戏=%d\n", treasureCount, svc.scene.FreeNum)
+	} else {
+		writeBaseRoundState(buf, svc, treasureCount, totalTreasureCount, scatterLockTreasureCount)
 	}
+}
+
+func writeBaseRoundState(buf *strings.Builder, svc *betOrderService, unlockedTreasureCount, totalTreasureCount, scatterLockTreasureCount int64) {
+	fprintf(buf, "\tMode=0 Scatter(底4行)=%d | Scatter(全盘)=%d | nextStage=%d\n",
+		unlockedTreasureCount, totalTreasureCount, svc.scene.NextStage)
+
+	if svc.scene.NextStage == _spinTypeFree {
+		fprintf(buf, "\t🚨 触发免费: +%d 次 | 当前剩余免费=%d | 解锁行=%d\n",
+			svc.addFreeTime, svc.scene.FreeNum, svc.scene.UnlockedRows)
+		fprintf(buf, "\t   已锁定Scatter格=%d（用于免费模式固定位置+固定倍数）\n", scatterLockTreasureCount)
+	}
+}
+
+func writeFreeRoundState(buf *strings.Builder, svc *betOrderService, unlockedTreasureCount, totalTreasureCount int64, unlockedStartRow int, scatterLockTreasureCount int64) {
+	newUnlockedRows := svc.scene.UnlockedRows - svc.scene.PrevUnlockedRows
+	nextThreshold, remainToNext := getNextUnlockProgress(svc)
+
+	fprintf(buf, "\t[Free] Mode=1, Scatter(已解锁区 row[%d..%d])=%d | Scatter(全盘)=%d\n",
+		unlockedStartRow, _rowCount-1, unlockedTreasureCount, totalTreasureCount)
+	fprintf(buf, "\t       解锁行: %d -> %d (本局新增=%d) | addFree=%d | 剩余免费=%d\n",
+		svc.scene.PrevUnlockedRows, svc.scene.UnlockedRows, newUnlockedRows, svc.addFreeTime, svc.scene.FreeNum)
+
+	if nextThreshold > 0 {
+		fprintf(buf, "\t       下一档阈值: S>=%d | 当前还差=%d\n", nextThreshold, remainToNext)
+	} else {
+		fprintf(buf, "\t       下一档阈值: 已全部解锁(8行)\n")
+	}
+
+	fprintf(buf, "\t       nextStage=%d | lockScatter格数=%d\n", svc.scene.NextStage, scatterLockTreasureCount)
+}
+
+func getNextUnlockProgress(svc *betOrderService) (nextThreshold int64, remain int64) {
+	if svc == nil || svc.gameConfig == nil {
+		return 0, 0
+	}
+	if svc.scene.UnlockedRows >= _rowCount {
+		return 0, 0
+	}
+	thresholds := svc.gameConfig.FreeUnlockThresholds
+	if len(thresholds) <= svc.scene.UnlockedRows {
+		return 0, 0
+	}
+	nextThreshold = thresholds[svc.scene.UnlockedRows]
+	if nextThreshold <= 0 {
+		return nextThreshold, 0
+	}
+	if svc.scatterCount >= nextThreshold {
+		return nextThreshold, 0
+	}
+	return nextThreshold, nextThreshold - svc.scatterCount
+}
+
+func countTreasuresInGrid(grid *int64Grid) int64 {
+	if grid == nil {
+		return 0
+	}
+	var count int64
+	for r := 0; r < _rowCount; r++ {
+		for c := 0; c < _colCount; c++ {
+			if (*grid)[r][c] == _treasure {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func saveDebugFile(statsResult, detailResult string, start time.Time) {

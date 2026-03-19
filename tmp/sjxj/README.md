@@ -1,4 +1,4 @@
-# sjxj（世界小姐 / Miss World 向新游戏）
+# sjxj（世界小姐 ）
 
 ## 项目说明
 
@@ -12,8 +12,7 @@
 | 类型 | 地址 |
 |------|------|
 | **策划文档（Axure）** | [世界小姐 - 在线原型](https://5zevov.axshare.com/?g=14&id=0nmyz0&p=%E4%B8%96%E7%95%8C%E5%B0%8F%E5%A7%90) |
-| **玩法参考（同类机制）** | [JILI - Shanghai Beauty（上海美人）](https://jiligames.com/PlusIntro/17?showGame=true) — Slot、**50 线**、**Bonus / Respin、盘面向上扩展至 8×5**；官方说明：免费游戏中收集 **heart（爱心）**，**每集满 4 个扩展一行**，最高 **8×5**，多收集以增加机会与得分。本游戏免费段 **Scatter/爱心式扩展与解锁节奏**可对照该作体验，**数值与触发条件以本 README 与 Axure 为准**。 |
-| **本目录配图** | 见下方 [本地文档（doc/）](#本地文档doc) |
+| **玩法参考（同类机制）** | [JILI - Shanghai Beauty（上海美人）](https://jiligames.com/PlusIntro/17?showGame=true)<br/>Slot、50 线、Bonus / Respin、盘面扩展至 8×5<br/>免费段：收集 heart（爱心）；每集满 4 个扩展一行，最高 8×5<br/>本游戏 Scatter/爱心式扩展与解锁节奏可对照体验；**数值与触发条件以本 README 与 Axure 为准**。 |
 
 ---
 
@@ -34,105 +33,252 @@
 
 ---
 
-## 一、游戏形态（依据 doc + 修正版）
+## 一、游戏形态（当前代码实现口径）
 
-- **类型**：视频老虎机类（Video Slot）。
-- **服务端盘面结构**：统一 **8×5**（服务端权威盘面）。
-- **普通模式展示**：客户端仅展示 **最下 4 行**（逻辑/回包仍为 8×5，便于断线重连与进免费首帧一致）。
-- **普通模式结算**：线奖只算 **最下 4 行** 的 50 线（路径见 `doc/中奖线.png`，格子下标 **0～19** 映射到底 4 行）。
-- **免费模式盘面**：**8×5**，但 **线奖判定与基础模式一致**：仍用同一套 **50 条线**，只取 **整盘最下面 4 行** 上的符号参与判线（上面解锁行不参与线奖，仅影响展示/解锁/Scatter 等规则）。
-- **赔付**：线赢需从**最左轴向右连续**；每条线只付**该线最大**赢额。具体符号赔付见 `doc/符号列表.png`、`doc/符号赔率表.png`。
+> 本节以 `game/sjxj/*.go` 当前实现为准，用于联调、回放、问题排查。  
+> 若与策划/Axure存在差异，请以“实现口径”和“目标口径”分别记录并走评审。
+
+- **类型**：视频老虎机（Video Slot）。
+- **服务端盘面**：统一 **8×5**（权威盘面，回包也为 8×5）。
+- **基础模式（Base）**：使用 `real_data[0]` 随机生成 8×5；线奖使用配置中的 50 条线（当前线坐标为底部 4 行下标）。
+- **免费模式（Free）**：使用 `real_data[1]`；先按 `scatterLock` 固定夺宝位置，再填充其余格子。
+- **当前结算特征**：基础模式计算线奖；免费模式不逐步计算线奖，主要做解锁与夺宝倍数累计，免费结束时一次性结算。
 
 ---
 
-## 二、普通模式（基础模式）
+## 二、基础模式（Base）流程
 
-1. 服务端生成并下发 **8×5** 盘面；客户端仅展示 **最下 4 行**。
-2. 按 **50 线 + 赔付表** 结算当次 Spin。
-3. **进入免费模式触发**：
-   - **当次 Spin 未中奖**（无有效线赢或按产品定义的无赢）；
-   - 且**底部 4 行**的 **Scatter 数量 ≥ 4**（与 `free_game_scatter_min` 一致）  
-   → 进入 **免费模式**。
-4. **进免费时的自动解锁**：基础模式 **本拍结束**、即将进入免费时，用 **同一盘面** 上的 Scatter 数 **S** 与 **`free_unlock_thresholds`** 比对。若除满足进免费（如 **S ≥ 4**）外，还满足 **S ≥ 8 / 12 / 16 / 20** 等解锁档，则 **进入免费后立即自动解锁对应锁定行**（无需再等下一次免费 Spin），且 **每自动解锁一档** 仍按 **`free_unlock_add_spins`** 增加免费次数（与免费内 Spin 后解锁规则相同）。
+### 2.1 单次请求主链
+
+1. `betOrder()` 获取上下文、拿客户端锁、加载上一单与场景。
+2. `reloadScene()` 从 Redis 恢复 `SpinSceneData`，并用 `syncGameStage()` 切到本次有效阶段。
+3. `baseSpin()` 进入基础分支：
+   - `initialize()` -> `initFirstStepForSpin()` 校验下注与余额，扣费金额 `amount = betAmount`。
+   - `getSceneSymbolBase()` 生成盘面（`real_data[0]`）。
+   - `checkSymbolGridWin()` 计算线奖（Wild 可替代普通符号，不替代 Scatter）。
+   - `getScatterCount()` 统计 Scatter（基础模式统计底部 4 行）。
+4. 若 `scatterCount >= free_game_scatter_min`（默认 4）：
+   - `scene.FreeNum += free_game_times`（默认 +3）；
+   - `NextStage = Free`；
+   - `UnlockedRows = 4`；
+   - `lockScatter()` 锁定触发盘中全盘 Scatter 并分配固定倍数。
+5. 若未触发免费：`NextStage = Base`。
+6. 统一执行：`updateGameOrder()` -> `settleStep()` -> `saveScene()` -> `getBetResultMap()`。
+
+### 2.2 基础模式免费次数变化
+
+| 时机 | FreeNum 变化 | 说明 |
+|---|---:|---|
+| 基础局开始 | 0（通常） | 基础局本身不消耗免费次数 |
+| 基础局结束且未触发免费 | 不变 | 仍为基础阶段 |
+| 基础局结束且触发免费 | `+free_game_times` | 默认 `+3`，下次请求切到 Free |
 
 > **术语**：全文 **Scatter** 与策划/UI 中的「夺宝」等为同一符号，协议与实现统一使用 **Scatter**。
 
 ---
 
-## 三、免费模式
+## 三、免费模式（Free）流程
 
-### 3.0 线奖（与基础模式一致）
+### 3.1 进入免费首局时
 
-- **中奖线定义**：始终按 **4 行 × 5 列** 的 **50 条线**（`game_json.go` / `中奖线.png`）。
-- **基础模式**：整盘即 4×5，下标 **0～19**。
-- **免费模式**：整盘 **8×5**，线奖 **只算最下面 4 行**（自下第 1～4 行，对应 8 行盘里 **最底部 4 行**）：与同一条线在基础盘上的 **形状完全一致**，仅格子映射到 8×5 的 **底部 4 行**（若以行为 0 在 **上**、共 8 行，则行 **4～7** 对应原 **0～3** 的线位；实现上可在基础线下标整体 **+20**）。
+- 上一基础局已把 `NextStage=Free` 写入场景。
+- 本次 `reloadScene()` 后 `syncGameStage()` 会把 `Stage` 切到 Free。
+- `UnlockedRows` 初始为 4，`PrevUnlockedRows` 初始为 4。
+- `scatterLock[r][c] > 0` 表示该位置固定为 Scatter 且值即固定倍数。
 
-### 3.1 初始状态
+### 3.2 免费局执行顺序（当前实现）
 
-| 项 | 规则 |
-|----|------|
-| 免费次数 | **3** 次（Spin 次数） |
-| 盘面规格 | 扩展为 **8 行 × 5 列**（5 轴 8 行） |
-| 可见/锁定 | **上方 4 行初始锁定**（UI 遮罩 TO UNLOCK）；服务端仍生成完整 8×5 盘面用于回包与 ScatterLock 规则；线奖仅算最下 4 行 |
+1. `baseSpin()` 开始时先消耗 1 次免费：`FreeNum--`。
+2. `getSceneSymbolFree()` 生成盘面：
+   - 锁定位置直接放 Scatter；
+   - 其余格子从 `real_data[1]` 补齐。
+3. `processWinInfos()` 的免费分支执行：
+   - 清空 `winInfos` / `winGrid`（当前实现不做免费线奖逐局结算）；
+   - `scatterCount = getScatterCount()`（按已解锁行统计）；
+   - `tryUnlockNextRow()`：当 `S >= threshold[UnlockedRows]` 时可连续解多行；
+   - `calcFreeRoundMulFullAndScatterCount()`：补齐本次免费回合 scatterLock、统计已解锁区 scatter 总数，并判断是否已满屏夺宝。
+     - 对本次新出现 Scatter 分配固定倍数并写回 `scatterLock`；
+     - 统计已解锁区的夺宝倍数和；
+     - 判断“已解锁区是否满屏夺宝”。
+4. 解锁后补次：
+   - 若本局有新增解锁，且当前 `FreeNum < free_unlock_reset_spins`（默认 3），补到 3；
+   - `addFreeTime = 补入数量`（用于回包与统计）。
+5. 结束判定：
+   - 若 `FreeNum <= 0` 或 `isFullTreasureScreen == true`：
+     - 本局 `stepMultiplier = freeGameMul`（一次性结算）；
+     - `NextStage = Base`；
+     - 清空 `scatterLock` / 重置解锁行。
+   - 否则：
+     - `stepMultiplier = 0`；
+     - `NextStage = Free`，继续下一免费局。
 
-### 3.2 解锁与加次（定稿）
+### 3.3 免费次数流转（关键）
 
-- **判定时机**：
-  1. **进入免费瞬间**：沿用 **触发免费的那一屏** 的 **S**，先做一轮解锁判定（见 **§二.4 自动解锁**）。
-  2. **免费内每次 Spin 结束后**：在**当次停盘盘面**上统计 **S**，再判定是否解锁新行。  
-  （**修正版口径**：免费内 **Scatter 个数 S** 仅统计**已解锁行（UnlockedRows，自下而上 4~8 行）**的夺宝总数；夺宝格通过 **`scatterLock`** 跨 Spin **保留位置**，下一把该格先固定为夺宝再填其余格，见 §五「累积夺宝」。）
-- **解锁条件**：自下而上 4 档锁定行（第 5～8 行）对应阈值 **`T ∈ {8, 12, 16, 20}`**。当 **S ≥ T** 时，可解锁该行（**S ≥ 8** 解第一档；S 足够时可 **连续满足多档**）。阈值与加次由 **`free_unlock_thresholds`**、**`free_unlock_add_spins`** 提供（见 `game_json.go` / `bet_order_configs.go`）。
-
-| 自下而上第 i 档 | 对应行 | 阈值 Tᵢ | 解锁当次须满足 |
-|-----------------|--------|---------|----------------|
-| 1 | 第 5 行 | **8** | **S ≥ 8** |
-| 2 | 第 6 行 | **12** | **S ≥ 12** |
-| 3 | 第 7 行 | **16** | **S ≥ 16** |
-| 4 | 第 8 行 | **20** | **S ≥ 20** |
-
-- **界面「还差多少个 Scatter」**（未达解锁时）：**max(0, T − S)**（达到 **S ≥ T** 后该档视为已满足，展示 0 并触发解锁）。
-
-- 每成功 **新解锁一行**，免费次数 **+`free_unlock_add_spins`**（默认 **3**）。  
-- 最多 **4 次** 解锁，直至 8 行全部参与 Spin。
-
-### 3.3 结束条件（满足任一即退出免费，回到普通模式）
-
-1. **剩余免费 Spin 次数为 0**；或  
-2. **界面填满 / 免费流程结束**（如 doc 流程图：**8 行已全部解锁且满足「填满」判定**，或产品定义的等价结束条件）。
-
----
-
-## 四、整体流程（简图）
-
-```
-普通模式 4×5，50 线 Spin
-    → 未中奖 且 Scatter≥4 → 进免费；若 S 同时≥8/12/16/20 等 → 进免费当下自动解锁对应行并 +加次
-免费模式：3 次起（+进免费时已解锁档的加次），8×5；线奖只判最下 4 行
-    → 停盘后 S=盘面 Scatter；若 S≥该行阈值 T（8/12/16/20）则解锁；UI 还差 max(0,T-S)
-    → 每解锁一行 +free_unlock_add_spins（默认 3）；次数用尽或结束条件满足 → 回普通模式
-```
+| 节点 | FreeNum | 说明 |
+|---|---:|---|
+| 触发免费后（基础局结尾） | `+3` | 默认 `free_game_times=3` |
+| 免费局开始 | `-1` | 每次免费开局即消耗 1 次 |
+| 免费局内若解锁新行 | 补到 `max(当前,3)` | 由 `free_unlock_reset_spins` 控制 |
+| 免费结束 | 置 0 | 回基础模式并清空锁定状态 |
 
 ---
 
-## 五、开发注意事项（不涉及现有 sjxj 代码）
+## 四、实现差异提醒（代码 vs 目标规则）
 
-1. **逻辑重写**：赔率、线表、免费解锁与加次、结束判定以 **本 README + `doc/` + [Axure 文档](https://5zevov.axshare.com/?g=14&id=0nmyz0&p=%E4%B8%96%E7%95%8C%E5%B0%8F%E5%A7%90)** 为准；[Shanghai Beauty](https://jiligames.com/PlusIntro/17?showGame=true) 仅作扩展盘面类玩法参考。  
-2. **数值**：`doc/符号列表.png` 中 **爱心随机范围** 与多行扩展相关，需与 RTP/权重表一起评审。  
-3. **解锁配置**：**`free_unlock_thresholds`**（默认 `[8,12,16,20]`）、**`free_unlock_add_spins`**（默认 3）；协议可返回每档 **T**、当前 **S**、**还差 max(0,T−S)**。  
-4. **线奖实现**：免费 **8×5** 时 **勿对 8 行全盘跑 50 线**；仅对 **最下 4 行** 按基础线索引（或 +20 偏移）判奖。  
-5. **进免费首帧**：响应中需体现 **触发盘 S** 带来的 **自动解锁档数** 与 **免费次数加成**，与后续每拍 Spin 解锁逻辑一致。  
-6. **累积夺宝（`SpinSceneData`）**：**`scatterLock` [8][5]**，非 0 表示该格下一把强制为 Scatter；**`board`** 为当次 8×5 结果。生成顺序：先按 lock 填夺宝 → 每列对其余 **(8−x)** 格从 **`real_data` 滚轴随机起点连续取符号** → 再将 **本拍所有夺宝格** 写回 lock。基础进免费时用触发盘最下 4 行上的夺宝播种 lock；退出免费清空。  
-7. **联调**：返回 **board / scatterLock、S、UnlockedRows、剩余免费次数**。
+1. **免费线奖**：当前代码免费局不逐局结算 50 线，仅免费结束时一次性按夺宝倍数结算。
+2. **满屏结束判定**：当前判定范围为“已解锁行”，非严格全 8×5。
+3. **配置字段名**：代码使用 `free_unlock_reset_spins`，不是 `free_unlock_add_spins`。
+4. **文档用途**：联调用本 README“实现口径”；策划验收需另附“目标口径”清单。
 
 ---
 
-## 六、文档索引（快速打开）
+## 五、整体流程（简图）
 
-```text
-game/sjxj/doc/基础盘面.png
-game/sjxj/doc/中奖线.png
-game/sjxj/doc/符号列表.png
-game/sjxj/doc/符号赔率表.png
-game/sjxj/doc/免费模式盘面.png
-game/sjxj/doc/免费模式流程图.png
 ```
+Base 请求
+  -> load scene/sync stage
+  -> 生成基础盘面(real_data[0])
+  -> 计算线奖 + 统计Scatter(底部4行)
+  -> Scatter>=4 ? 是: freeNum+=3, lockScatter, next=Free : next=Base
+  -> 落单、保存场景、回包
+
+Free 请求
+  -> load scene/sync stage(进入Free)
+  -> freeNum先-1
+  -> 生成免费盘面(real_data[1], scatterLock优先)
+  -> 统计S(已解锁行), 解锁判定, 新Scatter写入lock并赋倍数
+  -> 若解锁则freeNum补到>=3
+  -> freeNum<=0 或 已解锁区满屏Scatter ?
+       是: stepMul=freeMul, clearLock, next=Base
+       否: stepMul=0, next=Free
+  -> 落单、保存场景、回包
+```
+
+---
+
+## 六、关键配置说明
+
+1. `free_game_scatter_min`：基础局触发免费的 Scatter 最小数（默认 4）。
+2. `free_game_times`：基础触发免费时初始赠送次数（默认 3）。
+3. `free_unlock_thresholds`：按 `UnlockedRows` 索引的解锁阈值（长度必须是 8）。
+4. `free_unlock_reset_spins`：免费局解锁后重置到的最小剩余次数（默认 3）。
+5. `free_scatter_multiplier_by_row`：按行配置的 Scatter 固定倍数随机池。
+
+---
+
+## 七、数据结构与状态持久化
+
+- Redis 场景键：`scene-18969:<memberID>`（含站点前缀）。
+- 核心场景字段：
+  - `Stage/NextStage`：阶段切换状态机；
+  - `FreeNum`：剩余免费次数；
+  - `ScatterLock[8][5]`：锁定散布与倍数；
+  - `UnlockedRows/PrevUnlockedRows`：当前与上局解锁行数。
+- 每次请求结束都会 `saveScene()`，支持断线恢复。
+
+---
+
+## 八、回包关键字段（联调重点）
+
+- `Free`：当前是否免费阶段。
+- `FreeNum`：当前剩余免费次数。
+- `FreeTime`：已进行的免费局计数。
+- `ScatterCount`：当前统计范围内的 Scatter 数。
+- `UnlockedRows` / `PrevUnlockedRows`：解锁行变化。
+- `AddFreeNum`：本局新增免费次数（来自解锁补次或基础触发免费）。
+- `Cards` / `WinGrid` / `WinInfo`：盘面、中奖位、中奖详情。
+
+---
+
+## 九、测试建议（按当前实现）
+
+1. 基础局触发免费：验证 `FreeNum=3`、`NextStage=Free`、`ScatterLock` 已写入。
+2. 免费局消耗：每次开局先 `FreeNum--`。
+3. 免费解锁补次：当 `UnlockedRows` 增长时，`FreeNum` 被补到 `>=3`。
+4. 免费结束结算：`FreeNum<=0` 或“已解锁区满屏”时一次性结算 `freeGameMul`。
+5. 结束回基础：`NextStage=Base` 且 `ScatterLock` 清空。
+
+---
+
+## 十、流程审阅清单（排查时使用）
+
+- 是否出现 `Stage/NextStage` 不一致导致阶段错乱。
+- 是否出现 `FreeNum` 与客户端免费计数不同步。
+- `UnlockedRows` 是否越界或 `PrevUnlockedRows > UnlockedRows`。
+- `scatterLock` 是否在免费结束后彻底清空。
+- 是否错误读取配置（Redis 覆盖本地配置）。
+
+---
+
+## 十一、完整流程图
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           用户请求下注 (betOrder)                       │
+└─────────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 1) getRequestContext + Client加锁 + GetLastOrder + reloadScene         │
+│ 2) syncGameStage: Stage = NextStage? (有则切换并清空NextStage)         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                     │
+                    ┌────────────────┴────────────────┐
+                    │                                 │
+                    ▼                                 ▼
+          ┌──────────────────────┐          ┌──────────────────────┐
+          │   Stage = Base       │          │   Stage = Free       │
+          └──────────────────────┘          └──────────────────────┘
+                    │                                 │
+                    ▼                                 ▼
+          ┌──────────────────────┐          ┌──────────────────────┐
+          │ initFirstStepForSpin │          │ initStepForNextStep  │
+          │ 校验下注/余额, amount>0│         │ amount=0             │
+          └──────────┬───────────┘          └──────────┬───────────┘
+                     │                                  │
+                     ▼                                  ▼
+          ┌──────────────────────┐          ┌──────────────────────┐
+          │ getSceneSymbolBase   │          │ FreeNum-- (先消耗一次) │
+          │ real_data[0]随机8x5   │          │ getSceneSymbolFree    │
+          └──────────┬───────────┘          │ lock优先 + real_data[1]│
+                     │                      └──────────┬───────────┘
+                     ▼                                 │
+          ┌──────────────────────┐                     ▼
+          │ checkSymbolGridWin   │          ┌──────────────────────┐
+          │ 计算50线, 得lineMul    │          │ tryUnlockNextRow     │
+          └──────────┬───────────┘          │ S>=阈值可连续解锁     │
+                     │                      └──────────┬───────────┘
+                     ▼                                 │
+          ┌──────────────────────┐                     ▼
+          │ getScatterCount      │          ┌──────────────────────┐
+          │ Base统计底部4行S      │          │ calcCurrentFreeMul    │
+          └──────────┬───────────┘          │ 新Scatter写lock并赋倍数│
+                     │                      │ 统计freeMul/满屏判定   │
+                     ▼                      └──────────┬───────────┘
+          ┌──────────────────────┐                     │
+          │ S >= free_min ?      │                     ▼
+          └──────────┬───────────┘          ┌──────────────────────┐
+                     │                      │ 解锁后补次: FreeNum   │
+           ┌─────────┴─────────┐            │ < reset_spins ? 补到3 │
+           ▼                   ▼            └──────────┬───────────┘
+ ┌──────────────────┐  ┌──────────────────┐            │
+ │ FreeNum += 3      │  │ NextStage=Base   │            ▼
+ │ NextStage=Free    │  │ stepMul=lineMul  │   ┌──────────────────────┐
+ │ lockScatter写入   │  └──────────────────┘   │ Free结束判定          │
+ │ stepMul=lineMul   │                         │ FreeNum<=0 或 满屏?   │
+ └─────────┬─────────┘                         └──────────┬───────────┘
+           │                                             │
+           └──────────────────────┬──────────────────────┘
+                                  ▼
+                ┌──────────────────────────────────────┐
+                │ Yes: stepMul=freeMul, clearLock,     │
+                │      NextStage=Base                  │
+                │ No : stepMul=0, NextStage=Free       │
+                └──────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ updateGameOrder -> settleStep(SaveTransfer) -> saveScene -> 返回回包   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+

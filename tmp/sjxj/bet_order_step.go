@@ -81,7 +81,7 @@ func (s *betOrderService) updateGameOrder() error {
 		GameName:          s.game.GameName,
 		BaseMultiple:      _baseMultiplier,
 		Multiple:          s.req.Multiple,
-		LineMultiple:      s.lineMultiplier,
+		LineMultiple:      s.stepMultiplier,
 		BonusHeadMultiple: 1,
 		BonusMultiple:     1,
 		BaseAmount:        s.req.BaseMoney,
@@ -110,9 +110,8 @@ func (s *betOrderService) fillInGameOrderDetails() error {
 		global.GVA_LOG.Error("fillInGameOrderDetails: marshal symbolGrid", zap.Error(err))
 		return err
 	}
-	// 使用3行奖励格式保存
 	if s.gameOrder.BonusRawDetail, err = json.CJSON.MarshalToString(s.winGrid); err != nil {
-		global.GVA_LOG.Error("fillInGameOrderDetails: marshal WinGridReward", zap.Error(err))
+		global.GVA_LOG.Error("fillInGameOrderDetails: marshal winGrid", zap.Error(err))
 		return err
 	}
 	s.gameOrder.BetDetail = s.symbolGridToString(s.symbolGrid)
