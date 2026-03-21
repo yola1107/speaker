@@ -114,6 +114,10 @@ func (s *betOrderService) processNoWin() {
 			s.scene.NextStage = _spinTypeBase
 			s.scene.IsRoundFirstStep = false
 			s.scene.TotalWildEliCount = 0
+			// 同一次免费触发期间复用 FreeReelData；免费结束回到基础模式后清理，确保下次触发重新生成
+			if len(s.scene.FreeReelData) > 0 {
+				s.scene.FreeReelData = nil
+			}
 		} else {
 			s.scene.NextStage = _spinTypeFree
 			s.scene.IsRoundFirstStep = true

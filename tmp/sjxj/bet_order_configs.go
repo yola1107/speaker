@@ -26,7 +26,7 @@ type SymbolRoller struct {
 	Col         int              `json:"col"`   // 第几列
 	Len         int              `json:"len"`   // 长度
 	Start       int              `json:"start"` // 开始索引
-	Fall        int              `json:"fall"`  // 开始索引
+	Fall        int              `json:"fall"`  // 结束索引
 	BoardSymbol [_rowCount]int64 `json:"board"` // 盘面符号
 }
 
@@ -51,10 +51,10 @@ func (s *betOrderService) parseGameConfigs() {
 	}
 
 	if s.gameConfig.FreeGameTimes <= 0 {
-		panic("s.gameConfig.FreeGameTimes <= 0 ")
+		panic("s.gameConfig.FreeGameTimes <= 0")
 	}
 	if s.gameConfig.FreeUnlockResetSpins <= 0 {
-		panic("s.gameConfig.FreeUnlockResetSpins <= 0 ")
+		panic("s.gameConfig.FreeUnlockResetSpins <= 0")
 	}
 	if len(s.gameConfig.FreeUnlockThresholds) != _rowCount {
 		panic("len(s.gameConfig.FreeUnlockThresholds) != 8")
@@ -75,63 +75,47 @@ func (s *betOrderService) initSpinSymbol() [_colCount]SymbolRoller {
 	return s.getSceneSymbolBase()
 }
 
-// 基础模式：纯随机填充（8×5 权威盘面）
 func (s *betOrderService) getSceneSymbolBase() [_colCount]SymbolRoller {
 	realIndex := 0
 	realData := s.gameConfig.RealData[realIndex]
-
 	var symbols [_colCount]SymbolRoller
-	for col := 0; col < _colCount; col++ {
-		reel := realData[col]
+
+	for c := 0; c < _colCount; c++ {
+		reel := realData[c]
 		reelLen := len(reel)
-		if reelLen == 0 {
-			panic("real data column is empty")
-		}
-
 		start := rand.IntN(reelLen)
-		end := (start + _rowCount - 1) % reelLen
-		roller := SymbolRoller{Real: realIndex, Start: start, Fall: end, Col: col, Len: reelLen}
+		roller := SymbolRoller{Real: realIndex, Start: start, Fall: (start + _rowCount - 1) % reelLen, Col: c, Len: reelLen}
 
-		for row := 0; row < _rowCount; row++ {
-			symbol := reel[(start+row)%reelLen]
-			roller.BoardSymbol[int(_rowCount)-1-row] = symbol
+		for r := 0; r < _rowCount; r++ {
+			roller.BoardSymbol[_rowCount-1-r] = reel[(start+r)%reelLen]
 		}
-		symbols[col] = roller
+		symbols[c] = roller
 	}
-
 	return symbols
 }
 
-// 免费模式 8×5：ScatterLock 固定夺宝占位，其余格由滚轴填充；ScatterLock 在本局结束统一重建。
 func (s *betOrderService) getSceneSymbolFree() [_colCount]SymbolRoller {
 	realIndex := 1
 	realData := s.gameConfig.RealData[realIndex]
-
 	var symbols [_colCount]SymbolRoller
-	for col := 0; col < _colCount; col++ {
-		reel := realData[col]
+
+	for c := 0; c < _colCount; c++ {
+		reel := realData[c]
 		dataLen := len(reel)
-		if dataLen == 0 {
-			panic("real data column is empty")
-		}
 
 		needRows := make([]int, 0, _rowCount)
-		roller := SymbolRoller{Real: realIndex, Col: col, Len: dataLen}
+		roller := SymbolRoller{Real: realIndex, Col: c, Len: dataLen}
 
-		for row := _rowCount - 1; row >= 0; row-- {
-			if s.scene.ScatterLock[row][col] != 0 {
-				roller.BoardSymbol[row] = _treasure
+		for r := _rowCount - 1; r >= 0; r-- {
+			if s.scene.ScatterLock[r][c] != 0 {
+				roller.BoardSymbol[r] = _treasure
 			} else {
-				roller.BoardSymbol[row] = 0
-				needRows = append(needRows, row)
-			}
-			if row == 0 {
-				break
+				roller.BoardSymbol[r] = 0
+				needRows = append(needRows, r)
 			}
 		}
 
-		x := len(needRows)
-		if x > 0 {
+		if x := len(needRows); x > 0 {
 			start := rand.IntN(dataLen)
 			roller.Start = start
 			roller.Fall = (start + x - 1) % dataLen
@@ -139,10 +123,8 @@ func (s *betOrderService) getSceneSymbolFree() [_colCount]SymbolRoller {
 				roller.BoardSymbol[needRows[i]] = reel[(start+i)%dataLen]
 			}
 		}
-
-		symbols[col] = roller
+		symbols[c] = roller
 	}
-
 	return symbols
 }
 
@@ -157,8 +139,6 @@ func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64
 	return table[starN-1]
 }
 
-// calcNewFreeGameNum 计算触发免费游戏的次数
-// 规则：夺宝数 >= free_game_scatter_min 时触发，免费次数 = free_game_times
 func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
 	if scatterCount < s.gameConfig.FreeGameScatterMin {
 		return 0

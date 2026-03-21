@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option go_package = "egame-grpc/game/common/pb";
+
+import "common.proto";
+
+package sbyymx2;
+
+// 桑巴与亚马逊 (GameID: 8917)
+// 3x3 盘面，中间行单线判奖；JSON 与 PB 字段对齐新网关（见 hcsqy 等）
+message sbyymx2_BetOrderResponse {
+  string orderSN = 1;              // 订单号
+  double balance = 2;              // 当前余额
+  double betAmount = 3;            // 本局下注（原 map 字段 betMoney）
+  double currentWin = 4;           // 本局赢取（原 map 字段 win）
+  double totalWin = 5;             // 回合累计赢取
+  common.Board cards = 6;          // 3x3 符号，行优先 9 个元素
+  common.Board winGrid = 7;        // 中奖标记格（原 wincards）
+  bool special = 8;                // 是否多步/特殊流程（当前恒 false）
+  bool tease = 9;                  // 挑逗动画
+  int64 review = 10;               // 复盘标志
+  int64 lineMultiplier = 11;       // 线倍数合计
+  int64 stepMultiplier = 12;     // 步倍数（与 line 同值，兼容订单明细）
+}

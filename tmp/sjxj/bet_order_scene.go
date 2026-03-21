@@ -52,8 +52,6 @@ func (s *betOrderService) reloadScene() error {
 			return err
 		}
 	}
-
-	// 加载场景后立即进行状态切换
 	s.syncGameStage()
 	return nil
 }
@@ -62,15 +60,12 @@ func (s *betOrderService) syncGameStage() {
 	if s.scene.Stage == 0 {
 		s.scene.Stage = _spinTypeBase
 	}
-
 	if s.scene.NextStage > 0 {
 		s.scene.Stage = s.scene.NextStage
 		s.scene.NextStage = 0
 	}
-
 	s.isFreeRound = s.scene.Stage == _spinTypeFree
 
-	// 只要不是免费态，就清理 free 专用状态，避免旧 scatterLock 影响下一次 lockScatter。
 	if !s.isFreeRound {
 		s.scene.ScatterLock = int64Grid{}
 		s.scene.UnlockedRows = _rowCountReward

@@ -216,7 +216,7 @@ func writeRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, i
 	// 打印5个滚轴的完整数据（每个长度100）
 	fprintf(buf, "滚轴数据:\n")
 	for col := 0; col < _colCount; col++ {
-		fprintf(buf, "  %v\n", svc.scene.SymbolRoller[col].Reel)
+		fprintf(buf, "  %v\n", svc.getReelForCol(col))
 	}
 	fprintf(buf, "\n")
 }

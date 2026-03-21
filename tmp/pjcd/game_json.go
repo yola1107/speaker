@@ -1,6 +1,7 @@
 package pjcd
 
-const _gameJsonConfigsRaw = `{
+const _gameJsonConfigsRaw = `
+{
   "pay_table": [
     [0,0,2,5,10],
     [0,0,2,5,10],
@@ -32,20 +33,20 @@ const _gameJsonConfigsRaw = `{
     [0,1,7,13,14],
     [10,1,12,3,14]
   ],
-  "base_reel_generate_interval": 10,
+  "base_reel_generate_interval":10,
   "base_symbol_weights":[1900,1900,1500,1500,1200,1050,950],
-  "symbol_permutation_weights": [8100,1700,200],
-  "base_scatter_prob": 183,
-  "base_wild_prob": 275,
-  "base_round_multipliers": [1,2,3,5],
+  "symbol_permutation_weights":[7900,1900,200],
+  "base_scatter_prob":214,
+  "base_wild_prob":330,
+  "base_round_multipliers":[1,2,3,5],
   "wild_add_fourth_multiple": 5,
-  "free_game_spins": 8,
-  "free_game_scatter_min": 3,
-  "free_game_add_spins_per_scatter": 2,
-  "free_game_two_scatter_add_times": 3,
+  "free_game_spins":8,
+  "free_game_scatter_min":3,
+  "free_game_add_spins_per_scatter":2,
+  "free_game_two_scatter_add_times":3,
   "free_symbol_weights":[1600,1600,1500,1500,1350,1250,1200],
-  "free_scatter_prob": 180,
-  "free_wild_prob": 585,
-  "free_round_multipliers": [3,6,9,15]
+  "free_scatter_prob":150,
+  "free_wild_prob":690,
+  "free_round_multipliers":[3,6,9,15]
 }
 `

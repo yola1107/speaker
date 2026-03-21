@@ -3,9 +3,9 @@ package pjcd
 import (
 	"math/rand/v2"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"egame-grpc/game/common"
+
+	jsoniter "github.com/json-iterator/go"
 )
 
 type gameConfigJson struct {
@@ -35,7 +35,6 @@ type SymbolRoller struct {
 	Start       int              `json:"start"` // 开始索引
 	Fall        int              `json:"fall"`  // 下落索引（用于连消时获取下一个符号）
 	BoardSymbol [_rowCount]int64 `json:"board"` // 盘面符号
-	Reel        []int64          `json:"reel"`  // 当前列完整轮轴数据
 }
 
 func (s *betOrderService) initGameConfigs() {
@@ -57,6 +56,18 @@ func (s *betOrderService) parseGameConfigs() {
 	if err := jsoniter.UnmarshalFromString(raw, s.gameConfig); err != nil {
 		panic(err)
 	}
+	if s.gameConfig.WildAddFourthMultiple <= 0 {
+		panic("WildAddFourthMultiple must be greater than 0")
+	}
+	if len(s.gameConfig.BaseSymbolWeights) == 0 {
+		panic("BaseSymbolWeights is empty")
+	}
+	if len(s.gameConfig.SymbolPermutationWeights) == 0 {
+		panic("SymbolPermutationWeights is empty")
+	}
+	if len(s.gameConfig.FreeSymbolWeights) == 0 {
+		panic("FreeSymbolWeights is empty")
+	}
 }
 
 const _reelLength = 100
@@ -65,13 +76,10 @@ const _reelModeBase = 0
 const _reelModeFree = 1
 
 func (s *betOrderService) initSpinSymbol() [_colCount]SymbolRoller {
-	reelMode := _reelModeBase
-	reelData := s.getOrBuildBaseReelData()
 	if s.isFreeRound {
-		reelMode = _reelModeFree
-		reelData = s.getOrBuildFreeReelData()
+		return s.buildBoardFromReelData(s.getOrBuildFreeReelData(), _reelModeFree)
 	}
-	return s.buildBoardFromReelData(reelData, reelMode)
+	return s.buildBoardFromReelData(s.getOrBuildBaseReelData(), _reelModeBase)
 }
 
 func (s *betOrderService) getOrBuildBaseReelData() [][]int64 {
@@ -125,6 +133,23 @@ func (s *betOrderService) cloneReelData(src [][]int64) [][]int64 {
 	return dst
 }
 
+// getReelForCol 返回当前 scene 中第 col 列使用的滚轴（来自 BaseReelData 或 FreeReelData）
+func (s *betOrderService) getReelForCol(col int) []int64 {
+	if s.scene == nil || col < 0 || col >= _colCount {
+		return nil
+	}
+	if s.scene.SymbolRoller[col].Real == _reelModeFree {
+		if len(s.scene.FreeReelData) > col {
+			return s.scene.FreeReelData[col]
+		}
+		return nil
+	}
+	if len(s.scene.BaseReelData) > col {
+		return s.scene.BaseReelData[col]
+	}
+	return nil
+}
+
 func (s *betOrderService) buildBoardFromReelData(reelData [][]int64, reelMode int) [_colCount]SymbolRoller {
 	var symbols [_colCount]SymbolRoller
 	for col := 0; col < _colCount; col++ {
@@ -142,7 +167,6 @@ func (s *betOrderService) buildBoardFromReelData(reelData [][]int64, reelMode in
 			Len:   reelLen,
 			Start: start,
 			Fall:  end,
-			Reel:  reel,
 		}
 		for row := 0; row < _rowCount; row++ {
 			symbol := reel[(start+row)%reelLen]
@@ -174,11 +198,9 @@ func (s *betOrderService) generateReelSymbolsFull(col int, isFree bool) []int64 
 	return s.generateReelSymbols(weights, scatterProb, wildProb, allowWild)
 }
 
+// generateReelSymbols 与 game/pjcd2 生成逻辑严格对齐：先抽符号再抽连号长度，禁止连续相同符号，再两段式 SC/WILD
 func (s *betOrderService) generateReelSymbols(weights []int, scatterProb, wildProb int, allowWild bool) []int64 {
 	permWeights := s.gameConfig.SymbolPermutationWeights
-	if len(permWeights) == 0 {
-		permWeights = []int{8100, 1700, 200}
-	}
 
 	totalWeight := 0
 	for _, w := range weights {
@@ -191,12 +213,26 @@ func (s *betOrderService) generateReelSymbols(weights []int, scatterProb, wildPr
 	reel := make([]int64, 0, _reelLength)
 	lastSymbol := int64(-1)
 	for len(reel) < _reelLength {
-		consecutiveCount := s.weightedRandomConsecutiveCount(permWeights)
 		baseSymbol := s.weightedRandomSymbolExcluding(weights, totalWeight, lastSymbol)
+		consecutiveCount := s.weightedRandomConsecutiveCount(permWeights)
 		for i := 0; i < consecutiveCount && len(reel) < _reelLength; i++ {
-			reel = append(reel, maybeReplaceSpecial(baseSymbol, scatterProb, wildProb, allowWild))
+			reel = append(reel, baseSymbol)
 		}
 		lastSymbol = baseSymbol
+	}
+
+	// 两段式与 pjcd2 一致：先全列 scatterProb 覆盖 SC，再中间三列 wildProb 覆盖 WILD（非 SC 位置）
+	for i := range reel {
+		if rand.IntN(_probabilityBase) < scatterProb {
+			reel[i] = _treasure
+		}
+	}
+	if allowWild {
+		for i := range reel {
+			if reel[i] != _treasure && rand.IntN(_probabilityBase) < wildProb {
+				reel[i] = _wild
+			}
+		}
 	}
 	return reel
 }
@@ -254,38 +290,27 @@ func (s *betOrderService) weightedRandomSymbolExcluding(weights []int, totalWeig
 	return 1
 }
 
-func maybeReplaceSpecial(symbol int64, scatterProb, wildProb int, allowWild bool) int64 {
-	r := rand.IntN(_probabilityBase)
-	if r < scatterProb {
-		return _treasure
-	}
-	if allowWild && r < scatterProb+wildProb {
-		return _wild
-	}
-	return symbol
-}
-
-func (rs *SymbolRoller) ringSymbol() {
+func (rs *SymbolRoller) ringSymbol(reel []int64) {
 	var newBoard [_rowCount]int64
 	for i, s := range rs.BoardSymbol {
 		if s != 0 {
 			newBoard[i] = s
 		}
 	}
-	for i := int(_rowCount) - 1; i >= 0; i-- {
+	for i := _rowCount - 1; i >= 0; i-- {
 		if newBoard[i] == 0 {
-			newBoard[i] = rs.getFallSymbol()
+			newBoard[i] = rs.getFallSymbol(reel)
 		}
 	}
 	rs.BoardSymbol = newBoard
 }
 
-func (rs *SymbolRoller) getFallSymbol() int64 {
-	if len(rs.Reel) == 0 {
+func (rs *SymbolRoller) getFallSymbol(reel []int64) int64 {
+	if len(reel) == 0 {
 		return 0
 	}
-	rs.Fall = (rs.Fall + 1) % len(rs.Reel)
-	return rs.Reel[rs.Fall]
+	rs.Fall = (rs.Fall + 1) % len(reel)
+	return reel[rs.Fall]
 }
 
 func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64 {
@@ -299,9 +324,7 @@ func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64
 	return table[starN-1]
 }
 
-// calcNewFreeGameNum 计算触发免费游戏的次数
-// 基础模式：scatter >= free_game_scatter_min → free_game_spins + (scatter - min) * free_game_add_spins_per_scatter
-// 免费模式再触发：scatter >= 2 → free_game_two_scatter_add_times + (scatter - 2) * free_game_add_spins_per_scatter
+// calcNewFreeGameNum 计算触发免费游戏的次数 8+(x-3)*2; 特殊的免费只有两个时，返回3次新增
 func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
 	if s.isFreeRound {
 		// 免费模式再触发：2 个夺宝起算
@@ -309,8 +332,11 @@ func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
 		if scatterCount < freeRetriggerScatterMin {
 			return 0
 		}
-		return s.gameConfig.FreeGameTwoScatterAddTimes +
-			(scatterCount-freeRetriggerScatterMin)*s.gameConfig.FreeGameAddSpinsPerScatter
+		if scatterCount == freeRetriggerScatterMin {
+			return s.gameConfig.FreeGameTwoScatterAddTimes // 只有2个夺宝 返回3次
+		}
+		return s.gameConfig.FreeGameSpins +
+			(scatterCount-s.gameConfig.FreeGameScatterMin)*s.gameConfig.FreeGameAddSpinsPerScatter
 	}
 
 	// 基础模式触发

@@ -60,7 +60,7 @@ func newBetOrderService() *betOrderService {
 
 func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, error) {
 	s.req = req
-	if !s.getRequestContext() {
+	if err := s.getRequestContext(); err != nil {
 		return nil, "", InternalServerError
 	}
 	c, ok := client.GVA_CLIENT_BUCKET.GetClient(req.MemberId)
@@ -103,55 +103,52 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, er
 }
 
 func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
+	state := int64(0)
+	if s.isFreeRound {
+		state = 1
+	}
 	result := &pb.Pjcd_BetOrderResponse{
-		OrderSN:      proto.String(s.orderSn.OrderSN),
-		Balance:      proto.Float64(s.gameOrder.CurBalance),
-		BetAmount:    proto.Float64(s.betAmount.Round(2).InexactFloat64()),
-		CurrentWin:   proto.Float64(s.bonusAmount.Round(2).InexactFloat64()),
-		FreeWin:      proto.Float64(s.client.ClientOfFreeGame.GetFreeTotalMoney()),
-		TotalWin:     proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
-		Free:         proto.Bool(s.isFreeRound),
-		Review:       proto.Int64(s.req.Review),
-		WinInfo:      s.buildWinInfo(),
-		Cards:        s.int64GridToPbBoard(s.symbolGrid),
-		ScatterCount: proto.Int64(s.scatterCount),
+		OrderSN:           proto.String(s.orderSn.OrderSN),
+		Balance:           proto.Float64(s.gameOrder.CurBalance),
+		BetAmount:         proto.Float64(s.betAmount.Round(2).InexactFloat64()),
+		CurrentWin:        proto.Float64(s.bonusAmount.Round(2).InexactFloat64()),
+		FreeWin:           proto.Float64(s.client.ClientOfFreeGame.GetFreeTotalMoney()),
+		TotalWin:          proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
+		Free:              proto.Bool(s.isFreeRound),
+		Review:            proto.Int64(s.req.Review),
+		WinInfo:           s.buildWinInfo(),
+		Cards:             s.int64GridToPbBoard(s.symbolGrid),
+		ScatterCount:      proto.Int64(s.scatterCount),
+		IsRoundOver:       proto.Bool(s.isRoundOver),
+		Multi:             proto.Int64(s.stepMultiplier),
+		State:             proto.Int64(state),
+		FreeNum:           proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeNum())),
+		FreeTime:          proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeTimes())),
+		WinGrid:           s.int64GridToPbBoard(s.winGrid),
+		IsGameOver:        proto.Bool(s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0),
+		RoundWin:          proto.Float64(s.calcRoundWin()),
+		MulIndex:          proto.Int64(s.gameMultipleIndex),
+		BaseMultipliers:   s.gameConfig.BaseRoundMultipliers,
+		FreeMultipliers:   s.gameConfig.FreeRoundMultipliers,
+		WildEliCount:      proto.Int64(s.addWildEliCount),
+		TotalWildEliCount: proto.Int64(s.scene.TotalWildEliCount),
 	}
 	return s.MarshalData(result)
 }
 
 // buildWinInfo 构建 WinInfo
 func (s *betOrderService) buildWinInfo() *pb.Pjcd_WinInfo {
-	state := int64(0)
-	if s.isFreeRound {
-		state = 1
-	}
 	winArr := make([]*pb.Pjcd_WinArr, len(s.winInfos))
 	for i, elem := range s.winInfos {
 		winArr[i] = &pb.Pjcd_WinArr{
-			Val:     proto.Int64(elem.Symbol),
 			RoadNum: proto.Int64(elem.LineCount),
-			StarNum: proto.Int64(elem.SymbolCount),
 			Odds:    proto.Int64(elem.Odds),
-			Grid:    s.int64GridToPbBoard(elem.WinGrid),
 		}
 	}
 	return &pb.Pjcd_WinInfo{
-		IsRoundOver:       proto.Bool(s.isRoundOver),
-		Multi:             proto.Int64(s.stepMultiplier),
-		State:             proto.Int64(state),
-		FreeNum:           proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeNum())),
-		FreeTime:          proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeTimes())),
-		WinArr:            winArr,
-		WinGrid:           s.int64GridToPbBoard(s.winGrid),
-		IsGameOver:        proto.Bool(s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0),
-		AddFreeNum:        proto.Int64(s.addFreeTime),
-		MulIndex:          proto.Int64(s.gameMultipleIndex),
-		BaseMultipliers:   s.gameConfig.BaseRoundMultipliers,
-		FreeMultipliers:   s.gameConfig.FreeRoundMultipliers,
-		WildEliMultiple:   proto.Int64(s.wildMultiplier),
-		WildEliCount:      proto.Int64(s.addWildEliCount),
-		TotalWildEliCount: proto.Int64(s.scene.TotalWildEliCount),
-		RoundWin:          proto.Float64(s.calcRoundWin()),
+		WinArr:          winArr,
+		AddFreeNum:      proto.Int64(s.addFreeTime),
+		WildEliMultiple: proto.Int64(s.wildMultiplier),
 	}
 }
 

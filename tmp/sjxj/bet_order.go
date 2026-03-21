@@ -124,7 +124,6 @@ func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 	return s.MarshalData(result)
 }
 
-// buildWinInfo 构建 WinInfo
 func (s *betOrderService) buildWinInfo() *pb.Sjxj_WinInfo {
 	winArr := make([]*pb.Sjxj_WinArr, len(s.winInfos))
 	for i, elem := range s.winInfos {
@@ -140,12 +139,11 @@ func (s *betOrderService) buildWinInfo() *pb.Sjxj_WinInfo {
 	}
 }
 
-// int64GridToPbBoard 将 int64Grid 转为 common.Board，行优先 4行×5列
 func (s *betOrderService) int64GridToPbBoard(grid int64Grid) *pb.Board {
 	elements := make([]int64, _rowCount*_colCount)
-	for row := 0; row < _rowCount; row++ {
-		for col := 0; col < _colCount; col++ {
-			elements[row*_colCount+col] = grid[row][col]
+	for r := 0; r < _rowCount; r++ {
+		for c := 0; c < _colCount; c++ {
+			elements[r*_colCount+c] = grid[r][c]
 		}
 	}
 	return &pb.Board{Elements: elements}

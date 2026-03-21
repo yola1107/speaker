@@ -106,11 +106,9 @@ func (s *betOrderService) handleSymbolGrid() {
 }
 
 func (s *betOrderService) calcCurrentFreeGameMul() (bool, int64, int64) {
-	// 免费模式：为当前盘面夺宝生成固定倍数（若尚未生成）
 	cfg := s.gameConfig.FreeScatterMulByRow
 	startRow := _rowCount - s.scene.UnlockedRows
 
-	// 合并两轮遍历：一边补齐 ScatterLock（若当前为0），一边统计本次需要的 mul 和满屏判定。
 	isFullScatter := true
 	var mul int64
 	var newScatterCount int64
@@ -123,7 +121,6 @@ func (s *betOrderService) calcCurrentFreeGameMul() (bool, int64, int64) {
 				continue
 			}
 
-			// Scatter：若尚未分配固定倍数，则随机一次并写入 ScatterLock，后续免费期保持不变。
 			if s.scene.ScatterLock[r][c] == 0 {
 				s.scene.ScatterLock[r][c] = cfg[r][rand.IntN(len(cfg[r]))]
 			}
@@ -137,15 +134,11 @@ func (s *betOrderService) calcCurrentFreeGameMul() (bool, int64, int64) {
 	return isFullScatter, mul, newScatterCount
 }
 
-// checkSymbolGridWin 检查符号网格中奖情况
 func (s *betOrderService) checkSymbolGridWin() {
 	var winInfos []WinInfo
 	var totalWinGrid int64Grid
 
 	for i, line := range s.gameConfig.Lines {
-		// 优化：基础符号只由该条线的最左格（第1列）决定。
-		// 若最左格不是 Wild，则只有该符号能在左到右匹配中成立；
-		// 若最左格是 Wild，为保持与原实现一致，需要保留1..9全枚举。
 		firstP := line[0]
 		firstR := firstP / _colCount
 		firstC := firstP % _colCount
@@ -165,7 +158,6 @@ func (s *betOrderService) checkSymbolGridWin() {
 			symbolCandidates[0] = firstSymbol
 			candCount = 1
 		} else {
-			// firstSymbol 为空/Scatter 等不可能触发线奖，直接跳过本线
 			continue
 		}
 
@@ -175,8 +167,7 @@ func (s *betOrderService) checkSymbolGridWin() {
 			var winGrid int64Grid
 
 			for _, p := range line {
-				r := p / _colCount
-				c := p % _colCount
+				r, c := p/_colCount, p%_colCount
 				currSymbol := s.symbolGrid[r][c]
 				if currSymbol == symbol || currSymbol == _wild {
 					winGrid[r][c] = currSymbol
@@ -187,20 +178,16 @@ func (s *betOrderService) checkSymbolGridWin() {
 			}
 
 			if count >= _minMatchCount {
-				odds := s.getSymbolBaseMultiplier(symbol, int(count))
-				if odds > 0 {
-					// 直接创建最终格式，避免后续转换
+				if odds := s.getSymbolBaseMultiplier(symbol, int(count)); odds > 0 {
 					winInfos = append(winInfos, WinInfo{
 						Symbol:      symbol,
 						SymbolCount: count,
 						LineCount:   int64(i),
 						Odds:        odds,
-						WinGrid:     winGrid, // 保留完整4行信息
+						WinGrid:     winGrid,
 					})
-					// 只标记当前这条线上的命中格子（最多5格），避免额外遍历 8×5。
 					for _, p := range line {
-						r := p / _colCount
-						c := p % _colCount
+						r, c := p/_colCount, p%_colCount
 						if winGrid[r][c] > 0 {
 							totalWinGrid[r][c] = 1
 						}
