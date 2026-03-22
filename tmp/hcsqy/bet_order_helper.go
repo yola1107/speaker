@@ -2,6 +2,7 @@ package hcsqy
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"strconv"
 	"strings"
@@ -28,18 +29,49 @@ func (s *betOrderService) updateBetAmount() bool {
 	s.betAmount = decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
 		Mul(decimal.NewFromInt(_baseMultiplier))
+	s.amount = s.betAmount
+	if s.req.Purchase > 0 {
+		s.amount = s.betAmount.Mul(decimal.NewFromInt(s.gameConfig.BuyFreeMultiplier))
+	}
 
-	if s.betAmount.LessThanOrEqual(decimal.Zero) {
+	if s.betAmount.LessThanOrEqual(decimal.Zero) || s.amount.LessThanOrEqual(decimal.Zero) {
 		global.GVA_LOG.Warn("updateBetAmount",
-			zap.Error(fmt.Errorf("invalid request params: [%v,%v]", s.req.BaseMoney, s.req.Multiple)))
+			zap.Error(fmt.Errorf("invalid request params: [%v,%v,%v]", s.req.BaseMoney, s.req.Multiple, s.req.Purchase)))
 		return false
 	}
 	return true
 }
 
 func (s *betOrderService) checkBalance() bool {
-	f, _ := s.betAmount.Float64()
+	f, _ := s.amount.Float64()
 	return gamelogic.CheckMemberBalance(f, s.member)
+}
+
+func (s *betOrderService) checkBetOption() bool {
+	matchSize := false
+	for _, elem := range _supportedBetSizes {
+		if math.Abs(elem-s.req.BaseMoney) < 1e-9 {
+			matchSize = true
+			break
+		}
+	}
+	if !matchSize {
+		return false
+	}
+	for _, elem := range _supportedBetMultiples {
+		if elem == s.req.Multiple {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *betOrderService) checkPurchase() bool {
+	if s.req.Purchase <= 0 {
+		return true
+	}
+	expected := s.betAmount.Mul(decimal.NewFromInt(s.gameConfig.BuyFreeMultiplier)).Round(0).IntPart()
+	return expected == s.req.Purchase
 }
 
 func (s *betOrderService) symbolGridToString(symbolGrid int64Grid) string {

@@ -98,10 +98,21 @@ func (s *betOrderService) processWinInfos() {
 
 	// 设置下一阶段：有免费次数则免费模式，否则基础模式
 	if s.scene.FreeNum > 0 {
-		s.scene.NextStage = _spinTypeFree
+		if s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0 {
+			s.scene.IsPurchase = true
+			s.scene.NextStage = _spinTypeBuyFree
+		} else {
+			s.scene.NextStage = _spinTypeFree
+		}
 	} else {
 		s.scene.FreeNum = 0
-		s.scene.NextStage = _spinTypeBase
+		if s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0 {
+			s.scene.IsPurchase = false
+			s.client.ClientOfFreeGame.SetPurchaseAmount(0)
+			s.scene.NextStage = _spinTypeBase
+		} else {
+			s.scene.NextStage = _spinTypeBase
+		}
 	}
 
 	// 必赢模式中或触发免费时，回合未结束

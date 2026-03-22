@@ -121,7 +121,15 @@ func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 		UnlockedRows:     proto.Int32(int32(unlocked)),
 		PrevUnlockedRows: proto.Int32(int32(s.scene.PrevUnlockedRows)),
 	}
-	return s.MarshalData(result)
+	pbData, err := proto.Marshal(result)
+	if err != nil {
+		return nil, "", err
+	}
+	jsonData, err := json.CJSON.MarshalToString(result)
+	if err != nil {
+		return nil, "", err
+	}
+	return pbData, jsonData, nil
 }
 
 func (s *betOrderService) buildWinInfo() *pb.Sjxj_WinInfo {
@@ -147,18 +155,6 @@ func (s *betOrderService) int64GridToPbBoard(grid int64Grid) *pb.Board {
 		}
 	}
 	return &pb.Board{Elements: elements}
-}
-
-func (s *betOrderService) MarshalData(data proto.Message) ([]byte, string, error) {
-	pbData, err := proto.Marshal(data)
-	if err != nil {
-		return nil, "", err
-	}
-	jsonData, err := json.CJSON.MarshalToString(data)
-	if err != nil {
-		return nil, "", err
-	}
-	return pbData, jsonData, nil
 }
 
 func (s *betOrderService) calcRoundWin() float64 {

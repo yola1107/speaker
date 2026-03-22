@@ -113,7 +113,7 @@ func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 		Cards:          s.int64GridToPbBoard(s.symbolGrid),
 		ScatterCount:   s.scatterCount,
 		IsRoundOver:    s.isRoundOver,
-		State:          btoi(s.isFreeRound),
+		State:          int64(s.scene.Stage),
 		FreeNum:        int64(s.client.ClientOfFreeGame.GetFreeNum()),
 		FreeTime:       int64(s.client.ClientOfFreeGame.GetFreeTimes()),
 		WinGrid:        s.int64GridToPbBoard(s.winGrid),
@@ -123,6 +123,7 @@ func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 		IsMustWin:      s.scene.IsMustWin,
 		WildMultiplier: s.wildMultiplier,
 		LineMultiplier: s.lineMultiplier,
+		IsPurchase:     s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0,
 	}
 	pbData, err := proto.Marshal(result)
 	if err != nil {

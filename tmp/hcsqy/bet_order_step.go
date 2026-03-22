@@ -31,8 +31,12 @@ func (s *betOrderService) initFirstStepForSpin() error {
 	}
 
 	switch {
+	case !s.checkBetOption():
+		return InvalidRequestParams
 	case !s.updateBetAmount():
 		return InvalidRequestParams
+	case !s.checkPurchase():
+		return ErrorPurchase
 	case !s.checkBalance():
 		return InsufficientBalance
 	}
@@ -42,8 +46,19 @@ func (s *betOrderService) initFirstStepForSpin() error {
 	s.client.ClientOfFreeGame.ResetRoundBonus()
 	s.client.ClientOfFreeGame.ResetRoundBonusStaging()
 	s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
-	s.amount = s.betAmount
+	s.client.ClientOfFreeGame.SetPurchaseAmount(s.req.Purchase)
 	s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
+	if s.req.Purchase > 0 {
+		freeNum := uint64(s.gameConfig.FreeBaseTimes)
+		s.scene.IsPurchase = true
+		s.scene.Stage = _spinTypeBuyFree
+		s.scene.NextStage = 0
+		s.scene.FreeNum = s.gameConfig.FreeBaseTimes
+		s.isFreeRound = true
+		s.client.ClientOfFreeGame.SetFreeNum(freeNum)
+		s.client.SetMaxFreeNum(freeNum)
+		s.client.SetLastMaxFreeNum(freeNum)
+	}
 	return nil
 }
 
@@ -67,7 +82,9 @@ func (s *betOrderService) initStepForNextStep() error {
 
 func (s *betOrderService) updateGameOrder() error {
 	if !s.debug.open {
-		s.orderSn = common.GenerateOrderSn(s.member, s.lastOrder, s.scene.Stage == _spinTypeBase, s.scene.Stage == _spinTypeFree)
+		isBaseStage := s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeBuyBase
+		isFreeStage := s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeBuyFree
+		s.orderSn = common.GenerateOrderSn(s.member, s.lastOrder, isBaseStage, isFreeStage)
 	}
 	if s.orderSn == nil {
 		s.orderSn = &common.OrderSN{}
@@ -100,6 +117,9 @@ func (s *betOrderService) updateGameOrder() error {
 	}
 	if s.isFreeRound {
 		s.gameOrder.IsFree = 1
+		if s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0 {
+			s.gameOrder.IsFree = 2
+		}
 	}
 	return s.fillInGameOrderDetails()
 }
