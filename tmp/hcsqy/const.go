@@ -1,9 +1,8 @@
 package hcsqy
 
-const _gameID = 18956
-const GameID = 18956
-const Name = "横财三千亿"
+const GameID = 18956 // 横财三千亿
 const _baseMultiplier = 5
+const _buyFreeMultiplier = 75 // 购买免费价格倍数（75倍）
 
 const (
 	_rowCount = 3 // 行数
@@ -28,10 +27,10 @@ const _minMatchCount = 3 // 最小中奖数量
 
 // 游戏阶段
 const (
-	_spinTypeBase    = 1  // 普通模式
-	_spinTypeFree    = 2  // 免费模式
-	_spinTypeBuyBase = 11 // 购买免费基础模式
-	_spinTypeBuyFree = 12 // 购买免费免费模式
+	_spinTypeBase    = 1 // 普通模式
+	_spinTypeBuyBase = 2 // 基础模式 购买免费
+	_spinTypeFree    = 3 // 免费模式
+	_spinTypeBuyFree = 4 // 免费模式 购买免费
 )
 
 var (

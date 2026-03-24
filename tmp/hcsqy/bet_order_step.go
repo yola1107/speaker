@@ -16,7 +16,7 @@ import (
 func (s *betOrderService) initialize() error {
 	s.client.ClientOfFreeGame.ResetFreeClean()
 	switch {
-	case !s.isFreeRound && !s.scene.IsMustWin:
+	case !s.isFreeRound && !s.scene.IsRespinMode:
 		return s.initFirstStepForSpin()
 	default:
 		return s.initStepForNextStep()
@@ -49,11 +49,11 @@ func (s *betOrderService) initFirstStepForSpin() error {
 	s.client.ClientOfFreeGame.SetPurchaseAmount(s.req.Purchase)
 	s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
 	if s.req.Purchase > 0 {
-		freeNum := uint64(s.gameConfig.FreeBaseTimes)
+		freeNum := uint64(s.gameConfig.Free.FreeTimes)
 		s.scene.IsPurchase = true
 		s.scene.Stage = _spinTypeBuyFree
 		s.scene.NextStage = 0
-		s.scene.FreeNum = s.gameConfig.FreeBaseTimes
+		s.scene.FreeNum = s.gameConfig.Free.FreeTimes
 		s.isFreeRound = true
 		s.client.ClientOfFreeGame.SetFreeNum(freeNum)
 		s.client.SetMaxFreeNum(freeNum)

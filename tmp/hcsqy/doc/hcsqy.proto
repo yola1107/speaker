@@ -8,7 +8,7 @@ package hcsqy;
 
 // 横财三千亿 (GameID: 18956)
 // 盘面: 3x3，5条中奖线
-// 特色: 必赢模式、百搭变大、长条百搭
+// 特色: 重转至赢、百搭变大、长条百搭
 message hcsqy_BetOrderResponse {
     string orderSN         = 1;   // 订单号
     double balance         = 2;   // 玩家当前余额
@@ -28,8 +28,9 @@ message hcsqy_BetOrderResponse {
     common.Board winGrid   = 16;  // 中奖位置网格 3x3
     bool isGameOver        = 17;  // 大回合结束
     double roundWin        = 18;  // 一局所有回合总赢
-    bool next              = 19;  // 是否需要继续请求（必赢重转）
-    bool isMustWin         = 20;  // 是否在必赢模式中 (有炸胡动画)
+    bool next              = 19;  // 是否需要继续请求（重转至赢）
+    bool isRespinUntilWin  = 20;  // 是否在重转至赢模式中 (有炸胡动画)
+    int32 respinWildCol    = 24;  // 重转至赢模式长条百搭列 (0-2)，非重转模式为-1
     int64 wildMultiplier   = 21;  // 长条百搭倍数 (x2-x20)
     int64 lineMultiplier   = 22;  // 线赔率合计（各中奖线基础赔率之和，未乘长条百搭）
     bool isPurchase        = 23;  // 当前大回合是否购买免费触发

@@ -2,6 +2,8 @@ package hcsqy
 
 import "math/rand/v2"
 
+//import "egame-grpc/game/common/rand"
+
 func (s *betOrderService) baseSpin() error {
 	if s.debug.open {
 		s.syncGameStage()
@@ -9,7 +11,7 @@ func (s *betOrderService) baseSpin() error {
 	if err := s.initialize(); err != nil {
 		return err
 	}
-	if s.isFreeRound && s.scene.FreeNum > 0 && !s.scene.IsMustWin {
+	if s.isFreeRound && s.scene.FreeNum > 0 && !s.scene.IsRespinMode {
 		s.client.ClientOfFreeGame.IncrFreeTimes()
 		s.client.ClientOfFreeGame.Decr()
 		s.scene.FreeNum--
@@ -22,36 +24,35 @@ func (s *betOrderService) baseSpin() error {
 
 func (s *betOrderService) processGame() {
 	s.addFreeTime = 0
-	s.mustWinCol = -1
+	s.respinWildCol = -1
 	s.wildExpandCol = -1
 	s.wildMultiplier = 1
 	s.lineMultiplier = 0
-	s.scatterCount = s.getScatterCount()
+	// 夺宝数见 processWinInfos：在重转盖列、百搭变大之后按最终盘面统计
 
-	// 必赢模式：正在重转中 或 概率触发新必赢
-	if s.scene.IsMustWin || isHitFloat(s.gameConfig.MustWinProb) {
-		s.processMustWin()
+	// 重转至赢模式：正在重转中 或 概率触发新重转
+	if s.scene.IsRespinMode || s.isHitRespinProb() {
+		s.processRespinUntilWin()
 		return
 	}
 
-	// 百搭变大：先找候选列，再5%判定
+	// 百搭变大：先找候选列，再概率判定
 	s.processWildExpand()
 }
 
-func (s *betOrderService) processMustWin() {
+func (s *betOrderService) processRespinUntilWin() {
 	s.next = true
-	s.scene.IsMustWin = true
-	s.wildMultiplier = s.pickWildMultiplier()
-	col := rand.IntN(_colCount)
-	for row := 0; row < _rowCount; row++ {
-		s.symbolGrid[row][col] = _wild
+	s.scene.IsRespinMode = true
+	s.wildMultiplier = s.weightWildMultiplier()
+	c := rand.IntN(_colCount)
+	for r := 0; r < _rowCount; r++ {
+		s.symbolGrid[r][c] = _wild
 	}
-	s.mustWinCol = int8(col)
-	s.scatterCount = s.getScatterCount()
+	s.respinWildCol = int32(c)
 
 	s.checkSymbolGridWin()
 	if len(s.winInfos) > 0 {
-		s.scene.IsMustWin = false
+		s.scene.IsRespinMode = false
 		s.next = false
 	}
 	s.processWinInfos()
@@ -59,10 +60,10 @@ func (s *betOrderService) processMustWin() {
 
 func (s *betOrderService) processWildExpand() {
 	var candidates []int
-	for col := 0; col < _colCount; col++ {
+	for c := 0; c < _colCount; c++ {
 		wildCount, hasTreasure := 0, false
-		for row := 0; row < _rowCount; row++ {
-			switch s.symbolGrid[row][col] {
+		for r := 0; r < _rowCount; r++ {
+			switch s.symbolGrid[r][c] {
 			case _wild:
 				wildCount++
 			case _treasure:
@@ -70,17 +71,17 @@ func (s *betOrderService) processWildExpand() {
 			}
 		}
 		if wildCount >= 1 && wildCount <= 2 && !hasTreasure {
-			candidates = append(candidates, col)
+			candidates = append(candidates, c)
 		}
 	}
 
-	if len(candidates) > 0 && isHitFloat(s.gameConfig.WildExpandProb) {
-		col := candidates[rand.IntN(len(candidates))]
-		s.wildMultiplier = s.pickWildMultiplier()
-		s.wildExpandCol = int8(col)
-		for row := 0; row < _rowCount; row++ {
-			s.symbolGrid[row][col] = _wild
+	if len(candidates) > 0 && s.isHitWildExpandProb() {
+		s.wildMultiplier = s.weightWildMultiplier()
+		c := candidates[rand.IntN(len(candidates))]
+		for r := 0; r < _rowCount; r++ {
+			s.symbolGrid[r][c] = _wild
 		}
+		s.wildExpandCol = int32(c)
 	}
 
 	s.checkSymbolGridWin()
@@ -88,6 +89,8 @@ func (s *betOrderService) processWildExpand() {
 }
 
 func (s *betOrderService) processWinInfos() {
+	// 本步 symbolGrid 已定型（自然停轮 + 重转盖列 / 百搭变大），与结算、回包、订单夺宝数同一口径
+	s.scatterCount = s.getScatterCount()
 	s.stepMultiplier = s.lineMultiplier * s.wildMultiplier
 
 	if newFree := s.calcNewFreeGameNum(s.scatterCount); newFree > 0 {
@@ -96,31 +99,23 @@ func (s *betOrderService) processWinInfos() {
 		s.addFreeTime = newFree
 	}
 
-	// 设置下一阶段：有免费次数则免费模式，否则基础模式
-	if s.scene.FreeNum > 0 {
-		if s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0 {
-			s.scene.IsPurchase = true
-			s.scene.NextStage = _spinTypeBuyFree
-		} else {
-			s.scene.NextStage = _spinTypeFree
-		}
-	} else {
+	isPurchaseMode := s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0
+	if s.scene.FreeNum <= 0 {
 		s.scene.FreeNum = 0
-		if s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0 {
+		s.scene.NextStage = _spinTypeBase
+		if isPurchaseMode {
 			s.scene.IsPurchase = false
 			s.client.ClientOfFreeGame.SetPurchaseAmount(0)
-			s.scene.NextStage = _spinTypeBase
-		} else {
-			s.scene.NextStage = _spinTypeBase
 		}
+	} else if isPurchaseMode {
+		s.scene.IsPurchase = true
+		s.scene.NextStage = _spinTypeBuyFree
+	} else {
+		s.scene.NextStage = _spinTypeFree
 	}
 
-	// 必赢模式中或触发免费时，回合未结束
-	if s.scene.IsMustWin || s.addFreeTime > 0 {
-		s.isRoundOver = false
-	} else {
-		s.isRoundOver = true
-	}
+	// 重转至赢模式中或触发免费时，回合未结束
+	s.isRoundOver = !(s.scene.IsRespinMode || s.addFreeTime > 0)
 
 	s.updateBonusAmount(s.stepMultiplier)
 }

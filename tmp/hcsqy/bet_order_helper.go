@@ -3,11 +3,11 @@ package hcsqy
 import (
 	"fmt"
 	"math"
-	"math/rand/v2"
 	"strconv"
 	"strings"
 
 	"egame-grpc/game/common"
+	//"egame-grpc/game/common/rand"
 	"egame-grpc/gamelogic"
 	"egame-grpc/global"
 
@@ -31,7 +31,7 @@ func (s *betOrderService) updateBetAmount() bool {
 		Mul(decimal.NewFromInt(_baseMultiplier))
 	s.amount = s.betAmount
 	if s.req.Purchase > 0 {
-		s.amount = s.betAmount.Mul(decimal.NewFromInt(s.gameConfig.BuyFreeMultiplier))
+		s.amount = s.betAmount.Mul(decimal.NewFromInt(_buyFreeMultiplier))
 	}
 
 	if s.betAmount.LessThanOrEqual(decimal.Zero) || s.amount.LessThanOrEqual(decimal.Zero) {
@@ -70,7 +70,7 @@ func (s *betOrderService) checkPurchase() bool {
 	if s.req.Purchase <= 0 {
 		return true
 	}
-	expected := s.betAmount.Mul(decimal.NewFromInt(s.gameConfig.BuyFreeMultiplier)).Round(0).IntPart()
+	expected := s.betAmount.Mul(decimal.NewFromInt(_buyFreeMultiplier)).Round(0).IntPart()
 	return expected == s.req.Purchase
 }
 
@@ -242,11 +242,4 @@ func btoi(b bool) int64 {
 		return 1
 	}
 	return 0
-}
-
-func isHitFloat(pro float64) bool {
-	if pro < 0 {
-		return false
-	}
-	return rand.Float64() < pro
 }

@@ -1,36 +1,43 @@
 package hcsqy
 
 import (
+	"fmt"
 	"math/rand/v2"
 
 	"egame-grpc/game/common"
+	//"egame-grpc/game/common/rand"
 
 	jsoniter "github.com/json-iterator/go"
 )
 
 type gameConfigJson struct {
-	PayTable                []int64   `json:"pay_table"`                  // 赔付表，索引=符号ID-1
-	SymbolWeights           []float64 `json:"symbol_weights"`             // 符号概率，索引=符号ID-1
-	Lines                   [][]int   `json:"lines"`                      // 中奖线定义
-	FreeTriggerCount        int64     `json:"free_trigger_count"`         // 触发免费最少夺宝数
-	FreeBaseTimes           int64     `json:"free_base_times"`            // 基础免费次数
-	FreeExtraPerScatter     int64     `json:"free_extra_per_scatter"`     // 每多一个夺宝增加次数
-	BuyFreeMultiplier       int64     `json:"buy_free_multiplier"`        // 购买免费价格倍数
-	MustWinProb             float64   `json:"must_win_prob"`              // 必赢触发概率
-	WildExpandProb          float64   `json:"wild_expand_prob"`           // 百搭变大触发概率
-	LongWildMultipliers     []int64   `json:"long_wild_multipliers"`      // 长条百搭倍数
-	LongWildMultiplierProbs []float64 `json:"long_wild_multiplier_probs"` // 长条百搭倍数概率
-	RollCfg                 rollConf  `json:"roll_cfg"`                   //
-	RealData                []Reel    `json:"real_data"`                  // 滚轴数据 [模式][列]
+	PayTable          [][]int64       `json:"pay_table"`           // 赔付表，索引=符号ID-1
+	Lines             [][]int         `json:"lines"`               // 中奖线定义
+	Free              freeConfig      `json:"free"`                // 免费参数
+	RespinRate        [][2]int64      `json:"respin_rate"`         // 必赢触发概率分数 [分子,分母]，index 0=基础，1=免费
+	WildExpandRate    [][2]int64      `json:"wild_expand_rate"`    // 百搭变大概率分数 [分子,分母]，index 0=基础，1=免费
+	ExpandMultiConfig expandMultiConf `json:"expand_multi_config"` // 长条百搭倍数与权重
+	RollCfg           rollConf        `json:"roll_cfg"`            // 滚轴配置
+	RealData          []Reel          `json:"real_data"`           // 滚轴数据 [模式][列]
 }
 
-type Reel [][]int64
+type freeConfig struct {
+	ScatterMin         int64 `json:"scatter_min"`           // 触发免费最少夺宝数
+	FreeTimes          int64 `json:"free_times"`            // 基础免费次数
+	PerScatterAddTimes int64 `json:"per_scatter_add_times"` // 每多一个夺宝增加次数
+}
+
+type expandMultiConf struct {
+	Multi  []int64 `json:"multi"`  // 长条百搭倍数
+	Weight []int   `json:"weight"` // 长条百搭倍数权重
+	WTotal int     `json:"-"`      // 权重总和
+}
 
 type rollConf struct {
-	Base    rollCfgType `json:"base"`
-	Free    rollCfgType `json:"free"`
-	BuyBase rollCfgType `json:"buy_base"`
-	BuyFree rollCfgType `json:"buy_free"`
+	Base       rollCfgType `json:"base"`
+	BaseRespin rollCfgType `json:"base_respin"`
+	Free       rollCfgType `json:"free"`
+	FreeRespin rollCfgType `json:"free_respin"`
 }
 
 type rollCfgType struct {
@@ -38,6 +45,8 @@ type rollCfgType struct {
 	Weight []int `json:"weight"`
 	WTotal int   `json:"-"`
 }
+
+type Reel [][]int64
 
 type SymbolRoller struct {
 	Real        int              `json:"real"`  // 选择的第几个轮盘
@@ -68,39 +77,71 @@ func (s *betOrderService) parseGameConfigs() {
 		panic(err)
 	}
 
-	if len(s.gameConfig.PayTable) < 8 {
-		panic("pay_table length < 8")
+	if len(s.gameConfig.PayTable) < int(_wild) {
+		panic(fmt.Sprintf("pay_table length < %d", _wild))
 	}
 	if len(s.gameConfig.RealData) < 4 {
 		panic("real_data length < 4")
 	}
-	if len(s.gameConfig.LongWildMultipliers) != len(s.gameConfig.LongWildMultiplierProbs) {
-		panic("multipliers and probs length mismatch")
+	if s.gameConfig.Free.FreeTimes <= 0 || s.gameConfig.Free.ScatterMin <= 0 {
+		panic("invalid free config")
 	}
-	if len(s.gameConfig.SymbolWeights) > 0 && len(s.gameConfig.SymbolWeights) != 9 {
-		panic("symbol_weights length != 9")
+	if len(s.gameConfig.RespinRate) != 2 {
+		panic("respin_rate length != 2")
 	}
-	validateRoll := func(cfg *rollCfgType) {
-		if len(cfg.UseKey) == 0 || len(cfg.Weight) == 0 || len(cfg.UseKey) != len(cfg.Weight) {
-			panic("invalid roll cfg")
-		}
-		total := 0
-		for _, w := range cfg.Weight {
-			total += w
-		}
-		if total <= 0 {
-			panic("invalid roll cfg total")
-		}
-		cfg.WTotal = total
+	if len(s.gameConfig.WildExpandRate) != 2 {
+		panic("wild_expand_rate length != 2")
 	}
-	validateRoll(&s.gameConfig.RollCfg.Base)
-	validateRoll(&s.gameConfig.RollCfg.Free)
-	validateRoll(&s.gameConfig.RollCfg.BuyBase)
-	validateRoll(&s.gameConfig.RollCfg.BuyFree)
+
+	s.calculateExpandWeight(&s.gameConfig.ExpandMultiConfig)
+
+	s.calculateRollWeight(&s.gameConfig.RollCfg.Base)
+	s.calculateRollWeight(&s.gameConfig.RollCfg.BaseRespin)
+	s.calculateRollWeight(&s.gameConfig.RollCfg.Free)
+	s.calculateRollWeight(&s.gameConfig.RollCfg.FreeRespin)
+}
+
+func (s *betOrderService) calculateRollWeight(rollCfg *rollCfgType) {
+	if len(rollCfg.Weight) != len(rollCfg.UseKey) {
+		panic("roll weight and use_key length not match")
+	}
+	rollCfg.WTotal = 0
+	for _, w := range rollCfg.Weight {
+		rollCfg.WTotal += w
+	}
+	if rollCfg.WTotal <= 0 {
+		panic("roll weight sum <= 0")
+	}
+}
+
+func (s *betOrderService) calculateExpandWeight(c *expandMultiConf) {
+	if len(c.Multi) == 0 || len(c.Multi) != len(c.Weight) {
+		panic("invalid expand_multi_config")
+	}
+	totalMultiWeight := 0
+	for _, w := range c.Weight {
+		totalMultiWeight += w
+	}
+	if totalMultiWeight <= 0 {
+		panic("invalid expand_multi_config total")
+	}
+	c.WTotal = totalMultiWeight
 }
 
 func (s *betOrderService) initSpinSymbol() [_colCount]SymbolRoller {
-	realIndex := s.pickRealIndexByStage()
+	var cfg rollCfgType
+	switch {
+	case s.isFreeRound && s.scene.IsRespinMode:
+		cfg = s.gameConfig.RollCfg.FreeRespin
+	case s.isFreeRound:
+		cfg = s.gameConfig.RollCfg.Free
+	case s.scene.IsRespinMode:
+		cfg = s.gameConfig.RollCfg.BaseRespin
+	default:
+		cfg = s.gameConfig.RollCfg.Base
+	}
+
+	realIndex := cfg.UseKey[pickWeightIndex(cfg.Weight, cfg.WTotal)]
 	return s.getSceneSymbol(realIndex)
 }
 
@@ -108,40 +149,23 @@ func (s *betOrderService) getSceneSymbol(realIndex int) [_colCount]SymbolRoller 
 	var symbols [_colCount]SymbolRoller
 	realData := s.gameConfig.RealData[realIndex]
 
-	for col := 0; col < _colCount; col++ {
-		reel := realData[col]
+	for c := 0; c < _colCount; c++ {
+		reel := realData[c]
 		reelLen := len(reel)
 		start := rand.IntN(reelLen)
-		roller := SymbolRoller{Real: realIndex, Start: start, Fall: (start + _rowCount - 1) % reelLen, Col: col, Len: reelLen}
+		roller := SymbolRoller{Real: realIndex, Start: start, Fall: (start + _rowCount - 1) % reelLen, Col: c, Len: reelLen}
 
-		for row := 0; row < _rowCount; row++ {
-			roller.BoardSymbol[_rowCount-1-row] = reel[(start+row)%reelLen]
+		for r := 0; r < _rowCount; r++ {
+			roller.BoardSymbol[_rowCount-1-r] = reel[(start+r)%reelLen]
 		}
-		symbols[col] = roller
+		symbols[c] = roller
 	}
 	return symbols
 }
 
-func (s *betOrderService) pickRealIndexByStage() int {
-	cfg := s.gameConfig.RollCfg.Base
-	switch s.scene.Stage {
-	case _spinTypeFree:
-		cfg = s.gameConfig.RollCfg.Free
-	case _spinTypeBuyBase:
-		cfg = s.gameConfig.RollCfg.BuyBase
-	case _spinTypeBuyFree:
-		cfg = s.gameConfig.RollCfg.BuyFree
-	}
-	index := pickWeightIndex(cfg.Weight, cfg.WTotal)
-	realIndex := cfg.UseKey[index]
-	if realIndex < 0 || realIndex >= len(s.gameConfig.RealData) {
-		return 0
-	}
-	return realIndex
-}
-
+// pickWeightIndex 按权重随机选择索引
 func pickWeightIndex(weights []int, total int) int {
-	if len(weights) == 0 || total <= 0 {
+	if len(weights) <= 1 || total <= 0 {
 		return 0
 	}
 	r := rand.IntN(total)
@@ -155,16 +179,9 @@ func pickWeightIndex(weights []int, total int) int {
 	return 0
 }
 
-func (s *betOrderService) pickSymbolByWeight() int64 {
-	r := rand.Float64()
-	cumProb := 0.0
-	for i, w := range s.gameConfig.SymbolWeights {
-		cumProb += w
-		if r < cumProb {
-			return int64(i + 1)
-		}
-	}
-	return _treasure
+func (s *betOrderService) weightWildMultiplier() int64 {
+	idx := pickWeightIndex(s.gameConfig.ExpandMultiConfig.Weight, s.gameConfig.ExpandMultiConfig.WTotal)
+	return s.gameConfig.ExpandMultiConfig.Multi[idx]
 }
 
 func (s *betOrderService) getSymbolBaseMultiplier(symbol int64) int64 {
@@ -172,24 +189,38 @@ func (s *betOrderService) getSymbolBaseMultiplier(symbol int64) int64 {
 	if idx < 0 || idx >= len(s.gameConfig.PayTable) {
 		return 0
 	}
-	return s.gameConfig.PayTable[idx]
+	table := s.gameConfig.PayTable[idx]
+	if len(table) == 0 {
+		return 0
+	}
+	return table[len(table)-1]
 }
 
 func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
-	if scatterCount < s.gameConfig.FreeTriggerCount {
+	if scatterCount < s.gameConfig.Free.ScatterMin {
 		return 0
 	}
-	return s.gameConfig.FreeBaseTimes + (scatterCount-s.gameConfig.FreeTriggerCount)*s.gameConfig.FreeExtraPerScatter
+	return s.gameConfig.Free.FreeTimes + (scatterCount-s.gameConfig.Free.ScatterMin)*s.gameConfig.Free.PerScatterAddTimes
 }
 
-func (s *betOrderService) pickWildMultiplier() int64 {
-	r := rand.Float64()
-	cumProb := 0.0
-	for i, prob := range s.gameConfig.LongWildMultiplierProbs {
-		cumProb += prob
-		if r < cumProb {
-			return s.gameConfig.LongWildMultipliers[i]
-		}
+func (s *betOrderService) isHitRespinProb() bool {
+	if s.isFreeRound {
+		return isHit(s.gameConfig.RespinRate[1][0], s.gameConfig.RespinRate[1][1])
 	}
-	return s.gameConfig.LongWildMultipliers[0]
+	return isHit(s.gameConfig.RespinRate[0][0], s.gameConfig.RespinRate[0][1])
+}
+
+func (s *betOrderService) isHitWildExpandProb() bool {
+	if s.isFreeRound {
+		return isHit(s.gameConfig.WildExpandRate[1][0], s.gameConfig.WildExpandRate[1][1])
+	}
+	return isHit(s.gameConfig.WildExpandRate[0][0], s.gameConfig.WildExpandRate[0][1])
+}
+
+// isHit 按 num/den 概率命中：在 [0, den) 均匀取随机数，小于 num 则命中。
+func isHit(num, den int64) bool {
+	if num <= 0 || den <= 0 {
+		return false
+	}
+	return rand.Int64N(den) < num
 }

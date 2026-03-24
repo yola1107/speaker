@@ -27,6 +27,8 @@ func TestRtp2(t *testing.T) {
 	buf := &strings.Builder{}
 	svc := newBerService()
 	svc.initGameConfigs()
+	var respinStepsInBase, respinStepsInFree int64
+	var resChainStartsBase, resChainStartsInFree int64
 	baseGameCount, freeRoundIdx := 0, 0
 	interval := int64(min(testRounds, progressInterval))
 
@@ -39,19 +41,35 @@ func TestRtp2(t *testing.T) {
 		var gameNum int
 		var roundWin, freeRoundWin float64
 		var triggeringBaseRound int
-		var mustWinStep int // 必赢重转步数
-		isFirst := true     // 每个回合只有第一次 spin 为 true
+		var respinStep int // 重转至赢步数
+		isFirst := true    // 每个回合只有第一次 spin 为 true
 
 		for {
 			if isFirst {
 				roundWin = 0
 				freeRoundWin = 0
-				mustWinStep = 0
+				respinStep = 0
 			} else {
-				mustWinStep++ // 必赢重转步数递增
+				respinStep++ // 重转至赢步数递增
 			}
 
+			beforeRespin := svc.scene.IsRespinMode
+			beforeFree := svc.isFreeRound
 			_ = svc.baseSpin()
+			if svc.respinWildCol >= 0 {
+				if beforeFree {
+					respinStepsInFree++
+				} else {
+					respinStepsInBase++
+				}
+				if !beforeRespin {
+					if beforeFree {
+						resChainStartsInFree++
+					} else {
+						resChainStartsBase++
+					}
+				}
+			}
 			isFree := svc.isFreeRound
 
 			// 更新游戏计数（只有第一次 spin 才计数）
@@ -82,10 +100,12 @@ func TestRtp2(t *testing.T) {
 				}
 			} else {
 				baseTotalWin += stepWin
-				// 基础模式触发免费游戏（无论 isRoundOver 如何）
-				if svc.addFreeTime > 0 && isFirst {
+				// 与 rtp_test 一致：基础盘任意一次 addFreeTime>0 计一次触发（含重转至赢末手进免费，此时 isFirst=false）
+				if svc.addFreeTime > 0 {
 					baseFreeTriggered++
-					triggeringBaseRound = baseGameCount + 1 // 使用当前局号
+					if isFirst {
+						triggeringBaseRound = baseGameCount + 1 // 日志局号：常见为首手触发
+					}
 				}
 			}
 
@@ -98,7 +118,7 @@ func TestRtp2(t *testing.T) {
 						triggerRound = baseGameCount
 					}
 				}
-				writeSpinDetail(fileBuf, svc, gameNum, isFree, triggerRound, stepWin, roundWin, mustWinStep, isFirst)
+				writeSpinDetail(fileBuf, svc, gameNum, isFree, triggerRound, stepWin, roundWin, respinStep, isFirst)
 			}
 
 			// Round 结束处理
@@ -126,7 +146,8 @@ func TestRtp2(t *testing.T) {
 					freeRoundIdx = 0
 					if baseRounds%interval == 0 {
 						totalWin := baseTotalWin + freeTotalWin
-						printBenchmarkProgress(buf, baseRounds, totalBet, baseTotalWin, freeTotalWin, totalWin, baseWinRounds, freeWinRounds, freeRounds, baseFreeTriggered, 0, start)
+						// freeTime 与 rtp_test 一致：为基础模式触发免费次数（非 0，便于进度行与汇总对照）
+						printBenchmarkProgress(buf, baseRounds, totalBet, baseTotalWin, freeTotalWin, totalWin, baseWinRounds, freeWinRounds, freeRounds, baseFreeTriggered, baseFreeTriggered, start)
 						fmt.Print(buf.String())
 					}
 					break
@@ -158,7 +179,8 @@ func TestRtp2(t *testing.T) {
 	}
 
 	printFinalStats(buf, baseRounds, baseTotalWin, baseWinRounds, baseFreeTriggered,
-		freeRounds, freeTotalWin, freeWinRounds, freeTreasureInFree, freeExtraFreeRounds, totalBet, start)
+		freeRounds, freeTotalWin, freeWinRounds, freeTreasureInFree, freeExtraFreeRounds, totalBet, start,
+		respinStepsInBase, respinStepsInFree, resChainStartsBase, resChainStartsInFree)
 	result := buf.String()
 	fmt.Print(result)
 	if debugFileOpen > 0 && fileBuf != nil {
@@ -166,7 +188,7 @@ func TestRtp2(t *testing.T) {
 	}
 }
 
-func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggeringBaseRound int, stepWin, roundWin float64, mustWinStep int, isFirst bool) {
+func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggeringBaseRound int, stepWin, roundWin float64, respinStep int, isFirst bool) {
 	if isFree {
 		trigger := "?"
 		if triggeringBaseRound > 0 {
@@ -174,12 +196,13 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, is
 		}
 		fprintf(buf, "\n=============[基础模式] 第%s局 - 免费第%d局 =============\n", trigger, gameNum)
 	} else {
-		if mustWinStep > 0 {
-			fprintf(buf, "\n=============[基础模式] 第%d局 (必赢重转 Step%d) =============\n", gameNum, mustWinStep+1)
+		if respinStep > 0 {
+			fprintf(buf, "\n=============[基础模式] 第%d局 (重转至赢 Step%d) =============\n", gameNum, respinStep+1)
 		} else {
 			fprintf(buf, "\n=============[基础模式] 第%d局 =============\n", gameNum)
 		}
 	}
+	writeReelInfo(buf, svc)
 	fprintf(buf, "Step1 初始盘面:\n")
 	writeGridToBuilder(buf, &svc.symbolGrid, &svc.winGrid)
 
@@ -203,9 +226,9 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, is
 
 	longwild := ""
 	switch {
-	case svc.scene.IsMustWin && svc.mustWinCol >= 0:
-		//fprintf(buf, "\t触发长条(必赢), col=%d mul=%d\n", svc.mustWinCol, wildMul)
-		longwild = "💎必赢模式"
+	case svc.scene.IsRespinMode && svc.respinWildCol >= 0:
+		//fprintf(buf, "\t触发长条(重转至赢), col=%d mul=%d\n", svc.respinWildCol, wildMul)
+		longwild = "💎重转至赢"
 	case svc.wildExpandCol >= 0:
 		//fprintf(buf, "\t触发长条(变大), col=%d mul=%d\n", svc.wildExpandCol, wildMul)
 		longwild = "💎长条变大"
@@ -216,11 +239,11 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, is
 	//fprintf(buf, "\tMode=%d Stage=%d, nSt=%d, S=%d | FreeNum=%d CliFreeTimes=%d | Over=%v Next=%v MW=%v addFree=%d %s\n",
 	//	btoi(isFree), svc.scene.Stage, svc.scene.NextStage, treasureCount,
 	//	svc.scene.FreeNum, svc.client.ClientOfFreeGame.GetFreeTimes(),
-	//	svc.isRoundOver, svc.next, svc.scene.IsMustWin, svc.addFreeTime, longwild)
+	//	svc.isRoundOver, svc.next, svc.scene.IsRespinUntilWin, svc.addFreeTime, longwild)
 
 	//switch {
-	//case svc.scene.IsMustWin && svc.mustWinCol >= 0:
-	//	fprintf(buf, "\t触发长条(必赢), col=%d mul=%d\n", svc.mustWinCol, wildMul)
+	//case svc.scene.IsRespinUntilWin && svc.respinWildCol >= 0:
+	//	fprintf(buf, "\t触发长条(重转至赢), col=%d mul=%d\n", svc.respinWildCol, wildMul)
 	//case svc.wildExpandCol >= 0:
 	//	fprintf(buf, "\t触发长条(变大), col=%d mul=%d\n", svc.wildExpandCol, wildMul)
 	//	case wildMul > 1:
@@ -248,6 +271,19 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, is
 	fprintf(buf, "\n")
 }
 
+func writeReelInfo(buf *strings.Builder, svc *betOrderService) {
+	if svc.scene == nil || len(svc.scene.SymbolRoller) == 0 {
+		fprintf(buf, "滚轴配置Index: 0\n转轮信息长度/起始：未初始化\n")
+		return
+	}
+	fprintf(buf, "滚轴配置Index: %d\n转轮信息长度/起始：", svc.scene.SymbolRoller[0].Real)
+	for c := 0; c < len(svc.scene.SymbolRoller); c++ {
+		rc := svc.scene.SymbolRoller[c]
+		fprintf(buf, "%d[%d～%d]  ", rc.Len, rc.Start, rc.Fall)
+	}
+	fprintf(buf, "\n")
+}
+
 func writeGridToBuilder(buf *strings.Builder, grid *int64Grid, winGrid *int64Grid) {
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
@@ -272,7 +308,8 @@ func saveDebugFile(statsResult, detailResult string, start time.Time) {
 
 func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float64, baseWinRounds int64,
 	baseFreeTriggered int64, freeRounds int64, freeTotalWin float64,
-	freeWinRounds int64, freeTreasureInFree int64, freeExtraFreeRounds int64, totalBet float64, start time.Time) {
+	freeWinRounds int64, freeTreasureInFree int64, freeExtraFreeRounds int64, totalBet float64, start time.Time,
+	respinStepsInBase, respinStepsInFree, resChainStartsBase, resChainStartsInFree int64) {
 	w := func(format string, args ...interface{}) { fprintf(buf, format, args...) }
 	elapsed := time.Since(start)
 	speed := safeDiv(baseRounds, int64(elapsed.Seconds()))
@@ -281,16 +318,21 @@ func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float6
 	w("\n===== 详细统计汇总 =====\n")
 	w("生成时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 
-	baseRTP := safeDiv(int64(baseTotalWin)*100, int64(totalBet))
-	freeRTP := safeDiv(int64(freeTotalWin)*100, int64(totalBet))
+	// 与 rtp_test（printBenchmarkSummary）一致：浮点口径，避免先转 int64 丢小数
+	baseRTP := safeDivFloat(baseTotalWin*100, totalBet)
+	freeRTP := safeDivFloat(freeTotalWin*100, totalBet)
 	totalWin := baseTotalWin + freeTotalWin
-	totalRTP := safeDiv(int64(totalWin)*100, int64(totalBet))
+	totalRTP := safeDivFloat(totalWin*100, totalBet)
 	baseWinRate := safeDiv(baseWinRounds*100, baseRounds)
 	freeWinRate := safeDiv(freeWinRounds*100, max(freeRounds, 1))
 	freeTriggerRate := safeDiv(baseFreeTriggered*100, baseRounds)
 	avgFreePerTrigger := safeDiv(freeRounds, baseFreeTriggered)
 	baseContrib := safeDivFloat(baseTotalWin*100, totalWin)
 	freeContrib := safeDivFloat(freeTotalWin*100, totalWin)
+	resStartRateBase := safeDiv(resChainStartsBase*100, baseRounds)
+	resStartRateFree := safeDiv(resChainStartsInFree*100, max(freeRounds, 1))
+	resChainTotal := resChainStartsBase + resChainStartsInFree
+	avgRespinStepsPerChain := safeDiv(respinStepsInBase+respinStepsInFree, resChainTotal)
 
 	w("\n[基础模式统计]\n")
 	w("基础模式总游戏局数: %d\n", baseRounds)
@@ -301,6 +343,8 @@ func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float6
 	w("基础模式触发免费局比例: %.2f%%\n", freeTriggerRate)
 	w("基础模式中奖率: %.2f%%\n", baseWinRate)
 	w("基础模式中奖局数: %d\n", baseWinRounds)
+	w("重转至赢·基础: 步%d | 链%d | 率%.2f%% | 均%.4f步/局\n",
+		respinStepsInBase, resChainStartsBase, resStartRateBase, safeDivFloat(float64(respinStepsInBase), float64(baseRounds)))
 
 	w("\n[免费模式统计]\n")
 	w("免费模式总游戏局数: %d\n", freeRounds)
@@ -310,11 +354,14 @@ func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float6
 	w("免费模式中奖局数: %d\n", freeWinRounds)
 	w("免费模式额外增加局数: %d\n", freeExtraFreeRounds)
 	w("免费模式出现夺宝的次数: %d (%.2f%%)\n", freeTreasureInFree, safeDiv(freeTreasureInFree*100, max(freeRounds, 1)))
+	w("重转至赢·免费: 步%d | 链%d | 率%.2f%% | 均%.4f步/局\n",
+		respinStepsInFree, resChainStartsInFree, resStartRateFree, safeDivFloat(float64(respinStepsInFree), float64(max(freeRounds, 1))))
 
 	w("\n[免费触发效率]\n")
 	w("  总免费游戏次数: %d (真实的游戏局数，包含中途增加的免费次数)\n", freeRounds)
 	w("  总触发次数: %d (基础模式触发免费游戏的次数)\n", baseFreeTriggered)
 	w("  平均1次触发获得免费游戏: %.2f次 (总免费游戏次数 / 总触发次数)\n", avgFreePerTrigger)
+	w("  重转至赢·合计: %d步 | %d链 | %.2f 步/链\n", respinStepsInBase+respinStepsInFree, resChainTotal, avgRespinStepsPerChain)
 
 	w("\n[总计]\n")
 	w("  总投注(倍数): %.2f (仅基础模式投注，免费模式不投注)\n", totalBet)
@@ -323,11 +370,4 @@ func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float6
 	w("  基础贡献: %.2f%% | 免费贡献: %.2f%%\n", baseContrib, freeContrib)
 
 	w("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
-}
-
-func safeDivFloat(numerator, denominator float64) float64 {
-	if denominator == 0 {
-		return 0
-	}
-	return numerator / denominator
 }

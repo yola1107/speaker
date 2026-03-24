@@ -45,11 +45,30 @@ func TestRtp(t *testing.T) {
 		baseWin, freeWin, totalBet, totalWin                   float64
 		baseWinTimes, freeWinTimes, freeTriggerCount, freeTime int64
 		freeRoundWin, roundWin                                 float64
+		// 重转至赢：respinWildCol>=0 表示本步执行了 processRespinUntilWin（与 wildExpandCol 互斥）
+		respinStepsInBase, respinStepsInFree     int64 // 按本 spin 开始时是否免费拆分
+		resChainStartsBase, resChainStartsInFree int64 // 新链：本 spin 前 !IsRespinMode
 	)
 
 	for baseRounds < _benchmarkRounds {
+		beforeRespin := svc.scene.IsRespinMode
+		beforeFree := svc.isFreeRound
 		if err = svc.baseSpin(); err != nil {
 			panic(err)
+		}
+		if svc.respinWildCol >= 0 {
+			if beforeFree {
+				respinStepsInFree++
+			} else {
+				respinStepsInBase++
+			}
+			if !beforeRespin {
+				if beforeFree {
+					resChainStartsInFree++
+				} else {
+					resChainStartsBase++
+				}
+			}
 		}
 
 		stepWin := float64(svc.stepMultiplier) // svc.bonusAmount.Round(2).InexactFloat64()
@@ -75,13 +94,18 @@ func TestRtp(t *testing.T) {
 				if roundWin > 0 {
 					baseWinTimes++
 				}
-				// 基础模式回合结束时，如果触发了免费游戏
-				if svc.addFreeTime > 0 {
-					freeTriggerCount++
-					freeTime++
-				}
 				totalBet += float64(_baseMultiplier)
 			}
+			roundWin = 0
+		} else if !svc.isFreeRound && svc.addFreeTime > 0 {
+			// 基础盘打出夺宝进免费：本手 isRoundOver=false，但已对应一次完整基础下注（与 TestRtp2 / 真实扣费口径一致）
+			baseRounds++
+			totalBet += float64(_baseMultiplier)
+			if roundWin > 0 {
+				baseWinTimes++
+			}
+			freeTriggerCount++
+			freeTime++
 			roundWin = 0
 		}
 
@@ -96,7 +120,8 @@ func TestRtp(t *testing.T) {
 		}
 	}
 
-	printBenchmarkSummary(buf, baseRounds, totalBet, baseWin, freeWin, totalWin, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime, start)
+	printBenchmarkSummary(buf, baseRounds, totalBet, baseWin, freeWin, totalWin, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime,
+		respinStepsInBase, respinStepsInFree, resChainStartsBase, resChainStartsInFree, start)
 	fmt.Print(buf.String())
 }
 
@@ -121,7 +146,8 @@ func printBenchmarkProgress(buf *strings.Builder, baseRounds int64, totalBet, ba
 		totalWin, freeWin, baseWin, baseWinTimes, freeTime, freeRounds, freeWinTimes, time.Since(start).Round(time.Second))
 }
 
-func printBenchmarkSummary(buf *strings.Builder, baseRounds int64, totalBet, baseWin, freeWin, totalWin float64, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime int64, start time.Time) {
+func printBenchmarkSummary(buf *strings.Builder, baseRounds int64, totalBet, baseWin, freeWin, totalWin float64, baseWinTimes, freeWinTimes, freeRounds, freeTriggerCount, freeTime int64,
+	respinStepsInBase, respinStepsInFree, resChainStartsBase, resChainStartsInFree int64, start time.Time) {
 	if baseRounds == 0 || totalBet == 0 {
 		fprintf(buf, "No data collected for RTP benchmark.\n")
 		return
@@ -139,6 +165,10 @@ func printBenchmarkSummary(buf *strings.Builder, baseRounds int64, totalBet, bas
 	freeTriggerRate := safeDiv(freeTriggerCount*100, baseRounds)
 	avgFreePerRound := safeDiv(freeRounds, baseRounds)
 	avgFreePerTrigger := safeDiv(freeRounds, freeTriggerCount)
+	resStartRateBase := safeDiv(resChainStartsBase*100, baseRounds)
+	resStartRateFree := safeDiv(resChainStartsInFree*100, max(freeRounds, 1))
+	resChainTotal := resChainStartsBase + resChainStartsInFree
+	avgRespinStepsPerChain := safeDiv(respinStepsInBase+respinStepsInFree, resChainTotal)
 
 	w("\n[基础模式统计]\n")
 	w("基础模式总游戏局数: %d\n", baseRounds)
@@ -150,6 +180,8 @@ func printBenchmarkSummary(buf *strings.Builder, baseRounds int64, totalBet, bas
 	w("基础模式平均每局免费次数: %.2f\n", avgFreePerRound)
 	w("基础模式中奖率: %.2f%%\n", baseWinRate)
 	w("基础模式中奖局数: %d\n", baseWinTimes)
+	w("重转至赢·基础: 步%d | 链%d | 率%.2f%% | 均%.4f步/局\n",
+		respinStepsInBase, resChainStartsBase, resStartRateBase, safeDivFloat(float64(respinStepsInBase), float64(baseRounds)))
 
 	w("\n[免费模式统计]\n")
 	w("免费模式总游戏局数: %d\n", freeRounds)
@@ -157,9 +189,13 @@ func printBenchmarkSummary(buf *strings.Builder, baseRounds int64, totalBet, bas
 	w("免费模式RTP: %.2f%%\n", freeRTP)
 	w("免费模式中奖率: %.2f%%\n", freeWinRate)
 	w("免费模式中奖局数: %d\n", freeWinTimes)
+	w("重转至赢·免费: 步%d | 链%d | 率%.2f%% | 均%.4f步/局\n",
+		respinStepsInFree, resChainStartsInFree, resStartRateFree, safeDivFloat(float64(respinStepsInFree), float64(max(freeRounds, 1))))
+
 	w("\n[免费触发效率]\n")
 	w("  总免费游戏次数: %d | 总触发次数: %d\n", freeRounds, freeTriggerCount)
 	w("  平均每次触发获得免费次数: %.2f\n", avgFreePerTrigger)
+	w("  重转至赢·合计: %d步 | %d链 | %.2f 步/链\n", respinStepsInBase+respinStepsInFree, resChainTotal, avgRespinStepsPerChain)
 
 	w("\n[总计]\n")
 	w("总回报率(RTP): %.2f%%\n", totalRTP)
@@ -173,7 +209,7 @@ func newBerService() *betOrderService {
 		req: &request.BetOrderReq{
 			MerchantId: 20020,
 			MemberId:   1,
-			GameId:     _gameID,
+			GameId:     GameID,
 			BaseMoney:  1,
 			Multiple:   1,
 		},
@@ -188,7 +224,7 @@ func newBerService() *betOrderService {
 			Currency:   "USD",
 		},
 		game: &game.Game{
-			ID: _gameID,
+			ID: GameID,
 		},
 		client: &client.Client{
 			ClientOfFreeGame: &client.ClientOfFreeGame{},
@@ -223,4 +259,11 @@ func safeDiv(numerator, denominator int64) float64 {
 		return 0
 	}
 	return float64(numerator) / float64(denominator)
+}
+
+func safeDivFloat(numerator, denominator float64) float64 {
+	if denominator == 0 {
+		return 0
+	}
+	return numerator / denominator
 }

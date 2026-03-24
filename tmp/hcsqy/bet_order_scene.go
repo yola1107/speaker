@@ -12,15 +12,15 @@ import (
 )
 
 type SpinSceneData struct {
-	Stage        int8                    `json:"stage"`   // 运行阶段
-	NextStage    int8                    `json:"nStage"`  // 下一阶段
-	FreeNum      int64                   `json:"freeNum"` // 剩余免费次数
-	IsPurchase   bool                    `json:"isPurchase"`
-	IsMustWin    bool                    `json:"isMustWin"` // 是否在必赢模式中
-	SymbolRoller [_colCount]SymbolRoller `json:"sRoller"`   // 滚轮符号表
+	Stage        int8                    `json:"stage"`        // 运行阶段
+	NextStage    int8                    `json:"nStage"`       // 下一阶段
+	FreeNum      int64                   `json:"freeNum"`      // 剩余免费次数
+	IsPurchase   bool                    `json:"isPurchase"`   //
+	IsRespinMode bool                    `json:"isRespinMode"` // 是否在重转至赢模式中
+	SymbolRoller [_colCount]SymbolRoller `json:"sRoller"`      // 滚轮符号表
 }
 
-var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", _gameID)
+var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", GameID)
 
 func (s *betOrderService) sceneKey() string {
 	return fmt.Sprintf("%s:%s:%d", global.GVA_CONFIG.System.Site, sceneDataKeyPrefix, s.member.ID)
