@@ -120,17 +120,14 @@ func (s *betOrderService) getSceneSymbol(realIndex int) [_colCount]SymbolRoller 
 // - rs.Fall 会随着补齐次数递增，从而保证连续下落的符号顺序
 func (rs *SymbolRoller) ringSymbol(gameConfig *gameConfigJson) {
 	for r := 0; r < _rowCount; r++ {
-		if rs.BoardSymbol[r] == 0 {
-			rs.BoardSymbol[r] = rs.getFallSymbol(gameConfig)
+		if rs.BoardSymbol[_rowCount-1-r] == 0 {
+			rs.BoardSymbol[_rowCount-1-r] = rs.getFallSymbol(gameConfig)
 		}
 	}
 }
 
 func (rs *SymbolRoller) getFallSymbol(gameConfig *gameConfigJson) int64 {
 	data := gameConfig.RealData[rs.Real][rs.Col]
-	if len(data) == 0 {
-		return 0
-	}
 	rs.Fall = (rs.Fall + 1) % len(data)
 	return data[rs.Fall]
 }

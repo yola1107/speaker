@@ -130,7 +130,8 @@ func (s *betOrderService) dropSymbols(grid *int64Grid) {
 	}
 }
 
-// fallingWinSymbols 将下落后的网格写回滚轴板面并 ring 填充（sgz 结构；hcsqy2 不做 row 镜像，BoardSymbol[r] 与 symbolGrid[r] 同向）。
+// s.scene.SymbolRoller[c].BoardSymbol[r-1] = metrix[r][c]
+// fallingWinSymbols 将下落后的网格写回滚轴板面并 ring 填充
 func (s *betOrderService) fallingWinSymbols(nextSymbolGrid int64Grid) {
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
