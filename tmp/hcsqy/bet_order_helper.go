@@ -2,7 +2,6 @@ package hcsqy
 
 import (
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 
@@ -30,8 +29,14 @@ func (s *betOrderService) updateBetAmount() bool {
 		Mul(decimal.NewFromInt(s.req.Multiple)).
 		Mul(decimal.NewFromInt(_baseMultiplier))
 	s.amount = s.betAmount
+
 	if s.req.Purchase > 0 {
-		s.amount = s.betAmount.Mul(decimal.NewFromInt(_buyFreeMultiplier))
+		if maxBet := s.gameConfig.Buy.MaxBuyBetAmount; maxBet > 0 && s.betAmount.GreaterThan(decimal.NewFromInt(maxBet)) {
+			global.GVA_LOG.Error("updateBetAmount", zap.Error(fmt.Errorf("invalid request params: Purchase [%v,%v,%v]", s.req.BaseMoney, s.req.Multiple, s.req.Purchase)))
+			return false
+		}
+
+		s.amount = s.betAmount.Mul(decimal.NewFromInt(s.gameConfig.Buy.Price))
 	}
 
 	if s.betAmount.LessThanOrEqual(decimal.Zero) || s.amount.LessThanOrEqual(decimal.Zero) {
@@ -45,33 +50,6 @@ func (s *betOrderService) updateBetAmount() bool {
 func (s *betOrderService) checkBalance() bool {
 	f, _ := s.amount.Float64()
 	return gamelogic.CheckMemberBalance(f, s.member)
-}
-
-func (s *betOrderService) checkBetOption() bool {
-	matchSize := false
-	for _, elem := range _supportedBetSizes {
-		if math.Abs(elem-s.req.BaseMoney) < 1e-9 {
-			matchSize = true
-			break
-		}
-	}
-	if !matchSize {
-		return false
-	}
-	for _, elem := range _supportedBetMultiples {
-		if elem == s.req.Multiple {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *betOrderService) checkPurchase() bool {
-	if s.req.Purchase <= 0 {
-		return true
-	}
-	expected := s.betAmount.Mul(decimal.NewFromInt(_buyFreeMultiplier)).Round(0).IntPart()
-	return expected == s.req.Purchase
 }
 
 func (s *betOrderService) symbolGridToString(symbolGrid int64Grid) string {
@@ -148,7 +126,7 @@ func (s *betOrderService) checkSymbolGridWin() {
 			}
 		}
 		if allWild && len(line) >= _minMatchCount {
-			if odds := s.getSymbolBaseMultiplier(_wild); odds > 0 {
+			if odds := s.getSymbolBaseMultiplier(_wild, 3); odds > 0 {
 				var winGrid int64Grid
 				for _, p := range line {
 					r := p / _colCount
@@ -204,7 +182,7 @@ func (s *betOrderService) checkSymbolGridWin() {
 			}
 
 			if count >= _minMatchCount {
-				if odds := s.getSymbolBaseMultiplier(symbol); odds > 0 {
+				if odds := s.getSymbolBaseMultiplier(symbol, 3); odds > 0 {
 					winInfos = append(winInfos, WinInfo{
 						Symbol:      symbol,
 						SymbolCount: count,
@@ -242,4 +220,8 @@ func btoi(b bool) int64 {
 		return 1
 	}
 	return 0
+}
+
+func (s *betOrderService) isPurchaseActive() bool {
+	return s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0
 }

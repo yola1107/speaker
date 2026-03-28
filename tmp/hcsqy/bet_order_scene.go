@@ -15,7 +15,7 @@ type SpinSceneData struct {
 	Stage        int8                    `json:"stage"`        // 运行阶段
 	NextStage    int8                    `json:"nStage"`       // 下一阶段
 	FreeNum      int64                   `json:"freeNum"`      // 剩余免费次数
-	IsPurchase   bool                    `json:"isPurchase"`   //
+	IsPurchase   bool                    `json:"isPurchase"`   // 购买
 	IsRespinMode bool                    `json:"isRespinMode"` // 是否在重转至赢模式中
 	SymbolRoller [_colCount]SymbolRoller `json:"sRoller"`      // 滚轮符号表
 }
@@ -57,8 +57,8 @@ func (s *betOrderService) reloadScene() error {
 
 func (s *betOrderService) syncGameStage() {
 	if s.scene.Stage == 0 {
-		if s.scene.IsPurchase {
-			s.scene.Stage = _spinTypeBuyBase
+		if s.scene.FreeNum > 0 {
+			s.scene.Stage = _spinTypeFree
 		} else {
 			s.scene.Stage = _spinTypeBase
 		}
@@ -67,5 +67,5 @@ func (s *betOrderService) syncGameStage() {
 		s.scene.Stage = s.scene.NextStage
 		s.scene.NextStage = 0
 	}
-	s.isFreeRound = s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeBuyFree
+	s.isFreeRound = s.scene.Stage == _spinTypeFree
 }

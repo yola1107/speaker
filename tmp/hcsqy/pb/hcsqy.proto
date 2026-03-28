@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+option go_package = "egame-grpc/game/common/pb";
+
+package hcsqy;
+
+// 横财三千亿 (GameID: 18956)
+// 盘面: 3x3，5条中奖线
+// 特色: 重转至赢、百搭变大、长条百搭
+
+message hcsqy_BetOrderResponse {
+    optional string orderSN        = 1;   // 订单号
+    optional double balance        = 2;   // 玩家当前余额
+    optional double betAmount      = 3;   // 本局下注金额 (baseMoney * multiple * 5)
+    optional double currentWin     = 4;   // 本局赢取金额
+    optional double freeWin        = 5;   // 免费游戏累计赢取
+    optional double totalWin       = 6;   // 本回合总赢取
+    optional bool free             = 7;   // 是否处于免费模式
+    optional int64 review          = 8;   // 复盘标志 1=复盘 0=正常
+    optional hcsqy_WinInfo winInfo = 9;   // 中奖详情
+    repeated int64 cards           = 10;  // 符号网格 3x3，按行优先 elements共9个
+    optional int64 scatterCount    = 11;  // 夺宝符个数
+    optional bool isRoundOver      = 12;  // 是否本局结束
+    optional int64 state           = 13;  // 游戏状态 1=普通 2=免费 11=购买基础 12=购买免费
+    optional int64 freeNum         = 14;  // 剩余免费次数
+    optional int64 freeTime        = 15;  // 已使用免费次数
+    repeated int64 winGrid         = 16;  // 中奖位置网格 3x3
+    optional bool isGameOver       = 17;  // 大回合结束
+    optional bool next             = 18;  // 是否需要继续请求（重转至赢）
+    optional bool isRespinUntilWin = 19;  // 是否在重转至赢模式中 (有炸胡动画)
+    optional int32 respinWildCol   = 20;  // 重转至赢模式长条百搭列 (0-2)，非重转模式为-1
+    optional int64 wildMultiplier  = 21;  // 长条百搭倍数 (x2-x20)
+    optional int64 lineMultiplier  = 22;  // 线赔率合计（各中奖线基础赔率之和，未乘长条百搭）
+    optional bool isPurchase       = 23;  // 当前大回合是否购买免费触发
+}
+
+// hcsqy_WinInfo 中奖详情
+message hcsqy_WinInfo {
+    repeated hcsqy_WinArr winArr    = 1;  // 本步各条中奖线的详情
+    optional int64 addFreeNum       = 2;  // 增加的免费次数
+    optional int64 freeGameMultiple = 3;  // 本步倍数 (lineMultiplier * wildMultiplier)
+}
+
+// hcsqy_WinArr 单条中奖线详情
+message hcsqy_WinArr {
+    optional int64 roadNum = 1;  // 支付线编号 0~4
+    optional int64 odds    = 2;  // 基础赔率 来自 pay_table
+}

@@ -14,5 +14,6 @@ type WinInfo struct {
 
 // rtpDebugData RTP调试数据
 type rtpDebugData struct {
-	open bool // 是否开启调试模式（用于RTP测试时的详细日志输出）
+	open bool         // 是否开启调试模式（用于RTP测试时的详细日志输出）
+	mode spinExecMode //
 }

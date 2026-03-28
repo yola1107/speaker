@@ -31,11 +31,9 @@ func (s *betOrderService) initFirstStepForSpin() error {
 	}
 
 	switch {
-	case !s.checkBetOption():
-		return InvalidRequestParams
 	case !s.updateBetAmount():
 		return InvalidRequestParams
-	case !s.checkPurchase():
+	case s.checkPurchase() != nil:
 		return ErrorPurchase
 	case !s.checkBalance():
 		return InsufficientBalance
@@ -49,15 +47,46 @@ func (s *betOrderService) initFirstStepForSpin() error {
 	s.client.ClientOfFreeGame.SetPurchaseAmount(s.req.Purchase)
 	s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
 	if s.req.Purchase > 0 {
-		freeNum := uint64(s.gameConfig.Free.FreeTimes)
+
 		s.scene.IsPurchase = true
-		s.scene.Stage = _spinTypeBuyFree
-		s.scene.NextStage = 0
-		s.scene.FreeNum = s.gameConfig.Free.FreeTimes
-		s.isFreeRound = true
-		s.client.ClientOfFreeGame.SetFreeNum(freeNum)
-		s.client.SetMaxFreeNum(freeNum)
-		s.client.SetLastMaxFreeNum(freeNum)
+		s.scene.NextStage = 0 //s.scene.Stage = _spinTypeBase
+		//freeNum := uint64(s.gameConfig.Free.FreeTimes)
+		//s.scene.FreeNum = s.gameConfig.Free.FreeTimes
+		//s.isFreeRound = false
+		//s.client.ClientOfFreeGame.SetFreeNum(freeNum)
+		//s.client.SetMaxFreeNum(freeNum)
+		//s.client.SetLastMaxFreeNum(freeNum)
+	}
+	return nil
+}
+
+// checkPurchase 校验购买请求合法性：
+// 1) 只能在基础非重转起手下注购买；
+// 2) 购买金额必须等于 betAmount * buy.price。
+func (s *betOrderService) checkPurchase() error {
+	if s.req.Purchase <= 0 {
+		return nil
+	}
+
+	// initialize 分支已经保证是基础非重转首手，这里保留显式校验，避免未来流程调整引入隐性问题。
+	if s.isFreeRound || s.scene.IsRespinMode || s.scene.FreeNum > 0 {
+		global.GVA_LOG.Error("checkPurchase: invalid purchase stage",
+			zap.Int64("purchase", s.req.Purchase),
+			zap.Bool("isFreeRound", s.isFreeRound),
+			zap.Bool("isRespinMode", s.scene.IsRespinMode),
+			zap.Int64("freeNum", s.scene.FreeNum),
+		)
+		return ErrorPurchase
+	}
+
+	expect := s.betAmount.Mul(decimal.NewFromInt(s.gameConfig.Buy.Price))
+	if !expect.Equal(decimal.NewFromInt(s.req.Purchase)) {
+		global.GVA_LOG.Error("checkPurchase: invalid purchase amount",
+			zap.Int64("purchase", s.req.Purchase),
+			zap.String("expect", expect.String()),
+			zap.String("betAmount", s.betAmount.String()),
+		)
+		return ErrorPurchase
 	}
 	return nil
 }
@@ -82,8 +111,8 @@ func (s *betOrderService) initStepForNextStep() error {
 
 func (s *betOrderService) updateGameOrder() error {
 	if !s.debug.open {
-		isBaseStage := s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeBuyBase
-		isFreeStage := s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeBuyFree
+		isBaseStage := s.scene.Stage == _spinTypeBase
+		isFreeStage := s.scene.Stage == _spinTypeFree
 		s.orderSn = common.GenerateOrderSn(s.member, s.lastOrder, isBaseStage, isFreeStage)
 	}
 	if s.orderSn == nil {
@@ -117,9 +146,9 @@ func (s *betOrderService) updateGameOrder() error {
 	}
 	if s.isFreeRound {
 		s.gameOrder.IsFree = 1
-		if s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0 {
-			s.gameOrder.IsFree = 2
-		}
+		//if s.stepIsPurchase {
+		//	s.gameOrder.IsFree = 2
+		//}
 	}
 	return s.fillInGameOrderDetails()
 }

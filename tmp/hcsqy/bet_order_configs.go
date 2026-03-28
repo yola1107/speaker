@@ -14,6 +14,7 @@ type gameConfigJson struct {
 	PayTable          [][]int64       `json:"pay_table"`           // 赔付表，索引=符号ID-1
 	Lines             [][]int         `json:"lines"`               // 中奖线定义
 	Free              freeConfig      `json:"free"`                // 免费参数
+	Buy               buyConfig       `json:"buy"`                 // 购买配置
 	RespinRate        [][2]int64      `json:"respin_rate"`         // 必赢触发概率分数 [分子,分母]，index 0=基础，1=免费
 	WildExpandRate    [][2]int64      `json:"wild_expand_rate"`    // 百搭变大概率分数 [分子,分母]，index 0=基础，1=免费
 	ExpandMultiConfig expandMultiConf `json:"expand_multi_config"` // 长条百搭倍数与权重
@@ -27,6 +28,11 @@ type freeConfig struct {
 	PerScatterAddTimes int64 `json:"per_scatter_add_times"` // 每多一个夺宝增加次数
 }
 
+type buyConfig struct {
+	Price           int64 `json:"price"`              // 购买免费价格倍数
+	MaxBuyBetAmount int64 `json:"max_buy_bet_amount"` // 最大可购买投注金额
+}
+
 type expandMultiConf struct {
 	Multi  []int64 `json:"multi"`  // 长条百搭倍数
 	Weight []int   `json:"weight"` // 长条百搭倍数权重
@@ -34,10 +40,13 @@ type expandMultiConf struct {
 }
 
 type rollConf struct {
-	Base       rollCfgType `json:"base"`
-	BaseRespin rollCfgType `json:"base_respin"`
-	Free       rollCfgType `json:"free"`
-	FreeRespin rollCfgType `json:"free_respin"`
+	Base          rollCfgType `json:"base"`
+	BaseRespin    rollCfgType `json:"base_respin"`
+	Free          rollCfgType `json:"free"`
+	FreeRespin    rollCfgType `json:"free_respin"`
+	BuyBase       rollCfgType `json:"buy_base"`        // 基础模式下 购买
+	BuyFree       rollCfgType `json:"buy_free"`        // 购买后 免费模式且非Respin模式
+	BuyFreeRespin rollCfgType `json:"buy_free_respin"` // 购买后 免费且Respin模式
 }
 
 type rollCfgType struct {
@@ -56,6 +65,18 @@ type SymbolRoller struct {
 	Fall        int              `json:"fall"`  // 结束索引
 	BoardSymbol [_rowCount]int64 `json:"board"` // 盘面符号
 }
+
+type spinExecMode uint8
+
+const (
+	spinExecBase spinExecMode = iota
+	spinExecBaseRespin
+	spinExecFree
+	spinExecFreeRespin
+	spinExecBuyBase
+	spinExecBuyFree
+	spinExecBuyFreeRespin
+)
 
 func (s *betOrderService) initGameConfigs() {
 	if s.gameConfig != nil {
@@ -80,8 +101,8 @@ func (s *betOrderService) parseGameConfigs() {
 	if len(s.gameConfig.PayTable) < int(_wild) {
 		panic(fmt.Sprintf("pay_table length < %d", _wild))
 	}
-	if len(s.gameConfig.RealData) < 4 {
-		panic("real_data length < 4")
+	if len(s.gameConfig.RealData) < 5 {
+		panic("real_data length < 5")
 	}
 	if s.gameConfig.Free.FreeTimes <= 0 || s.gameConfig.Free.ScatterMin <= 0 {
 		panic("invalid free config")
@@ -99,6 +120,9 @@ func (s *betOrderService) parseGameConfigs() {
 	s.calculateRollWeight(&s.gameConfig.RollCfg.BaseRespin)
 	s.calculateRollWeight(&s.gameConfig.RollCfg.Free)
 	s.calculateRollWeight(&s.gameConfig.RollCfg.FreeRespin)
+	s.calculateRollWeight(&s.gameConfig.RollCfg.BuyBase)
+	s.calculateRollWeight(&s.gameConfig.RollCfg.BuyFree)
+	s.calculateRollWeight(&s.gameConfig.RollCfg.BuyFreeRespin)
 }
 
 func (s *betOrderService) calculateRollWeight(rollCfg *rollCfgType) {
@@ -128,21 +152,63 @@ func (s *betOrderService) calculateExpandWeight(c *expandMultiConf) {
 	c.WTotal = totalMultiWeight
 }
 
-func (s *betOrderService) initSpinSymbol() [_colCount]SymbolRoller {
-	var cfg rollCfgType
-	switch {
-	case s.isFreeRound && s.scene.IsRespinMode:
-		cfg = s.gameConfig.RollCfg.FreeRespin
-	case s.isFreeRound:
-		cfg = s.gameConfig.RollCfg.Free
-	case s.scene.IsRespinMode:
-		cfg = s.gameConfig.RollCfg.BaseRespin
-	default:
-		cfg = s.gameConfig.RollCfg.Base
-	}
+func (s *betOrderService) initSpinSymbol() {
+	mode, cfg := s.deriveSpinExecMode()
+	//cfg := s.getRollCfgByMode(mode)
+
+	s.debug.mode = mode
 
 	realIndex := cfg.UseKey[pickWeightIndex(cfg.Weight, cfg.WTotal)]
-	return s.getSceneSymbol(realIndex)
+	s.scene.SymbolRoller = s.getSceneSymbol(realIndex)
+}
+
+// deriveSpinExecMode 将当前步上下文（主阶段+过程标志）映射为单一执行态。
+func (s *betOrderService) deriveSpinExecMode() (spinExecMode, rollCfgType) {
+	isPurchaseMode := s.isPurchaseActive()
+	switch {
+	case s.isFreeRound && isPurchaseMode && s.stepIsRespinMode:
+		return spinExecBuyFreeRespin, s.gameConfig.RollCfg.BuyFreeRespin
+	case s.isFreeRound && isPurchaseMode:
+		return spinExecBuyFree, s.gameConfig.RollCfg.BuyFree
+	case s.isFreeRound && s.stepIsRespinMode:
+		return spinExecFreeRespin, s.gameConfig.RollCfg.FreeRespin
+	case s.isFreeRound:
+		return spinExecFree, s.gameConfig.RollCfg.Free
+	case isPurchaseMode && s.stepIsRespinMode:
+		// 兼容状态恢复场景：基础购买阶段若出现重转标记，兜底走购买基础滚轴，避免测试/线上直接中断。
+		if s.scene.IsRespinMode { // 如果这里panic了，说明代码逻辑有问题
+			panic(fmt.Sprintf("===== 代码逻辑有问题 scene.IsPurchase = %v scene.IsRespinMode=%v", s.scene.IsPurchase, s.scene.IsRespinMode))
+		}
+		return spinExecBuyBase, s.gameConfig.RollCfg.BuyBase
+	case isPurchaseMode:
+		return spinExecBuyBase, s.gameConfig.RollCfg.BuyBase
+	case s.stepIsRespinMode:
+		return spinExecBaseRespin, s.gameConfig.RollCfg.BaseRespin
+	default:
+		return spinExecBase, s.gameConfig.RollCfg.Base
+	}
+}
+
+// getRollCfgByMode 执行态到滚轴配置的单点映射。
+func (s *betOrderService) getRollCfgByMode(mode spinExecMode) rollCfgType {
+	switch mode {
+	case spinExecBase:
+		return s.gameConfig.RollCfg.Base
+	case spinExecBaseRespin:
+		return s.gameConfig.RollCfg.BaseRespin
+	case spinExecFree:
+		return s.gameConfig.RollCfg.Free
+	case spinExecFreeRespin:
+		return s.gameConfig.RollCfg.FreeRespin
+	case spinExecBuyBase:
+		return s.gameConfig.RollCfg.BuyBase
+	case spinExecBuyFree:
+		return s.gameConfig.RollCfg.BuyFree
+	case spinExecBuyFreeRespin:
+		return s.gameConfig.RollCfg.BuyFreeRespin
+	default:
+		return s.gameConfig.RollCfg.Base
+	}
 }
 
 func (s *betOrderService) getSceneSymbol(realIndex int) [_colCount]SymbolRoller {
@@ -184,16 +250,15 @@ func (s *betOrderService) weightWildMultiplier() int64 {
 	return s.gameConfig.ExpandMultiConfig.Multi[idx]
 }
 
-func (s *betOrderService) getSymbolBaseMultiplier(symbol int64) int64 {
-	idx := int(symbol - 1)
-	if idx < 0 || idx >= len(s.gameConfig.PayTable) {
+func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64 {
+	if len(s.gameConfig.PayTable) < int(symbol) {
 		return 0
 	}
-	table := s.gameConfig.PayTable[idx]
-	if len(table) == 0 {
-		return 0
+	table := s.gameConfig.PayTable[symbol-1]
+	if len(table) < starN {
+		starN = len(table)
 	}
-	return table[len(table)-1]
+	return table[starN-1]
 }
 
 func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {

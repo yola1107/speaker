@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"egame-grpc/game/common"
-	"egame-grpc/game/common/pb"
+	"egame-grpc/game/hcsqy/pb"
 	"egame-grpc/global"
 	"egame-grpc/global/client"
 	"egame-grpc/model/game"
@@ -47,6 +47,9 @@ type betOrderService struct {
 	symbolGrid     int64Grid            // 符号网格（3行3列）
 	winGrid        int64Grid            // 中奖网格（3行3列）
 	debug          rtpDebugData         // 是否为RTP测试流程
+
+	stepIsPurchase   bool // 当前步是否处于购买态（用于回包/日志口径）
+	stepIsRespinMode bool // 当前步是否处于Respin态（用于回包/日志口径）
 }
 
 func newBetOrderService() *betOrderService {
@@ -57,9 +60,6 @@ func newBetOrderService() *betOrderService {
 
 func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, error) {
 	s.req = req
-	if err := s.getRequestContext(); err != nil {
-		return nil, "", InternalServerError
-	}
 	c, ok := client.GVA_CLIENT_BUCKET.GetClient(req.MemberId)
 	if !ok {
 		global.GVA_LOG.Error("betOrder", zap.Error(errors.New("user not exists")))
@@ -68,6 +68,9 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, er
 	s.client = c
 	c.BetLock.Lock()
 	defer c.BetLock.Unlock()
+	if err := s.getRequestContext(); err != nil {
+		return nil, "", InternalServerError
+	}
 
 	lastOrder, _, err := c.GetLastOrder()
 	if err != nil {
@@ -101,30 +104,29 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, er
 
 func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 	result := &pb.Hcsqy_BetOrderResponse{
-		OrderSN:          s.orderSn.OrderSN,
-		Balance:          s.gameOrder.CurBalance,
-		BetAmount:        s.betAmount.Round(2).InexactFloat64(),
-		CurrentWin:       s.bonusAmount.Round(2).InexactFloat64(),
-		FreeWin:          s.client.ClientOfFreeGame.GetFreeTotalMoney(),
-		TotalWin:         s.client.ClientOfFreeGame.GetGeneralWinTotal(),
-		Free:             s.isFreeRound,
-		Review:           s.req.Review,
+		OrderSN:          proto.String(s.orderSn.OrderSN),
+		Balance:          proto.Float64(s.gameOrder.CurBalance),
+		BetAmount:        proto.Float64(s.betAmount.Round(2).InexactFloat64()),
+		CurrentWin:       proto.Float64(s.bonusAmount.Round(2).InexactFloat64()),
+		FreeWin:          proto.Float64(s.client.ClientOfFreeGame.GetFreeTotalMoney()),
+		TotalWin:         proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
+		Free:             proto.Bool(s.isFreeRound),
+		Review:           proto.Int64(s.req.Review),
 		WinInfo:          s.buildWinInfo(),
-		Cards:            s.int64GridToPbBoard(s.symbolGrid),
-		ScatterCount:     s.scatterCount,
-		IsRoundOver:      s.isRoundOver,
-		State:            int64(s.scene.Stage),
-		FreeNum:          int64(s.client.ClientOfFreeGame.GetFreeNum()),
-		FreeTime:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
-		WinGrid:          s.int64GridToPbBoard(s.winGrid),
-		IsGameOver:       s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0,
-		RoundWin:         s.calcRoundWin(),
-		Next:             s.next,
-		IsRespinUntilWin: s.scene.IsRespinMode,
-		RespinWildCol:    s.respinWildCol,
-		WildMultiplier:   s.wildMultiplier,
-		LineMultiplier:   s.lineMultiplier,
-		IsPurchase:       s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0,
+		Cards:            s.int64GridToArray(s.symbolGrid),
+		ScatterCount:     proto.Int64(s.scatterCount),
+		IsRoundOver:      proto.Bool(s.isRoundOver),
+		State:            proto.Int64(int64(s.scene.Stage)),
+		FreeNum:          proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeNum())),
+		FreeTime:         proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeTimes())),
+		WinGrid:          s.int64GridToArray(s.winGrid),
+		IsGameOver:       proto.Bool(s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0),
+		Next:             proto.Bool(s.next),
+		IsRespinUntilWin: proto.Bool(s.stepIsRespinMode),
+		RespinWildCol:    proto.Int32(s.respinWildCol),
+		WildMultiplier:   proto.Int64(s.wildMultiplier),
+		LineMultiplier:   proto.Int64(s.lineMultiplier),
+		IsPurchase:       proto.Bool(s.stepIsPurchase),
 	}
 	pbData, err := proto.Marshal(result)
 	if err != nil {
@@ -141,30 +143,31 @@ func (s *betOrderService) buildWinInfo() *pb.Hcsqy_WinInfo {
 	winArr := make([]*pb.Hcsqy_WinArr, len(s.winInfos))
 	for i, elem := range s.winInfos {
 		winArr[i] = &pb.Hcsqy_WinArr{
-			RoadNum: elem.LineCount,
-			Odds:    elem.Odds,
+			RoadNum: proto.Int64(elem.LineCount),
+			Odds:    proto.Int64(elem.Odds),
 		}
 	}
 	return &pb.Hcsqy_WinInfo{
 		WinArr:           winArr,
-		AddFreeNum:       s.addFreeTime,
-		FreeGameMultiple: s.stepMultiplier,
+		AddFreeNum:       proto.Int64(s.addFreeTime),
+		FreeGameMultiple: proto.Int64(s.stepMultiplier),
 	}
 }
 
-func (s *betOrderService) int64GridToPbBoard(grid int64Grid) *pb.Board {
+func (s *betOrderService) int64GridToArray(grid int64Grid) []int64 {
 	elements := make([]int64, _rowCount*_colCount)
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
 			elements[r*_colCount+c] = grid[r][c]
 		}
 	}
-	return &pb.Board{Elements: elements}
+	return elements
 }
 
-func (s *betOrderService) calcRoundWin() float64 {
+/*func (s *betOrderService) calcRoundWin() float64 {
 	if s.stepMultiplier == 0 {
 		return 0
 	}
 	return s.bonusAmount.Round(2).InexactFloat64()
 }
+*/

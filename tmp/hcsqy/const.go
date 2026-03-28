@@ -2,7 +2,6 @@ package hcsqy
 
 const GameID = 18956 // 横财三千亿
 const _baseMultiplier = 5
-const _buyFreeMultiplier = 75 // 购买免费价格倍数（75倍）
 
 const (
 	_rowCount = 3 // 行数
@@ -27,13 +26,24 @@ const _minMatchCount = 3 // 最小中奖数量
 
 // 游戏阶段
 const (
-	_spinTypeBase    = 1 // 普通模式
-	_spinTypeBuyBase = 2 // 基础模式 购买免费
-	_spinTypeFree    = 3 // 免费模式
-	_spinTypeBuyFree = 4 // 免费模式 购买免费
+	_spinTypeBase = 1 // 普通模式
+	_spinTypeFree = 2 // 免费模式
 )
+
+/*
 
 var (
 	_supportedBetSizes     = []float64{0.04, 0.40, 4.00}
 	_supportedBetMultiples = []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 )
+
+   "buy": {
+       "price": 100,            // 购买免费价格倍数  0.04*1*5*(100)
+       "max_buy_bet_amount":50  // (0.04 *1 *5) <=50 可以购买
+   },
+
+
+只能在基础模式下，且非respin 才可以购买；
+
+
+*/

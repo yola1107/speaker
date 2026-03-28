@@ -11,12 +11,14 @@ func (s *betOrderService) baseSpin() error {
 	if err := s.initialize(); err != nil {
 		return err
 	}
-	if s.isFreeRound && s.scene.FreeNum > 0 && !s.scene.IsRespinMode {
+	if s.isFreeRound && !s.scene.IsRespinMode {
 		s.client.ClientOfFreeGame.IncrFreeTimes()
 		s.client.ClientOfFreeGame.Decr()
 		s.scene.FreeNum--
 	}
-	s.scene.SymbolRoller = s.initSpinSymbol()
+	// 正在重转中 或 概率触发新重转
+	s.stepIsRespinMode = s.scene.IsRespinMode || s.isHitRespinProb()
+	s.initSpinSymbol()
 	s.handleSymbolGrid()
 	s.processGame()
 	return nil
@@ -28,10 +30,10 @@ func (s *betOrderService) processGame() {
 	s.wildExpandCol = -1
 	s.wildMultiplier = 1
 	s.lineMultiplier = 0
-	// 夺宝数见 processWinInfos：在重转盖列、百搭变大之后按最终盘面统计
+	s.stepIsPurchase = s.isPurchaseActive()
 
 	// 重转至赢模式：正在重转中 或 概率触发新重转
-	if s.scene.IsRespinMode || s.isHitRespinProb() {
+	if s.stepIsRespinMode {
 		s.processRespinUntilWin()
 		return
 	}
@@ -99,17 +101,20 @@ func (s *betOrderService) processWinInfos() {
 		s.addFreeTime = newFree
 	}
 
-	isPurchaseMode := s.scene.IsPurchase || s.client.ClientOfFreeGame.GetPurchaseAmount() > 0
+	isPurchaseMode := s.isPurchaseActive()
 	if s.scene.FreeNum <= 0 {
 		s.scene.FreeNum = 0
-		s.scene.NextStage = _spinTypeBase
-		if isPurchaseMode {
-			s.scene.IsPurchase = false
-			s.client.ClientOfFreeGame.SetPurchaseAmount(0)
+		// 仅购买链路在“免费耗尽但仍处于重转链”时保持 free 阶段，
+		// 避免提前清购买态导致下一手选轴偏离 BuyFreeRespin。
+		if isPurchaseMode && s.scene.IsRespinMode {
+			s.scene.NextStage = _spinTypeFree
+		} else {
+			s.scene.NextStage = _spinTypeBase
+			if isPurchaseMode {
+				s.scene.IsPurchase = false
+				s.client.ClientOfFreeGame.SetPurchaseAmount(0)
+			}
 		}
-	} else if isPurchaseMode {
-		s.scene.IsPurchase = true
-		s.scene.NextStage = _spinTypeBuyFree
 	} else {
 		s.scene.NextStage = _spinTypeFree
 	}

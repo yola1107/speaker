@@ -9,26 +9,32 @@ import (
 )
 
 const (
-	testRounds       = 1e2
+	testRounds       = 1e8
 	progressInterval = 1e7
-	debugFileOpen    = 10
+	// debugFileOpen>0 时写 logs 下详细每步日志（与购买无关）
+	debugFileOpen = 0
+
+	_enablePurchaseModeRtp2 = false // TestRtp2：是否注入购买
+	_purchasePriceRtp2      = 75    // 购买价格倍数（扣费 = ×_baseMultiplier）
 )
 
 func TestRtp2(t *testing.T) {
-	// 基础模式统计
-	var baseRounds, baseWinRounds, baseFreeTriggered int64
-	var baseTotalWin float64
+	stats := &benchmarkStats{}
 
-	// 免费模式统计
-	var freeRounds, freeWinRounds, freeTreasureInFree, freeExtraFreeRounds int64
-	var freeTotalWin float64
+	// —— 购买 RTP 测试（与生产 req.Purchase 数学路径对齐，仍走 debug.open，无真实扣余额）——
+	// 1) 外层每完成一次「大回合」(FreeNum 耗尽并 reset) 后，内层下一轮回合起点若满足条件则注入购买。
+	// 2) 注入：IsPurchase、FreeNum、SetFreeNum、SetPurchaseAmount、Stage=_spinTypeBase（见下方注释，否则首手会被 syncGameStage 判成免费）。
+	// 3) 扣费统计：会话内不记单笔 _baseMultiplier；FreeNum==0 重置前记一笔 _purchasePriceRtp2×_baseMultiplier，purchaseSessionWin 累计整段 stepMultiplier。
+	// 4) 开关 _enablePurchaseModeRtp2=false 时完全不注入，日志里也不打 [购买跟踪]。
+	var (
+		purchaseSessionWin float64
+		isInPurchaseRound  bool
+	)
 
-	totalBet, start := 0.0, time.Now()
+	start := time.Now()
 	buf := &strings.Builder{}
 	svc := newBerService()
 	svc.initGameConfigs()
-	var respinStepsInBase, respinStepsInFree int64
-	var resChainStartsBase, resChainStartsInFree int64
 	baseGameCount, freeRoundIdx := 0, 0
 	interval := int64(min(testRounds, progressInterval))
 
@@ -37,7 +43,7 @@ func TestRtp2(t *testing.T) {
 		fileBuf = &strings.Builder{}
 	}
 
-	for baseRounds < testRounds {
+	for stats.BaseRounds < testRounds {
 		var gameNum int
 		var roundWin, freeRoundWin float64
 		var triggeringBaseRound int
@@ -53,20 +59,36 @@ func TestRtp2(t *testing.T) {
 				respinStep++ // 重转至赢步数递增
 			}
 
+			// 购买注入：仅在大回合起点、当前非免费/非重转、无待执行免费、且上一笔购买已结算后执行。
+			if _enablePurchaseModeRtp2 && !svc.isFreeRound && !svc.scene.IsRespinMode && svc.scene.FreeNum <= 0 && !isInPurchaseRound {
+				svc.scene.IsPurchase = true
+				//svc.scene.FreeNum = svc.gameConfig.Free.FreeTimes
+				//svc.client.ClientOfFreeGame.SetFreeNum(uint64(svc.gameConfig.Free.FreeTimes))
+				svc.client.ClientOfFreeGame.SetPurchaseAmount(_purchasePriceRtp2 * _baseMultiplier)
+				svc.scene.Stage = _spinTypeBase
+				svc.scene.NextStage = 0
+				svc.isFreeRound = false
+				isInPurchaseRound = true
+				purchaseSessionWin = 0
+			}
+
 			beforeRespin := svc.scene.IsRespinMode
 			beforeFree := svc.isFreeRound
-			_ = svc.baseSpin()
-			if svc.respinWildCol >= 0 {
+			if err := svc.baseSpin(); err != nil {
+				t.Fatalf("baseSpin failed: %v", err)
+			}
+			didRespin := svc.respinWildCol >= 0
+			if didRespin {
 				if beforeFree {
-					respinStepsInFree++
+					stats.RespinStepsInFree++
 				} else {
-					respinStepsInBase++
+					stats.RespinStepsInBase++
 				}
 				if !beforeRespin {
 					if beforeFree {
-						resChainStartsInFree++
+						stats.ResChainStartsInFree++
 					} else {
-						resChainStartsBase++
+						stats.ResChainStartsBase++
 					}
 				}
 			}
@@ -88,21 +110,27 @@ func TestRtp2(t *testing.T) {
 			}
 
 			stepWin := float64(svc.stepMultiplier)
+			if didRespin {
+				stats.RespinTotalWin += stepWin
+			}
 			roundWin += stepWin
+			if isInPurchaseRound {
+				purchaseSessionWin += stepWin
+			}
 
 			// 统计奖金（必须在写日志之前，因为要设置 triggeringBaseRound）
 			if isFree {
-				freeTotalWin += stepWin
+				stats.FreeWin += stepWin
 				freeRoundWin += stepWin
 				if svc.addFreeTime > 0 {
-					freeTreasureInFree++
-					freeExtraFreeRounds += svc.addFreeTime
+					stats.FreeTreasureInFree++
+					stats.FreeExtraFreeRounds += svc.addFreeTime
 				}
 			} else {
-				baseTotalWin += stepWin
+				stats.BaseWin += stepWin
 				// 与 rtp_test 一致：基础盘任意一次 addFreeTime>0 计一次触发（含重转至赢末手进免费，此时 isFirst=false）
 				if svc.addFreeTime > 0 {
-					baseFreeTriggered++
+					stats.FreeTriggerCount++
 					if isFirst {
 						triggeringBaseRound = baseGameCount + 1 // 日志局号：常见为首手触发
 					}
@@ -117,37 +145,58 @@ func TestRtp2(t *testing.T) {
 					if triggerRound == 0 && isFirst {
 						triggerRound = baseGameCount
 					}
+					// 购买或重转末手进免费时，可能尚未计入 baseGameCount，仍为 0 → 原日志显示「第?局」
+					if triggerRound == 0 {
+						if baseGameCount > 0 {
+							triggerRound = baseGameCount
+						} else {
+							triggerRound = 1
+						}
+					}
 				}
-				writeSpinDetail(fileBuf, svc, gameNum, isFree, triggerRound, stepWin, roundWin, respinStep, isFirst)
+				writeSpinDetail(fileBuf, svc, gameNum, isFree, triggerRound, stepWin, roundWin, respinStep, _enablePurchaseModeRtp2, isInPurchaseRound, purchaseSessionWin)
 			}
 
 			// Round 结束处理
 			if svc.isRoundOver {
 				if isFree {
-					freeRounds++
+					stats.FreeRounds++
 					if freeRoundWin > 0 {
-						freeWinRounds++
+						stats.FreeWinTimes++
 					}
 					freeRoundWin = 0
 				} else {
 					// 基础模式回合结束
 					baseGameCount++ // 回合结束时增加局号
-					baseRounds++
+					stats.BaseRounds++
 					if roundWin > 0 {
-						baseWinRounds++
+						stats.BaseWinTimes++
 					}
-					totalBet += float64(_baseMultiplier)
+					if !(_enablePurchaseModeRtp2 && isInPurchaseRound) {
+						stats.TotalBet += float64(_baseMultiplier)
+					}
 				}
 				roundWin = 0
 
 				// 只有当免费游戏完全结束时才重置服务并退出内层循环
 				if svc.scene.FreeNum <= 0 {
+					if _enablePurchaseModeRtp2 && isInPurchaseRound {
+						stats.TotalBet += float64(_purchasePriceRtp2 * _baseMultiplier)
+						stats.PurchaseCount++
+						if purchaseSessionWin > 0 {
+							stats.PurchaseWinTimes++
+						}
+						stats.PurchaseWin += purchaseSessionWin
+						isInPurchaseRound = false
+						purchaseSessionWin = 0
+					}
 					resetBetServiceForNextRound(svc)
 					freeRoundIdx = 0
-					if baseRounds%interval == 0 {
-						totalWin := baseTotalWin + freeTotalWin
+					if stats.BaseRounds%interval == 0 {
+						stats.TotalWin = stats.BaseWin + stats.FreeWin
 						// freeTime 与 rtp_test 一致：为基础模式触发免费次数（非 0，便于进度行与汇总对照）
-						printBenchmarkProgress(buf, baseRounds, totalBet, baseTotalWin, freeTotalWin, totalWin, baseWinRounds, freeWinRounds, freeRounds, baseFreeTriggered, baseFreeTriggered, start)
+						stats.FreeTime = stats.FreeTriggerCount
+						printBenchmarkProgress(buf, stats, start)
 						fmt.Print(buf.String())
 					}
 					break
@@ -157,10 +206,12 @@ func TestRtp2(t *testing.T) {
 				// 计入 baseRounds（投入筹码的局数）和 baseGameCount
 				// 注意：免费模式中触发额外免费不计入基础模式统计
 				baseGameCount++
-				baseRounds++
-				totalBet += float64(_baseMultiplier)
+				stats.BaseRounds++
+				if !(_enablePurchaseModeRtp2 && isInPurchaseRound) {
+					stats.TotalBet += float64(_baseMultiplier)
+				}
 				if roundWin > 0 {
-					baseWinRounds++
+					stats.BaseWinTimes++
 				}
 			}
 
@@ -178,9 +229,22 @@ func TestRtp2(t *testing.T) {
 		}
 	}
 
-	printFinalStats(buf, baseRounds, baseTotalWin, baseWinRounds, baseFreeTriggered,
-		freeRounds, freeTotalWin, freeWinRounds, freeTreasureInFree, freeExtraFreeRounds, totalBet, start,
-		respinStepsInBase, respinStepsInFree, resChainStartsBase, resChainStartsInFree)
+	stats.TotalWin = stats.BaseWin + stats.FreeWin
+	stats.FreeTime = stats.FreeTriggerCount
+	buf.Reset()
+	printBenchmarkSummary(buf, stats, start, _enablePurchaseModeRtp2, _purchasePriceRtp2)
+	// 保留购买段落，便于与 TestRtp 输出风格一致
+	fprintf(buf, "\n[购买模式统计]\n")
+	if !_enablePurchaseModeRtp2 {
+		fprintf(buf, "开关: 关闭（本文件 const _enablePurchaseModeRtp2）\n")
+	} else if stats.PurchaseCount == 0 {
+		fprintf(buf, "开关: 已开启，但本次未产生购买结算（局数或条件不足）\n")
+	} else {
+		purchaseDenom := float64(stats.PurchaseCount) * float64(_purchasePriceRtp2*_baseMultiplier)
+		purchaseRTP := safeDivFloat(stats.PurchaseWin*100, purchaseDenom)
+		fprintf(buf, "购买次数: %d | 购买中奖率: %.2f%% | 购买RTP: %.2f%%\n", stats.PurchaseCount, safeDiv(stats.PurchaseWinTimes*100, stats.PurchaseCount), purchaseRTP)
+		fprintf(buf, "平均每次购买对应免费总局数: %.2f（总免费步局数/购买次数；仅当每轮均购买时可作「每轮免费长度」参考）\n", safeDivFloat(float64(stats.FreeRounds), float64(stats.PurchaseCount)))
+	}
 	result := buf.String()
 	fmt.Print(result)
 	if debugFileOpen > 0 && fileBuf != nil {
@@ -188,19 +252,23 @@ func TestRtp2(t *testing.T) {
 	}
 }
 
-func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggeringBaseRound int, stepWin, roundWin float64, respinStep int, isFirst bool) {
+func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggeringBaseRound int, stepWin, roundWin float64, respinStep int, logPurchase bool, isInPurchaseRound bool, purchaseSessionWin float64) {
 	if isFree {
 		trigger := "?"
 		if triggeringBaseRound > 0 {
 			trigger = fmt.Sprintf("%d", triggeringBaseRound)
 		}
-		fprintf(buf, "\n=============[基础模式] 第%s局 - 免费第%d局 =============\n", trigger, gameNum)
+		fprintf(buf, "\n=============[免费模式] 基础第%s局触发 - 免费第%d局 =============\n", trigger, gameNum)
 	} else {
 		if respinStep > 0 {
 			fprintf(buf, "\n=============[基础模式] 第%d局 (重转至赢 Step%d) =============\n", gameNum, respinStep+1)
 		} else {
 			fprintf(buf, "\n=============[基础模式] 第%d局 =============\n", gameNum)
 		}
+	}
+	if logPurchase && isInPurchaseRound {
+		fprintf(buf, "[购买跟踪] isFreeRound=%v Stage=%d StepIsPurchase=%v SceneIsPurchase=%v  | 会话累计赢=%.2f(倍) FreeNum=%d client.purchaseAmt=%d\n",
+			svc.isFreeRound, svc.scene.Stage, svc.stepIsPurchase, svc.scene.IsPurchase, purchaseSessionWin, svc.scene.FreeNum, svc.client.ClientOfFreeGame.GetPurchaseAmount())
 	}
 	writeReelInfo(buf, svc)
 	fprintf(buf, "Step1 初始盘面:\n")
@@ -226,11 +294,9 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, is
 
 	longwild := ""
 	switch {
-	case svc.scene.IsRespinMode && svc.respinWildCol >= 0:
-		//fprintf(buf, "\t触发长条(重转至赢), col=%d mul=%d\n", svc.respinWildCol, wildMul)
+	case svc.respinWildCol >= 0:
 		longwild = "💎重转至赢"
 	case svc.wildExpandCol >= 0:
-		//fprintf(buf, "\t触发长条(变大), col=%d mul=%d\n", svc.wildExpandCol, wildMul)
 		longwild = "💎长条变大"
 	}
 
@@ -252,14 +318,24 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, is
 	//		fprintf(buf, "\t长条: -\n")
 	//}
 
+	isRespin := 0
+	if svc.scene.IsRespinMode {
+		isRespin = 1
+	}
+
+	IsPurchase := 0
+	if svc.stepIsPurchase {
+		IsPurchase = 1
+	}
+
 	if svc.addFreeTime > 0 {
 		if !isFree {
-			fprintf(buf, "\t🚨🚨🚨 Scatter(全盘)=%d, 触发免费: +%d 次 |  当前剩余免费=%d  %s\n", svc.scatterCount, svc.addFreeTime, svc.scene.FreeNum, longwild)
+			fprintf(buf, "\t🚨🚨🚨 Scatter(全盘)=%d, 触发免费: +%d 次 |  当前剩余免费=%d | IsRespin=%v | IsPurchase=%v | index=%d %s\n", svc.scatterCount, svc.addFreeTime, svc.scene.FreeNum, isRespin, IsPurchase, svc.debug.mode, longwild)
 		} else {
-			fprintf(buf, "\tMode=%d Scatter(全盘)=%d | 当前剩余免费=%d nextStage=%d, %s\n", model, svc.scatterCount, svc.scene.FreeNum, svc.scene.NextStage, longwild)
+			fprintf(buf, "\tMode=%d Scatter(全盘)=%d | 当前剩余免费=%d nextStage=%d | IsRespin=%v |IsPurchase=%v | index=%d %s\n", model, svc.scatterCount, svc.scene.FreeNum, svc.scene.NextStage, isRespin, IsPurchase, svc.debug.mode, longwild)
 		}
 	} else {
-		fprintf(buf, "\tMode=%d Scatter(全盘)=%d | nextStage=%d %s\n", model, svc.scatterCount, svc.scene.NextStage, longwild)
+		fprintf(buf, "\tMode=%d Scatter(全盘)=%d | nextStage=%d | IsRespin=%v | IsPurchase=%v | index=%d %s\n", model, svc.scatterCount, svc.scene.NextStage, isRespin, IsPurchase, svc.debug.mode, longwild)
 
 	}
 
@@ -304,70 +380,4 @@ func saveDebugFile(statsResult, detailResult string, start time.Time) {
 	filename := fmt.Sprintf("logs/%s.txt", time.Now().Format("20060102_150405"))
 	_ = os.WriteFile(filename, []byte(statsResult+detailResult), 0644)
 	fmt.Printf("\n调试信息已保存到: %s\n", filename)
-}
-
-func printFinalStats(buf *strings.Builder, baseRounds int64, baseTotalWin float64, baseWinRounds int64,
-	baseFreeTriggered int64, freeRounds int64, freeTotalWin float64,
-	freeWinRounds int64, freeTreasureInFree int64, freeExtraFreeRounds int64, totalBet float64, start time.Time,
-	respinStepsInBase, respinStepsInFree, resChainStartsBase, resChainStartsInFree int64) {
-	w := func(format string, args ...interface{}) { fprintf(buf, format, args...) }
-	elapsed := time.Since(start)
-	speed := safeDiv(baseRounds, int64(elapsed.Seconds()))
-	w("\n运行局数: %d，用时: %v，速度: %.0f 局/秒\n", baseRounds, elapsed.Round(time.Second), speed)
-
-	w("\n===== 详细统计汇总 =====\n")
-	w("生成时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
-
-	// 与 rtp_test（printBenchmarkSummary）一致：浮点口径，避免先转 int64 丢小数
-	baseRTP := safeDivFloat(baseTotalWin*100, totalBet)
-	freeRTP := safeDivFloat(freeTotalWin*100, totalBet)
-	totalWin := baseTotalWin + freeTotalWin
-	totalRTP := safeDivFloat(totalWin*100, totalBet)
-	baseWinRate := safeDiv(baseWinRounds*100, baseRounds)
-	freeWinRate := safeDiv(freeWinRounds*100, max(freeRounds, 1))
-	freeTriggerRate := safeDiv(baseFreeTriggered*100, baseRounds)
-	avgFreePerTrigger := safeDiv(freeRounds, baseFreeTriggered)
-	baseContrib := safeDivFloat(baseTotalWin*100, totalWin)
-	freeContrib := safeDivFloat(freeTotalWin*100, totalWin)
-	resStartRateBase := safeDiv(resChainStartsBase*100, baseRounds)
-	resStartRateFree := safeDiv(resChainStartsInFree*100, max(freeRounds, 1))
-	resChainTotal := resChainStartsBase + resChainStartsInFree
-	avgRespinStepsPerChain := safeDiv(respinStepsInBase+respinStepsInFree, resChainTotal)
-
-	w("\n[基础模式统计]\n")
-	w("基础模式总游戏局数: %d\n", baseRounds)
-	w("基础模式总投注(倍数): %.2f\n", totalBet)
-	w("基础模式总奖金: %.2f\n", baseTotalWin)
-	w("基础模式RTP: %.2f%% (基础模式奖金/基础模式投注)\n", baseRTP)
-	w("基础模式免费局触发次数: %d\n", baseFreeTriggered)
-	w("基础模式触发免费局比例: %.2f%%\n", freeTriggerRate)
-	w("基础模式中奖率: %.2f%%\n", baseWinRate)
-	w("基础模式中奖局数: %d\n", baseWinRounds)
-	w("重转至赢·基础: 步%d | 链%d | 率%.2f%% | 均%.4f步/局\n",
-		respinStepsInBase, resChainStartsBase, resStartRateBase, safeDivFloat(float64(respinStepsInBase), float64(baseRounds)))
-
-	w("\n[免费模式统计]\n")
-	w("免费模式总游戏局数: %d\n", freeRounds)
-	w("免费模式总奖金: %.2f\n", freeTotalWin)
-	w("免费模式RTP: %.2f%% (免费模式奖金/基础模式投注，因为免费模式不投注)\n", freeRTP)
-	w("免费模式中奖率: %.2f%%\n", freeWinRate)
-	w("免费模式中奖局数: %d\n", freeWinRounds)
-	w("免费模式额外增加局数: %d\n", freeExtraFreeRounds)
-	w("免费模式出现夺宝的次数: %d (%.2f%%)\n", freeTreasureInFree, safeDiv(freeTreasureInFree*100, max(freeRounds, 1)))
-	w("重转至赢·免费: 步%d | 链%d | 率%.2f%% | 均%.4f步/局\n",
-		respinStepsInFree, resChainStartsInFree, resStartRateFree, safeDivFloat(float64(respinStepsInFree), float64(max(freeRounds, 1))))
-
-	w("\n[免费触发效率]\n")
-	w("  总免费游戏次数: %d (真实的游戏局数，包含中途增加的免费次数)\n", freeRounds)
-	w("  总触发次数: %d (基础模式触发免费游戏的次数)\n", baseFreeTriggered)
-	w("  平均1次触发获得免费游戏: %.2f次 (总免费游戏次数 / 总触发次数)\n", avgFreePerTrigger)
-	w("  重转至赢·合计: %d步 | %d链 | %.2f 步/链\n", respinStepsInBase+respinStepsInFree, resChainTotal, avgRespinStepsPerChain)
-
-	w("\n[总计]\n")
-	w("  总投注(倍数): %.2f (仅基础模式投注，免费模式不投注)\n", totalBet)
-	w("  总奖金: %.2f (基础模式奖金 + 免费模式奖金)\n", totalWin)
-	w("  总回报率(RTP): %.2f%% (总奖金/总投注 = %.2f/%.2f)\n", totalRTP, totalWin, totalBet)
-	w("  基础贡献: %.2f%% | 免费贡献: %.2f%%\n", baseContrib, freeContrib)
-
-	w("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 }
