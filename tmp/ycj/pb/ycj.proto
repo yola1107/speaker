@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+option go_package = "egame-grpc/game/ycj/pb";
+
+package ycj;
+
+// 印钞机 (GameID: 18926)
+// 盘面: 1x3
+// 特色: 推展模式、重转模式、夺宝模式
+
+message Ycj_BetOrderResponse {
+    optional string orderSN        = 1;   // 订单号
+    optional double balance        = 2;   // 玩家当前余额
+    optional double betAmount      = 3;   // 本局下注金额
+    optional double currentWin     = 4;   // 本局赢取金额
+    optional double freeWin        = 5;   // 免费游戏累计赢取
+    optional double totalWin       = 6;   // 本回合总赢取
+    optional bool free             = 7;   // 是否处于免费模式
+    optional int64 review          = 8;   // 复盘标志
+    optional Ycj_WinInfo winInfo   = 9;   // 中奖详情
+    repeated int64 cards           = 10;  // 符号网格 1x3，共3个元素
+    optional double multiplier     = 11;  // 返奖倍数
+    optional bool isRoundOver      = 12;  // 是否本局结束
+    optional int64 state           = 13;  // 游戏状态 1=普通 2=免费
+    optional int64 freeNum         = 14;  // 剩余免费次数
+    optional int64 freeTime        = 15;  // 已使用免费次数
+    repeated int64 winGrid         = 16;  // 中奖位置网格 1x3
+    optional bool isGameOver       = 17;  // 大回合结束
+    optional bool next             = 18;  // 是否需要继续请求（推展/重转）
+    optional bool isExtendMode     = 19;  // 是否在推展模式中
+    optional bool isRespinMode     = 20;  // 是否在重转模式中
+    optional int64 addFreeNum      = 21;  // 本局增加的免费次数
+}
+
+// Ycj_WinInfo 中奖详情
+message Ycj_WinInfo {
+    optional int64 leftSymbol    = 1;  // 左侧数字符号
+    optional int64 midSymbol     = 2;  // 中间特殊符号
+    optional int64 rightSymbol   = 3;  // 右侧数字符号
+    optional double multiplier   = 4;  // 返奖倍数
+    optional bool isExtend       = 5;  // 是否触发推展
+    optional bool isRespin       = 6;  // 是否触发重转
+    optional bool isFree         = 7;  // 是否触发夺宝
+    optional int64 freeSpinNum   = 8;  // 免费次数
+}

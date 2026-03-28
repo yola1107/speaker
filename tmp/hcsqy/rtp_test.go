@@ -27,28 +27,37 @@ const (
 )
 
 type benchmarkStats struct {
-	BaseRounds       int64
-	FreeRounds       int64
-	BaseWinTimes     int64
-	FreeWinTimes     int64
+	// 基础/免费局数
+	BaseRounds int64
+	FreeRounds int64
+
+	// 中奖局数
+	BaseWinTimes int64
+	FreeWinTimes int64
+
+	// 免费触发
 	FreeTriggerCount int64
 	FreeTime         int64
 
+	// 奖励与投注
 	BaseWin  float64
 	FreeWin  float64
 	TotalWin float64
 	TotalBet float64
 
+	// 重转统计
 	RespinTotalWin       float64
 	RespinStepsInBase    int64
 	RespinStepsInFree    int64
 	ResChainStartsBase   int64
 	ResChainStartsInFree int64
 
+	// 购买统计
 	PurchaseCount    int64
 	PurchaseWinTimes int64
 	PurchaseWin      float64
 
+	// 免费中免费
 	FreeTreasureInFree  int64
 	FreeExtraFreeRounds int64
 }
