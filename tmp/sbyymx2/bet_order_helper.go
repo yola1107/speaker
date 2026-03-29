@@ -2,7 +2,6 @@ package sbyymx2
 
 import (
 	"fmt"
-	"math/rand/v2"
 	"strconv"
 	"strings"
 
@@ -28,8 +27,9 @@ func (s *betOrderService) updateBetAmount() bool {
 	s.betAmount = decimal.NewFromFloat(s.req.BaseMoney).
 		Mul(decimal.NewFromInt(s.req.Multiple)).
 		Mul(decimal.NewFromInt(_baseMultiplier))
+	s.amount = s.betAmount
 
-	if s.betAmount.LessThanOrEqual(decimal.Zero) {
+	if s.betAmount.LessThanOrEqual(decimal.Zero) || s.amount.LessThanOrEqual(decimal.Zero) {
 		global.GVA_LOG.Warn("updateBetAmount",
 			zap.Error(fmt.Errorf("invalid request params: [%v,%v]", s.req.BaseMoney, s.req.Multiple)))
 		return false
@@ -38,7 +38,7 @@ func (s *betOrderService) updateBetAmount() bool {
 }
 
 func (s *betOrderService) checkBalance() bool {
-	f, _ := s.betAmount.Float64()
+	f, _ := s.amount.Float64()
 	return gamelogic.CheckMemberBalance(f, s.member)
 }
 
@@ -59,7 +59,7 @@ func (s *betOrderService) symbolGridToString(symbolGrid int64Grid) string {
 }
 
 func (s *betOrderService) updateBonusAmount(stepMultiplier int64) {
-	// RTP 测试模式或无倍数时直接返回
+	// RTP测试模式或无倍数时直接返回
 	if s.debug.open || stepMultiplier == 0 {
 		s.bonusAmount = decimal.Zero
 		return
@@ -72,82 +72,129 @@ func (s *betOrderService) updateBonusAmount(stepMultiplier int64) {
 	if s.bonusAmount.GreaterThan(decimal.Zero) {
 		rounded := bonusAmount.Round(2).InexactFloat64()
 		s.client.ClientOfFreeGame.IncrGeneralWinTotal(rounded)
-		s.client.ClientOfFreeGame.IncRoundBonus(rounded)
 	}
 }
 
-// findWinInfos 仅中间行；左右为 1–7 且相等；中格为百搭或与左右相同
-func (s *betOrderService) findWinInfos() {
-	s.winInfos = nil
-	left := s.symbolGrid[1][0]
-	mid := s.symbolGrid[1][1]
-	right := s.symbolGrid[1][2]
-	if left == _blank || left == _blankCell {
-		return
+func (s *betOrderService) int64GridToArray(grid int64Grid) []int64 {
+	elements := make([]int64, _rowCount*_colCount)
+	for r := 0; r < _rowCount; r++ {
+		for c := 0; c < _colCount; c++ {
+			elements[r*_colCount+c] = grid[r][c]
+		}
 	}
-	if right == _blank || right == _blankCell {
-		return
-	}
-	if left < 1 || left > 7 || right < 1 || right > 7 {
-		return
-	}
-	if left != right {
-		return
-	}
-	if left != mid && mid < _wild {
-		return
-	}
-	s.winInfos = []*winInfo{{Symbol: left}}
+	return elements
 }
 
-// processWinInfos 线倍数 = pay(左符号) × (中格倍率百搭时 × (mid-100))
-func (s *betOrderService) processWinInfos() {
-	var winGrid int64Grid
-	lineMul := int64(0)
-	var winResults []*winResult
-	mid := s.symbolGrid[1][1]
+func (s *betOrderService) handleSymbolGrid() {
+	for r := 0; r < _rowCount; r++ {
+		for c := 0; c < _colCount; c++ {
+			s.symbolGrid[r][c] = s.scene.SymbolRoller[c].BoardSymbol[r]
+		}
+	}
+}
 
-	for _, info := range s.winInfos {
-		mul := s.getPayMultiplier(info.Symbol)
-		if mul == 0 {
-			continue
-		}
-		var extra int64 = 1
-		switch {
-		case mid == _wild:
-			extra = s.pickPlainWildMultiplier()
-		case mid > _wild:
-			extra = mid - _wild
-		}
-		if extra <= 0 {
-			continue
-		}
-		if extra > 1 {
-			if max := int64(^uint64(0) >> 1); mul > max/extra {
-				global.GVA_LOG.Error("processWinInfos: multiplier overflow risk",
-					zap.Int64("mul", mul), zap.Int64("extra", extra))
-				continue
+func (s *betOrderService) checkSymbolGridWin() {
+	var winInfos []WinInfo
+	var totalWinGrid int64Grid
+
+	for i, line := range s.gameConfig.Lines {
+		// 百搭可单独中奖。整条支付线全为百搭时，只按百搭赔付结一次（pay_table 中 ID=8），
+		// 不再用 1..7 各枚举一遍以免同线多倍叠加。
+		allWild := true
+		for _, p := range line {
+			r := p / _colCount
+			c := p % _colCount
+			if s.symbolGrid[r][c] != _wild {
+				allWild = false
+				break
 			}
-			mul *= extra
 		}
-		winResults = append(winResults, &winResult{Symbol: info.Symbol, Multiplier: mul})
-		winGrid[1][0] = s.symbolGrid[1][0]
-		winGrid[1][1] = s.symbolGrid[1][1]
-		winGrid[1][2] = s.symbolGrid[1][2]
-		lineMul += mul
+		if allWild && len(line) >= _minMatchCount {
+			if odds := s.getSymbolBaseMultiplier(_wild, 3); odds > 0 {
+				var winGrid int64Grid
+				for _, p := range line {
+					r := p / _colCount
+					c := p % _colCount
+					winGrid[r][c] = _wild
+				}
+				winInfos = append(winInfos, WinInfo{
+					Symbol:      _wild,
+					SymbolCount: int64(len(line)),
+					LineCount:   int64(i),
+					Odds:        odds,
+					WinGrid:     winGrid,
+				})
+				markLineHitsOnTotal(line, &winGrid, &totalWinGrid)
+			}
+			continue
+		}
+
+		firstP := line[0]
+		firstR := firstP / _colCount
+		firstC := firstP % _colCount
+		firstSymbol := s.symbolGrid[firstR][firstC]
+
+		var symbolCandidates [8]int64
+		var candCount int
+
+		if firstSymbol == _wild {
+			for symbol := _blank + 1; symbol < _wild; symbol++ {
+				symbolCandidates[candCount] = symbol
+				candCount++
+			}
+		} else if firstSymbol >= _blank+1 && firstSymbol < _wild {
+			symbolCandidates[0] = firstSymbol
+			candCount = 1
+		} else {
+			continue
+		}
+
+		for idx := 0; idx < candCount; idx++ {
+			symbol := symbolCandidates[idx]
+			var count int64
+			var winGrid int64Grid
+
+			for _, p := range line {
+				r, c := p/_colCount, p%_colCount
+				currSymbol := s.symbolGrid[r][c]
+				if currSymbol == symbol || currSymbol == _wild {
+					winGrid[r][c] = currSymbol
+					count++
+				} else {
+					break
+				}
+			}
+
+			if count >= _minMatchCount {
+				if odds := s.getSymbolBaseMultiplier(symbol, 3); odds > 0 {
+					winInfos = append(winInfos, WinInfo{
+						Symbol:      symbol,
+						SymbolCount: count,
+						LineCount:   int64(i),
+						Odds:        odds,
+						WinGrid:     winGrid,
+					})
+					markLineHitsOnTotal(line, &winGrid, &totalWinGrid)
+				}
+			}
+		}
 	}
-	s.lineMultiplier = lineMul
-	s.stepMultiplier = lineMul
-	s.winResults = winResults
-	s.winGrid = winGrid
+
+	var totalOdds int64
+	for _, w := range winInfos {
+		totalOdds += w.Odds
+	}
+	s.lineMultiplier = totalOdds
+	s.winInfos = winInfos
+	s.winGrid = totalWinGrid
 }
 
-func (s *betOrderService) calcTease() bool {
-	if s.debug.open {
-		return false
+// markLineHitsOnTotal 将本支付线在 winGrid 上命中的格子合并进 total（用于最终 WinGrid 展示）。
+func markLineHitsOnTotal(line []int, winGrid *int64Grid, total *int64Grid) {
+	for _, p := range line {
+		r, c := p/_colCount, p%_colCount
+		if (*winGrid)[r][c] > 0 {
+			(*total)[r][c] = 1
+		}
 	}
-	if s.bonusAmount.GreaterThan(decimal.Zero) {
-		return false
-	}
-	return rand.IntN(1000) < 85
 }

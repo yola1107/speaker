@@ -24,16 +24,19 @@ func NewGame() *Game {
 	return &Game{}
 }
 
-// NewBetOrder 下注接口，返回 protobuf 与 JSON 字符串（与 hcsqy / NewGameBetMap 一致）
+// NewBetOrder 下注接口，返回 protobuf 和 json 格式
 func (g *Game) NewBetOrder(req *request.BetOrderReq) (pbData []byte, result string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			global.GVA_LOG.Error("NewBetOrder", zap.Any("r", r))
+			global.GVA_LOG.Error("BetOrder", zap.Any("r", r))
 			debug.PrintStack()
 			pbData, result, err = nil, "", InternalServerError
+			return
 		}
 	}()
-	return newBetOrderService().betOrder(req)
+
+	betService := newBetOrderService()
+	return betService.betOrder(req)
 }
 
 func (g *Game) MemberLogin(req *pb.LoginStreamReq, c *client.Client) (result string, err error) {
@@ -42,6 +45,7 @@ func (g *Game) MemberLogin(req *pb.LoginStreamReq, c *client.Client) (result str
 			global.GVA_LOG.Error("MemberLogin", zap.Any("r", r))
 			debug.PrintStack()
 			result, err = "", InternalServerError
+			return
 		}
 	}()
 	return newMemberLoginService().memberLogin(req, c)

@@ -15,7 +15,12 @@ import (
 
 func (s *betOrderService) initialize() error {
 	s.client.ClientOfFreeGame.ResetFreeClean()
-	return s.initFirstStepForSpin()
+	switch {
+	case !s.scene.IsRespinMode:
+		return s.initFirstStepForSpin()
+	default:
+		return s.initStepForNextStep()
+	}
 }
 
 func (s *betOrderService) initFirstStepForSpin() error {
@@ -37,9 +42,25 @@ func (s *betOrderService) initFirstStepForSpin() error {
 	s.client.ClientOfFreeGame.ResetRoundBonus()
 	s.client.ClientOfFreeGame.ResetRoundBonusStaging()
 	s.client.ClientOfFreeGame.SetBetAmount(s.betAmount.Round(2).InexactFloat64())
-	s.amount = s.betAmount
 	s.client.ClientOfFreeGame.SetLastWinId(uint64(time.Now().UnixNano()))
-	s.client.ClientOfFreeGame.SetLastMapId(0)
+	return nil
+}
+
+func (s *betOrderService) initStepForNextStep() error {
+	if s.debug.open {
+		s.req.BaseMoney = 1
+		s.req.Multiple = 1
+
+		s.betAmount = decimal.NewFromInt(_baseMultiplier)
+		s.amount = decimal.Zero
+		return nil
+	}
+
+	s.req.BaseMoney = s.lastOrder.BaseAmount
+	s.req.Multiple = s.lastOrder.Multiple
+
+	s.betAmount = decimal.NewFromFloat(s.client.ClientOfFreeGame.GetBetAmount())
+	s.amount = decimal.Zero
 	return nil
 }
 
@@ -59,9 +80,9 @@ func (s *betOrderService) updateGameOrder() error {
 		GameName:          s.game.GameName,
 		BaseMultiple:      _baseMultiplier,
 		Multiple:          s.req.Multiple,
-		LineMultiple:      s.lineMultiplier,
+		LineMultiple:      s.stepMultiplier,
 		BonusHeadMultiple: 1,
-		BonusMultiple:     s.stepMultiplier,
+		BonusMultiple:     1,
 		BaseAmount:        s.req.BaseMoney,
 		Amount:            s.amount.Round(2).InexactFloat64(),
 		ValidAmount:       s.amount.Round(2).InexactFloat64(),
@@ -71,10 +92,7 @@ func (s *betOrderService) updateGameOrder() error {
 		ParentOrderSn:     s.orderSn.ParentOrderSN,
 		FreeOrderSn:       s.orderSn.FreeOrderSN,
 		State:             1,
-		BonusTimes:        int64(s.client.ClientOfFreeGame.GetBonusTimes()),
-		HuNum:             0,
-		FreeNum:           0,
-		FreeTimes:         int64(s.client.ClientOfFreeGame.GetFreeTimes()),
+		BonusTimes:        1,
 	}
 	return s.fillInGameOrderDetails()
 }
@@ -91,14 +109,7 @@ func (s *betOrderService) fillInGameOrderDetails() error {
 	}
 	s.gameOrder.BetDetail = s.symbolGridToString(s.symbolGrid)
 	s.gameOrder.BonusDetail = s.symbolGridToString(s.winGrid)
-	winDetailsMap := map[string]any{
-		"turnID":           int64(1),
-		"turnCount":        1,
-		"winningSummaries": s.winResults,
-		"lineMultiplier":   s.lineMultiplier,
-		"stepMultiplier":   s.stepMultiplier,
-	}
-	winDetails, err := json.CJSON.MarshalToString(winDetailsMap)
+	winDetails, err := json.CJSON.MarshalToString(s.buildWinInfo())
 	if err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails", zap.Error(err))
 		return err
