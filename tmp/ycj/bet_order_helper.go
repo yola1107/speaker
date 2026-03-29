@@ -97,18 +97,21 @@ func (s *betOrderService) findWinInfos() WinResult {
 	mid := s.symbolGrid[0][1]
 	right := s.symbolGrid[0][2]
 
+	isNumberLeft := left >= _num01 && left <= _num10
+	isNumberRight := right >= _num01 && right <= _num10
+
 	result := WinResult{}
 
 	// 中间为空：检查推展模式
 	if mid == _blank {
-		if isNumberSymbol(left) && isNumberSymbol(right) && left == right {
+		if isNumberLeft && isNumberRight && left == right {
 			result.TriggerExtend = true
 		}
 		return result
 	}
 
 	// 左或右非数字：检查重转模式（仅免费模式）
-	if !isNumberSymbol(left) || !isNumberSymbol(right) {
+	if !isNumberLeft || !isNumberRight {
 		// 与策划口径保持一致：左右非数字（含空）时不触发重转。
 		return result
 	}
@@ -118,7 +121,8 @@ func (s *betOrderService) findWinInfos() WinResult {
 	if left != _blank && left == right {
 		result.Win = true
 		result.Multiplier = s.calculateMultiplier(left, mid, right)
-		if isFreeSpinSymbol(mid) {
+		//if isFreeSpinSymbol(mid) {
+		if mid == _free5 || mid == _free10 || mid == _free20 {
 			result.TriggerFree = true
 			result.FreeSpinNum = int64(s.gameConfig.SymbolMul[mid])
 		}
@@ -141,7 +145,8 @@ func (s *betOrderService) calculateMultiplier(left, mid, right int64) float64 {
 
 	// 中间符号系数：翻倍符号用配置值，银行/夺宝符号为1
 	midVal := float64(1)
-	if isMultiplierSymbol(mid) {
+	//if isMultiplierSymbol(mid) {
+	if mid >= _mul2 && mid <= _mul100 {
 		midVal = symbolMul[mid]
 	}
 
@@ -160,3 +165,8 @@ func btoi(b bool) int64 {
 	}
 	return 0
 }
+
+//// 符号类型判断
+//func isNumberSymbol(s int64) bool     { return s >= 1 && s <= 5 }
+//func isMultiplierSymbol(s int64) bool { return s >= 7 && s <= 14 }
+//func isFreeSpinSymbol(s int64) bool   { return s >= 15 && s <= 17 }

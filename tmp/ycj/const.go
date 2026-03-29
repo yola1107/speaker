@@ -38,11 +38,6 @@ const (
 	_free20 int64 = 17 // 20次免费旋转
 )
 
-// 符号类型判断
-func isNumberSymbol(s int64) bool     { return s >= 1 && s <= 5 }
-func isMultiplierSymbol(s int64) bool { return s >= 7 && s <= 14 }
-func isFreeSpinSymbol(s int64) bool   { return s >= 15 && s <= 17 }
-
 // 游戏阶段
 const (
 	_spinTypeBase = 1 // 普通模式
