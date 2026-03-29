@@ -21,10 +21,10 @@ message sbyymx_BetOrderResponse {
     repeated int64 winGrid          = 10;  // 中奖位置网格 3x3
     optional bool next              = 11;  // 是否需要继续请求（重转至赢）
     optional bool isRespinUntilWin  = 12;  // 是否在重转至赢模式中 (有炸胡动画)
-    optional int32 respinWildCol    = 13;  // 重转至赢模式长条百搭列 (0-2)，非重转模式为-1
     optional int64 wildMultiplier   = 14;  // 长条百搭倍数 (x2-x100)
     optional int64 lineMultiplier   = 15;  // 线赔率合计（各中奖线基础赔率之和，未乘长条百搭）
     optional int64 stepMultiple     = 16;  // 本步倍数 (lineMultiplier * wildMultiplier)
+    optional bool isInstrumentWin   = 17;  // 是否乐器符号中奖（吉他/鼓），用于前端表现
 }
 
 // sbyymx_WinInfo 中奖详情

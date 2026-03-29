@@ -36,8 +36,7 @@ type betOrderService struct {
 	isRoundOver      bool                 // 回合是否结束
 	next             bool                 // 是否需要继续请求（必赢重转）
 	stepIsRespinMode bool                 // 当前spin是否是重转至赢模式
-	respinWildCol    int32                // 重转至赢模式长条百搭列(0-2)，每次重转重新随机
-	wildExpandCol    int32                // 长条百搭变大列(0-2)
+	isInstrumentWin  bool                 // 是否乐器符号中奖（吉他/鼓）
 	lineMultiplier   int64                // 线赔率合计（未乘长条百搭），回包给前端
 	wildMultiplier   int64                // 长条百搭倍数
 	stepMultiplier   int64                // Step倍数
@@ -45,6 +44,8 @@ type betOrderService struct {
 	symbolGrid       int64Grid            // 符号网格（3行3列）
 	winGrid          int64Grid            // 中奖网格（3行3列）
 	debug            rtpDebugData         // 是否为RTP测试流程
+
+	isWildExpandCol bool // 是否发生百搭变大列
 }
 
 func newBetOrderService() *betOrderService {
@@ -111,10 +112,10 @@ func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 		WinGrid:          s.int64GridToArray(s.winGrid),
 		Next:             proto.Bool(s.next),
 		IsRespinUntilWin: proto.Bool(s.stepIsRespinMode),
-		RespinWildCol:    proto.Int32(s.respinWildCol),
 		WildMultiplier:   proto.Int64(s.wildMultiplier),
 		LineMultiplier:   proto.Int64(s.lineMultiplier),
 		StepMultiple:     proto.Int64(s.stepMultiplier),
+		IsInstrumentWin:  proto.Bool(s.isInstrumentWin),
 	}
 	pbData, err := proto.Marshal(result)
 	if err != nil {

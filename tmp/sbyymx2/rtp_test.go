@@ -71,14 +71,14 @@ func TestRtp(t *testing.T) {
 			panic(err)
 		}
 
-		if svc.respinWildCol >= 0 {
+		if svc.stepIsRespinMode {
 			stats.RespinSteps++
 			if !beforeRespin {
 				stats.ResChainStarts++
 			}
 		}
 
-		if svc.wildExpandCol >= 0 {
+		if svc.isWildExpandCol {
 			stats.WildExpandTriggers++
 		}
 
@@ -86,7 +86,7 @@ func TestRtp(t *testing.T) {
 		roundWin += stepWin
 		stats.TotalWin += stepWin
 
-		if svc.respinWildCol >= 0 {
+		if svc.stepIsRespinMode {
 			stats.RespinTotalWin += stepWin
 		}
 
@@ -200,6 +200,8 @@ func newBerService() *betOrderService {
 func resetBetServiceForNextRound(s *betOrderService) {
 	s.stepMultiplier = 0
 	s.isRoundOver = false
+	s.stepIsRespinMode = false
+	s.isWildExpandCol = false
 	s.scene = &SpinSceneData{}
 	s.client.IsRoundOver = false
 	s.client.ClientOfFreeGame.Reset()

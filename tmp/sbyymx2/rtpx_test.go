@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	testRounds       = 1e2
+	testRounds       = 1e4
 	progressInterval = 1e7
 	// debugFileOpen>0 时写 logs 下详细每步日志
 	debugFileOpen = 10
@@ -47,7 +47,7 @@ func TestRtp2(t *testing.T) {
 			if err := svc.baseSpin(); err != nil {
 				t.Fatalf("baseSpin failed: %v", err)
 			}
-			didRespin := svc.respinWildCol >= 0
+			didRespin := svc.stepIsRespinMode //svc.respinWildCol >= 0
 			if didRespin {
 				stats.RespinSteps++
 				if !beforeRespin {
@@ -139,9 +139,11 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, st
 
 	longwild := ""
 	switch {
-	case svc.respinWildCol >= 0:
+	case svc.stepIsRespinMode:
 		longwild = "💎重转至赢"
-	case svc.wildExpandCol >= 0:
+	case svc.isInstrumentWin && svc.isWildExpandCol:
+		longwild = "💎百搭+乐器变大"
+	case !svc.isInstrumentWin && svc.isWildExpandCol:
 		longwild = "💎百搭变大"
 	}
 
@@ -150,7 +152,17 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum int, st
 		isRespin = 1
 	}
 
-	fprintf(buf, "\tIsRespin=%v | index=%d %s\n", isRespin, svc.debug.mode, longwild)
+	isWildExpandCol := 0
+	if svc.isWildExpandCol {
+		isWildExpandCol = 1
+	}
+	isInstrumentWin := 0
+	if svc.isInstrumentWin {
+		isInstrumentWin = 1
+	}
+
+	fprintf(buf, "\tIsRespin=%v | index=%d | isWildExpandCol=%d | isInstrumentWin=%d %s\n",
+		isRespin, svc.debug.mode, isWildExpandCol, isInstrumentWin, longwild)
 	fprintf(buf, "\n")
 }
 

@@ -35,10 +35,10 @@ type Sbyymx_BetOrderResponse struct {
 	WinGrid          []int64                `protobuf:"varint,10,rep,packed,name=winGrid,proto3" json:"winGrid,omitempty"`                  // 中奖位置网格 3x3
 	Next             *bool                  `protobuf:"varint,11,opt,name=next,proto3,oneof" json:"next,omitempty"`                         // 是否需要继续请求（重转至赢）
 	IsRespinUntilWin *bool                  `protobuf:"varint,12,opt,name=isRespinUntilWin,proto3,oneof" json:"isRespinUntilWin,omitempty"` // 是否在重转至赢模式中 (有炸胡动画)
-	RespinWildCol    *int32                 `protobuf:"varint,13,opt,name=respinWildCol,proto3,oneof" json:"respinWildCol,omitempty"`       // 重转至赢模式长条百搭列 (0-2)，非重转模式为-1
 	WildMultiplier   *int64                 `protobuf:"varint,14,opt,name=wildMultiplier,proto3,oneof" json:"wildMultiplier,omitempty"`     // 长条百搭倍数 (x2-x100)
 	LineMultiplier   *int64                 `protobuf:"varint,15,opt,name=lineMultiplier,proto3,oneof" json:"lineMultiplier,omitempty"`     // 线赔率合计（各中奖线基础赔率之和，未乘长条百搭）
 	StepMultiple     *int64                 `protobuf:"varint,16,opt,name=stepMultiple,proto3,oneof" json:"stepMultiple,omitempty"`         // 本步倍数 (lineMultiplier * wildMultiplier)
+	IsInstrumentWin  *bool                  `protobuf:"varint,17,opt,name=isInstrumentWin,proto3,oneof" json:"isInstrumentWin,omitempty"`   // 是否乐器符号中奖（吉他/鼓），用于前端表现
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -157,13 +157,6 @@ func (x *Sbyymx_BetOrderResponse) GetIsRespinUntilWin() bool {
 	return false
 }
 
-func (x *Sbyymx_BetOrderResponse) GetRespinWildCol() int32 {
-	if x != nil && x.RespinWildCol != nil {
-		return *x.RespinWildCol
-	}
-	return 0
-}
-
 func (x *Sbyymx_BetOrderResponse) GetWildMultiplier() int64 {
 	if x != nil && x.WildMultiplier != nil {
 		return *x.WildMultiplier
@@ -183,6 +176,13 @@ func (x *Sbyymx_BetOrderResponse) GetStepMultiple() int64 {
 		return *x.StepMultiple
 	}
 	return 0
+}
+
+func (x *Sbyymx_BetOrderResponse) GetIsInstrumentWin() bool {
+	if x != nil && x.IsInstrumentWin != nil {
+		return *x.IsInstrumentWin
+	}
+	return false
 }
 
 // sbyymx_WinInfo 中奖详情
@@ -287,7 +287,7 @@ var File_sbyymx_proto protoreflect.FileDescriptor
 
 const file_sbyymx_proto_rawDesc = "" +
 	"\n" +
-	"\fsbyymx.proto\x12\x06sbyymx\"\xb3\x06\n" +
+	"\fsbyymx.proto\x12\x06sbyymx\"\xb9\x06\n" +
 	"\x17sbyymx_BetOrderResponse\x12\x1d\n" +
 	"\aorderSN\x18\x01 \x01(\tH\x00R\aorderSN\x88\x01\x01\x12\x1d\n" +
 	"\abalance\x18\x02 \x01(\x01H\x01R\abalance\x88\x01\x01\x12!\n" +
@@ -303,12 +303,12 @@ const file_sbyymx_proto_rawDesc = "" +
 	"\awinGrid\x18\n" +
 	" \x03(\x03R\awinGrid\x12\x17\n" +
 	"\x04next\x18\v \x01(\bH\bR\x04next\x88\x01\x01\x12/\n" +
-	"\x10isRespinUntilWin\x18\f \x01(\bH\tR\x10isRespinUntilWin\x88\x01\x01\x12)\n" +
-	"\rrespinWildCol\x18\r \x01(\x05H\n" +
-	"R\rrespinWildCol\x88\x01\x01\x12+\n" +
-	"\x0ewildMultiplier\x18\x0e \x01(\x03H\vR\x0ewildMultiplier\x88\x01\x01\x12+\n" +
-	"\x0elineMultiplier\x18\x0f \x01(\x03H\fR\x0elineMultiplier\x88\x01\x01\x12'\n" +
-	"\fstepMultiple\x18\x10 \x01(\x03H\rR\fstepMultiple\x88\x01\x01B\n" +
+	"\x10isRespinUntilWin\x18\f \x01(\bH\tR\x10isRespinUntilWin\x88\x01\x01\x12+\n" +
+	"\x0ewildMultiplier\x18\x0e \x01(\x03H\n" +
+	"R\x0ewildMultiplier\x88\x01\x01\x12+\n" +
+	"\x0elineMultiplier\x18\x0f \x01(\x03H\vR\x0elineMultiplier\x88\x01\x01\x12'\n" +
+	"\fstepMultiple\x18\x10 \x01(\x03H\fR\fstepMultiple\x88\x01\x01\x12-\n" +
+	"\x0fisInstrumentWin\x18\x11 \x01(\bH\rR\x0fisInstrumentWin\x88\x01\x01B\n" +
 	"\n" +
 	"\b_orderSNB\n" +
 	"\n" +
@@ -322,11 +322,11 @@ const file_sbyymx_proto_rawDesc = "" +
 	"\b_winInfoB\x0e\n" +
 	"\f_isRoundOverB\a\n" +
 	"\x05_nextB\x13\n" +
-	"\x11_isRespinUntilWinB\x10\n" +
-	"\x0e_respinWildColB\x11\n" +
+	"\x11_isRespinUntilWinB\x11\n" +
 	"\x0f_wildMultiplierB\x11\n" +
 	"\x0f_lineMultiplierB\x0f\n" +
-	"\r_stepMultiple\"?\n" +
+	"\r_stepMultipleB\x12\n" +
+	"\x10_isInstrumentWin\"?\n" +
 	"\x0esbyymx_WinInfo\x12-\n" +
 	"\x06winArr\x18\x01 \x03(\v2\x15.sbyymx.sbyymx_WinArrR\x06winArr\"\\\n" +
 	"\rsbyymx_WinArr\x12\x1d\n" +

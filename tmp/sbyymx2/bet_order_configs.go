@@ -47,13 +47,6 @@ type SymbolRoller struct {
 	BoardSymbol [_rowCount]int64 `json:"board"` // 盘面符号
 }
 
-type spinExecMode uint8
-
-const (
-	spinExecBase spinExecMode = iota
-	spinExecBaseRespin
-)
-
 func (s *betOrderService) initGameConfigs() {
 	if s.gameConfig != nil {
 		return
@@ -123,10 +116,10 @@ func (s *betOrderService) calculateExpandWeight(c *expandMultiConf) {
 func (s *betOrderService) initSpinSymbol() {
 	// 根据 stepIsRespinMode 选择滚轴配置
 	cfg := s.gameConfig.RollCfg.Base
-	s.debug.mode = spinExecBase
+	s.debug.mode = _spinTypeBase
 	if s.stepIsRespinMode {
 		cfg = s.gameConfig.RollCfg.BaseRespin
-		s.debug.mode = spinExecBaseRespin
+		s.debug.mode = _spinTypeBaseRespin
 	}
 
 	realIndex := cfg.UseKey[pickWeightIndex(cfg.Weight, cfg.WTotal)]
@@ -143,6 +136,11 @@ func (s *betOrderService) initSpinSymbol() {
 			roller.BoardSymbol[_rowCount-1-r] = reel[(start+r)%reelLen]
 		}
 		s.scene.SymbolRoller[c] = roller
+	}
+
+	// 重转模式：固定中间列填满百搭（策划文档要求百搭只在中间列）
+	if s.stepIsRespinMode {
+		s.scene.SymbolRoller[1].BoardSymbol = [_rowCount]int64{_wild, _wild, _wild}
 	}
 }
 
