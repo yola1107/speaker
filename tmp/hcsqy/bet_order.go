@@ -154,16 +154,6 @@ func (s *betOrderService) buildWinInfo() *pb.Hcsqy_WinInfo {
 	}
 }
 
-func (s *betOrderService) int64GridToArray(grid int64Grid) []int64 {
-	elements := make([]int64, _rowCount*_colCount)
-	for r := 0; r < _rowCount; r++ {
-		for c := 0; c < _colCount; c++ {
-			elements[r*_colCount+c] = grid[r][c]
-		}
-	}
-	return elements
-}
-
 /*func (s *betOrderService) calcRoundWin() float64 {
 	if s.stepMultiplier == 0 {
 		return 0

@@ -68,6 +68,16 @@ func (s *betOrderService) symbolGridToString(symbolGrid int64Grid) string {
 	return b.String()
 }
 
+func (s *betOrderService) int64GridToArray(grid int64Grid) []int64 {
+	elements := make([]int64, _rowCount*_colCount)
+	for r := 0; r < _rowCount; r++ {
+		for c := 0; c < _colCount; c++ {
+			elements[r*_colCount+c] = grid[r][c]
+		}
+	}
+	return elements
+}
+
 func (s *betOrderService) updateBonusAmount(stepMultiplier int64) {
 	// RTP测试模式或无倍数时直接返回
 	if s.debug.open || stepMultiplier == 0 {
