@@ -19,6 +19,8 @@ type SpinSceneData struct {
 	FreeNum            int64                   `json:"freeNum"` // 剩余免费次数
 	SymbolRoller       [_colCount]SymbolRoller `json:"sRoller"` // 滚轮符号表
 	MysMultiplierTotal int64                   `json:"mysMul"`  // 神秘符号累积倍数
+
+	long longMatrix
 }
 
 var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", GameID)

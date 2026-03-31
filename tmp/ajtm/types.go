@@ -17,3 +17,13 @@ type rtpDebugData struct {
 	open bool  // 是否开启调试模式（用于RTP测试时的详细日志输出）
 	mark int32 // 与 hbtr2 日志对齐；本游戏未维护时可恒为 0
 }
+
+// 长符号矩阵类型，用于按列管理长符号信息
+type longMatrix [_colCount][]longBlock
+
+// 长符号结构体
+type longBlock struct {
+	Symbol   int64
+	StartRow int64 // 头部行号
+	EndRow   int64 // 尾部行号
+}

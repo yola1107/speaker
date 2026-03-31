@@ -43,8 +43,9 @@ type betOrderService struct {
 	symbolGrid     int64Grid            // 符号网格
 	winGrid        int64Grid            // 中奖网格
 	nextSymbolGrid int64Grid            // 消除+下落后的下一盘面
-	mysMultipliers int64Grid            // 神秘符号倍数网格（头部位置存储倍数）
 	debug          rtpDebugData         // RTP测试流程
+
+	long longMatrix // 长符号矩阵
 }
 
 func newBetOrderService() *betOrderService {

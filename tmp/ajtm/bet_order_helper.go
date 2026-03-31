@@ -177,12 +177,22 @@ func (s *betOrderService) findWinInfos() {
 				if info.WinGrid[r][c] > 0 {
 					totalWinGrid[r][c] = info.WinGrid[r][c]
 					if info.WinGrid[r][c] > _longSymbol {
-						mysMulTotal += s.mysMultipliers[r-1][c]
+						//mysMulTotal += s.mysMultipliers[r-1][c]
 					}
 				}
 			}
 		}
 	}
+
+	//// 神秘符号倍数累加：遍历 symbolGrid 检测尾巴（尾巴不加入 winGrid，但倍数仍需累加）
+	//for col := 1; col < _colCount-1; col++ {
+	//	for row := 1; row < _rowCount; row++ {
+	//		if s.symbolGrid[row][col] > _longSymbol && totalWinGrid[row-1][col] > 0 {
+	//			// 头部中奖，累加尾巴的倍数
+	//			mysMulTotal += s.mysMultipliers[row-1][col]
+	//		}
+	//	}
+	//}
 
 	if mysMulTotal > 0 {
 		s.scene.MysMultiplierTotal += mysMulTotal
@@ -199,7 +209,7 @@ func (s *betOrderService) findWinInfos() {
 }
 
 // findSymbolWinInfo 查找符号中奖（Ways玩法：从左到右连续，至少3列，Wild可替代）
-// 神秘符号头部为正数，尾巴为 _longSymbol + symbol，只检测头部，尾巴跟随标记
+// 神秘符号头部为正数，尾巴为 _longSymbol + symbol，只检测头部，尾巴不标记（不消除）
 func (s *betOrderService) findSymbolWinInfo(symbol int64) (*WinInfo, bool) {
 	lineCount := int64(1)
 	var winGrid int64Grid

@@ -1,6 +1,3 @@
-package ajtm
-
-const _gameJsonConfigsRaw = `
 {
   "pay_table": [
     [0, 0, 2, 3, 5],
@@ -15,6 +12,7 @@ const _gameJsonConfigsRaw = `
     [0, 0, 10, 15, 25],
     [0, 0, 10, 15, 25],
     [0, 0, 10, 30, 50]
+
   ],
   "free_game_times": 15,
   "free_game_bonus": 3,
@@ -41,6 +39,8 @@ const _gameJsonConfigsRaw = `
       [1,2,1,2],
       [1,1,2,2]
     ]
+
+
   ],
 
   "roll_cfg": {
@@ -75,4 +75,3 @@ const _gameJsonConfigsRaw = `
     ]
   ]
 }
-`

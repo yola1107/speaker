@@ -16,15 +16,15 @@ func (s *betOrderService) baseSpin() error {
 
 	// 判断是否为 round 的第一个 step
 	if s.scene.Steps == 0 && (s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeFree) {
-		s.createMatrix()
-	} else {
-		s.handleSymbolGrid()
+		//s.createMatrix()
+		s.scene.SymbolRoller = s.initSpinSymbol()
 	}
-
+	s.handleSymbolGrid()
 	s.findWinInfos()
 	s.processWinInfos()
 	return nil
 }
+
 func (s *betOrderService) processWinInfos() {
 	s.addFreeTime = 0 // 重置增加的免费次数
 	s.debug.mark = 0  // 与 hbtr2 一致，便于 rtpx 日志读取
@@ -37,7 +37,7 @@ func (s *betOrderService) processWinInfos() {
 	s.updateBonusAmount(s.stepMultiplier)
 }
 
-// processWin：中奖后执行”符号消除→下落→填充”
+// processWin：中奖后执行”神秘符号变身->符号消除(非神秘符号)→下落→填充→”
 func (s *betOrderService) processWin() {
 	var totalOdds int64
 	for _, w := range s.winInfos {
@@ -56,6 +56,7 @@ func (s *betOrderService) processWin() {
 	s.scene.Steps++
 	s.scene.RoundMultiplier += s.stepMultiplier
 
+	//s.transformMysSymbols() // 神秘符号中奖后变身
 	s.nextSymbolGrid = s.moveSymbols()
 	s.fallingWinSymbols(s.nextSymbolGrid)
 
@@ -75,8 +76,8 @@ func (s *betOrderService) processNoWin() {
 	s.scene.Steps = 0
 
 	if s.isFreeRound {
-		// 免费模式：保留神秘符号倍数，神秘符号下落并重新生成
-		s.processFreeModeNoWin()
+		//// 免费模式：保留神秘符号倍数，神秘符号下落并重新生成
+		//s.processFreeModeNoWin()
 
 		if s.scene.FreeNum <= 0 {
 			s.scene.FreeNum = 0
@@ -89,7 +90,7 @@ func (s *betOrderService) processNoWin() {
 		s.scene.MysMultiplierTotal = 0 // 基础模式SPIN结束，重置倍数
 
 		// 免费次数新增
-		if newFree := s.calcNewFreeGameNum(s.scatterCount); newFree > 0 {
+		if newFree, _ := s.calcNewFreeGameNum(s.scatterCount); newFree > 0 {
 			s.client.ClientOfFreeGame.Incr(uint64(newFree))
 			s.scene.FreeNum += newFree
 			s.addFreeTime = newFree
