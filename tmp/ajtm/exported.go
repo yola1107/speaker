@@ -16,7 +16,6 @@ var (
 	InternalServerError  = errors.New("internal server error")
 	InvalidRequestParams = errors.New("invalid request params")
 	InsufficientBalance  = errors.New("insufficient balance")
-	ErrorPurchase        = errors.New("3055")
 )
 
 type Game struct{}

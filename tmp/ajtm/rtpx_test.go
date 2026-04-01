@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	testRounds       = 1
+	testRounds       = 100
 	progressInterval = 1e7
 	debugFileOpen    = 10
 	freeModeLogOnly  = 0
@@ -292,15 +292,16 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 		return
 	}
 
+	// 按真实结算倍数分摊每条中奖信息。
 	totalMultiplier := int64(0)
 	for _, elem := range svc.winInfos {
-		totalMultiplier += elem.Odds
+		totalMultiplier += elem.Multiplier
 	}
 
 	for _, elem := range svc.winInfos {
 		lineWin := 0.0
 		if totalMultiplier > 0 {
-			lineWin = stepWin * float64(elem.Odds) / float64(totalMultiplier)
+			lineWin = stepWin * float64(elem.Multiplier) / float64(totalMultiplier)
 		}
 		fprintf(buf, "\t符号:%2d, 支付线:%2d, 乘积: %d, 赔率: %4.2f, 下注: %g×%d, 奖金: %4.2f\n",
 			elem.Symbol, elem.LineCount+1, elem.SymbolCount, float64(elem.Odds), svc.req.BaseMoney, svc.req.Multiple, lineWin)

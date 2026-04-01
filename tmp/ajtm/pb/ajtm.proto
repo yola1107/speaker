@@ -6,44 +6,50 @@ package ajtm;
 
 // 埃及探秘 (GameID: 18985)
 // 盘面: 5x6
-// 特色: WAYGAME 消除玩法 加神秘符号加堆叠奖金倍数
-
+// 玩法: Ways 消除 + 长符号转变
 message ajtm_BetOrderResponse {
-    string orderSN                 = 1;   // 订单号
-    double balance                 = 2;   // 玩家当前余额
-    double betAmount               = 3;   // 本局下注金额 (baseMoney * multiple * 20)
-    double currentWin              = 4;   // 本步赢取金额 (当前消除获得的奖金)
-    double freeWin                 = 5;   // 免费游戏累计赢取 (ClientOfFreeGame.GetFreeTotalMoney)
-    double totalWin                = 6;   // 本回合总赢取 (ClientOfFreeGame.GetGeneralWinTotal)
-    bool free                      = 7;   // 是否处于免费模式
-    int64 review                   = 8;   // 复盘标志 1=复盘 0=正常
-    ajtm_WinInfo winInfo           = 9;   // 中奖详情（消除结果、倍数、免费剩余等）
-    repeated int64 cards           = 10;  // 符号网格 4行×5列 按行优先 elements共20个
-    int64 scatterCount             = 11;  // 夺宝符(9)个数 统计奖励区3行内的夺宝符
-    bool isRoundOver               = 12;  // 是否本局结束
-    int64 multi                    = 13;  // 本步倍数 stepMultiplier = lineMultiplier * gameMultiple
-    int64 state                    = 14;  // 游戏状态 0=普通 1=免费
-    int64 freeNum                  = 15;  // 剩余免费次数 ClientOfFreeGame.GetFreeNum
-    int64 freeTime                 = 16;  // 已使用免费次数 ClientOfFreeGame.GetFreeTimes
-    repeated int64 winGrid         = 17;  // 中奖位置网格 4行×5列 1标记中奖位 0未中奖
-    bool isGameOver                = 18;  // 大回合结束
-    double roundWin                = 19;  // 一局所有回合总赢
-    int64 mulIndex                 = 20;  // 当前消除轮次索引
-    repeated int64 baseMultipliers = 21;  // 轮次倍数列表 [1,2,3,5]
-    repeated int64 freeMultipliers = 22;  // 轮次倍数列表 [3,6,9,15]
-    int64 wildEliCount             = 23;  // 本步蝴蝶百搭个数
-    int64 totalWildEliCount        = 24;  // 累积蝴蝶百搭个数 (基础模式未中奖时清理，免费模式所有免费局数打完进入基础模式时清理)
+    string orderSN                     = 1;   // 订单号
+    double balance                     = 2;   // 当前余额
+    double betAmount                   = 3;   // 本局下注金额
+    double currentWin                  = 4;   // 本步赢分
+    double freeWin                     = 5;   // 免费模式累计赢分
+    double totalWin                    = 6;   // 当前大回合累计赢分
+    bool free                          = 7;   // 是否免费模式
+    int64 review                       = 8;   // 复盘标记
+    ajtm_WinInfo winInfo               = 9;   // 中奖详情
+    repeated int64 cards               = 10;  // 当前盘面
+    int64 scatterCount                 = 11;  // 当前盘面夺宝数量
+    bool isRoundOver                   = 12;  // 当前 round 是否结束
+    int64 multi                        = 13;  // 本步最终倍数
+    int64 state                        = 14;  // 当前阶段
+    int64 freeNum                      = 15;  // 剩余免费次数
+    int64 freeTime                     = 16;  // 已执行免费次数
+    repeated int64 winGrid             = 17;  // 中奖展示网格
+    bool isGameOver                    = 18;  // 免费总流程是否结束
+    double roundWin                    = 19;  // 当前 round 累计赢分
+    int64 mulIndex                     = 20;  // 倍数档位索引（预留）
+    repeated int64 baseMultipliers     = 21;  // 基础倍数表（预留）
+    repeated int64 freeMultipliers     = 22;  // 免费倍数表（预留）
+    int64 wildEliCount                 = 23;  // wild 消除数（预留）
+    int64 totalWildEliCount            = 24;  // wild 累计消除数（预留）
+    repeated ajtm_LongEvent longEvents = 25;  // 长符号转变事件
 }
 
-// 中奖详情（消除回合内信息）
 message ajtm_WinInfo {
-    repeated ajtm_WinArr winArr = 1;  // 本步各条中奖线的详情
-    int64 addFreeNum            = 2;  // 增加的免费次数
-    int64 wildEliMultiple       = 3;  // 蝴蝶百搭倍数
+    repeated ajtm_WinArr winArr = 1;  // 本步中奖条目
+    int64 addFreeNum            = 2;  // 本步新增免费次数
+    int64 wildEliMultiple       = 3;  // wild 额外倍数（预留）
 }
 
-//  单条中奖线详情
 message ajtm_WinArr {
-    int64 roadNum = 1;  // 支付线编号 0~19
-    int64 odds    = 2;  // 基础赔率 来自 pay_table
+    int64 roadNum = 1;  // 路数
+    int64 odds    = 2;  // 赔率
+}
+
+message ajtm_LongEvent {
+    int64 col       = 1;  // 列号
+    int64 headRow   = 2;  // 头部行号
+    int64 tailRow   = 3;  // 尾部行号
+    int64 oldSymbol = 4;  // 转变前符号
+    int64 newSymbol = 5;  // 转变后符号
 }

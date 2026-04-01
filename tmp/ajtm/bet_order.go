@@ -27,25 +27,26 @@ type betOrderService struct {
 	client         *client.Client       // 用户上下文
 	lastOrder      *game.GameOrder      // 用户上一个订单
 	scene          *SpinSceneData       // 场景中间态数据
-	gameConfig     *gameConfigJson      // 配置数据
-	gameOrder      *game.GameOrder      // 订单
-	bonusAmount    decimal.Decimal      // 奖金金额
-	betAmount      decimal.Decimal      // spin 下注金额
-	amount         decimal.Decimal      // step 扣费金额
+	gameConfig     *gameConfigJson      // 游戏配置
+	gameOrder      *game.GameOrder      // 当前订单
+	bonusAmount    decimal.Decimal      // 本步奖金
+	betAmount      decimal.Decimal      // 本局下注金额
+	amount         decimal.Decimal      // 本步扣款金额
 	orderSn        *common.OrderSN      // 订单号
-	isRoundOver    bool                 // 回合是否结束
-	isFreeRound    bool                 // 是否为免费回合
-	scatterCount   int64                // 夺宝符个数
-	addFreeTime    int64                // 增加的免费次数
-	lineMultiplier int64                // 线赔率合计
-	stepMultiplier int64                // Step倍数
-	winInfos       []WinInfo            // 中奖信息
-	symbolGrid     int64Grid            // 符号网格
-	winGrid        int64Grid            // 中奖网格
-	nextSymbolGrid int64Grid            // 消除+下落后的下一盘面
-	debug          rtpDebugData         // RTP测试流程
-
-	long longMatrix // 长符号矩阵
+	isRoundOver    bool                 // 当前 round 是否结束
+	isFreeRound    bool                 // 当前是否处于免费模式
+	scatterCount   int64                // 当前盘面夺宝数量
+	addFreeTime    int64                // 本步新增免费次数
+	lineMultiplier int64                // 本步基础中奖倍数
+	stepMultiplier int64                // 本步最终结算倍数
+	winInfos       []WinInfo            // 本步中奖明细
+	winLongBlocks  []Block              // 本步命中的长符号块
+	longEvents     []Block              // 本步长符号转变事件
+	symbolGrid     int64Grid            // 当前盘面
+	winGrid        int64Grid            // 中奖展示网格
+	eliGrid        int64Grid            // 实际消除网格
+	nextSymbolGrid int64Grid            // 消除并下落后的盘面
+	debug          rtpDebugData
 }
 
 func newBetOrderService() *betOrderService {
@@ -59,12 +60,14 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, er
 	if err := s.getRequestContext(); err != nil {
 		return nil, "", InternalServerError
 	}
+
 	c, ok := client.GVA_CLIENT_BUCKET.GetClient(req.MemberId)
 	if !ok {
 		global.GVA_LOG.Error("betOrder", zap.Error(errors.New("user not exists")))
 		return nil, "", fmt.Errorf("client not exist")
 	}
 	s.client = c
+
 	c.BetLock.Lock()
 	defer c.BetLock.Unlock()
 
@@ -73,7 +76,6 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, er
 		return nil, "", InternalServerError
 	}
 	s.lastOrder = lastOrder
-
 	if s.lastOrder == nil {
 		s.cleanScene()
 	}
@@ -112,13 +114,16 @@ func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 		Cards:        s.int64GridToArray(s.symbolGrid),
 		ScatterCount: s.scatterCount,
 		IsRoundOver:  s.isRoundOver,
+		Multi:        s.stepMultiplier,
 		State:        int64(s.scene.Stage),
 		FreeNum:      int64(s.client.ClientOfFreeGame.GetFreeNum()),
 		FreeTime:     int64(s.client.ClientOfFreeGame.GetFreeTimes()),
 		WinGrid:      s.int64GridToArray(s.winGrid),
+		LongEvents:   s.buildLongEvents(),
 		IsGameOver:   s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0,
 		RoundWin:     s.calcRoundWin(),
 	}
+
 	pbData, err := proto.Marshal(result)
 	if err != nil {
 		return nil, "", err
@@ -144,9 +149,27 @@ func (s *betOrderService) buildWinInfo() *pb.Ajtm_WinInfo {
 	}
 }
 
+func (s *betOrderService) buildLongEvents() []*pb.Ajtm_LongEvent {
+	events := make([]*pb.Ajtm_LongEvent, len(s.longEvents))
+	for i, event := range s.longEvents {
+		events[i] = &pb.Ajtm_LongEvent{
+			Col:       event.Col,
+			HeadRow:   event.HeadRow,
+			TailRow:   event.TailRow,
+			OldSymbol: event.OldSymbol,
+			NewSymbol: event.NewSymbol,
+		}
+	}
+	return events
+}
+
 func (s *betOrderService) calcRoundWin() float64 {
-	if s.stepMultiplier == 0 {
+	if s.scene.RoundMultiplier == 0 {
 		return 0
 	}
-	return s.bonusAmount.Round(2).InexactFloat64()
+	return s.betAmount.
+		Mul(decimal.NewFromInt(s.scene.RoundMultiplier)).
+		Div(decimal.NewFromInt(_baseMultiplier)).
+		Round(2).
+		InexactFloat64()
 }

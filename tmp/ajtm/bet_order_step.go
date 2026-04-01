@@ -34,6 +34,7 @@ func (s *betOrderService) initFirstStepForSpin() error {
 	case !s.checkBalance():
 		return InsufficientBalance
 	}
+
 	s.client.SetLastMaxFreeNum(0)
 	s.client.ClientOfFreeGame.Reset()
 	s.client.ClientOfFreeGame.ResetGeneralWinTotal()
@@ -48,7 +49,6 @@ func (s *betOrderService) initStepForNextStep() error {
 	if s.debug.open {
 		s.req.BaseMoney = 1
 		s.req.Multiple = 1
-
 		s.betAmount = decimal.NewFromInt(_baseMultiplier)
 		s.amount = decimal.Zero
 		return nil
@@ -56,7 +56,6 @@ func (s *betOrderService) initStepForNextStep() error {
 
 	s.req.BaseMoney = s.lastOrder.BaseAmount
 	s.req.Multiple = s.lastOrder.Multiple
-
 	s.betAmount = decimal.NewFromFloat(s.client.ClientOfFreeGame.GetBetAmount())
 	s.amount = decimal.Zero
 	return nil
@@ -71,6 +70,7 @@ func (s *betOrderService) updateGameOrder() error {
 	if s.orderSn == nil {
 		s.orderSn = &common.OrderSN{}
 	}
+
 	s.gameOrder = &game.GameOrder{
 		MerchantID:        s.merchant.ID,
 		Merchant:          s.merchant.Merchant,
@@ -113,8 +113,10 @@ func (s *betOrderService) fillInGameOrderDetails() error {
 		global.GVA_LOG.Error("fillInGameOrderDetails: marshal winGrid", zap.Error(err))
 		return err
 	}
+
 	s.gameOrder.BetDetail = s.symbolGridToString(s.symbolGrid)
 	s.gameOrder.BonusDetail = s.symbolGridToString(s.winGrid)
+
 	winDetails, err := json.CJSON.MarshalToString(s.buildWinInfo())
 	if err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails", zap.Error(err))

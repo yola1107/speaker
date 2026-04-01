@@ -21,10 +21,8 @@ const _gameJsonConfigsRaw = `
   "extra_add_free_bonus": 2,
   "trigger_free_game_need_scatter": 3,
 
-  "base_mysterious_symbol_nums": [0,1,2],
   "base_mysterious_symbol_weights": [400, 4330, 0],
-  "free_mysterious_symbol_nums": [0,1,2],
-  "free_mysterious_symbol_weights": [100, 2930, 0],
+
   "big_symbol_multiples":[
     [
       [2,1,1,1,1],
