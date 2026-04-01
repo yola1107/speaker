@@ -419,3 +419,46 @@ cp -r everything-claude-code/rules/* ~/.claude/rules/
 - [ ] 安装必要的插件
 - [ ] 安装 ECC rules
 - [ ] 启动测试：`claude --dangerously-skip-permissions`
+
+
+
+source ~/.bashrc  # 或 source ~/.zshrc
+
+codex：
+sk-BDUdFnk3BalncWCa0WxQ2zTCmagdfbmY03kHYzMKxS5rJXTR
+https://ucn9uf8devd7.feishu.cn/wiki/XUrvw5RbCihuh4kEPrdcvFHNnhd?from=from_copylink
+https://www.yuque.com/gtasmhe/rqevgd/plygnrly4cury7nv?singleDoc#%20
+https://code.pumpkinai.vip 
+这里可以查询使用情况哦~
+
+
+vim ~/.codex/auth.json
+
+{
+"OPENAI_API_KEY": "sk-BDUdFnk3BalncWCa0WxQ2zTCmagdfbmY03kHYzMKxS5rJXTR"
+}
+
+
+vim ~/.codex/config.toml
+
+model_provider = "codex"
+model = "gpt-5.3-codex"        # 可更改为model = "gpt-5.4"
+model_reasoning_effort = "low" #  "high" "medium"
+disable_response_storage = true
+
+[model_providers.codex]
+name = "codex"
+base_url = "https://code.ppchat.vip/v1"
+wire_api = "responses"
+requires_openai_auth = true
+
+
+
+
+
+
+
+
+
+
+
