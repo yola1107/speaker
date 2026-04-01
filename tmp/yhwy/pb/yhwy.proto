@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+option go_package = "egame-grpc/game/yhwy/pb";
+
+package yhwy;
+
+// yhwy_BetOrderResponse 是单次下注返回给前端的完整结果。
+message yhwy_BetOrderResponse {
+    optional string orderSN       = 1;   // 订单号
+    optional double balance       = 2;   // 当前余额
+    optional double betAmount     = 3;   // 本轮投注额
+    optional double currentWin    = 4;   // 本次 step 赢得金额
+    optional double freeWin       = 5;   // 当前免费阶段累计赢得金额
+    optional double totalWin      = 6;   // 本大回合累计赢得金额
+    optional bool free            = 7;   // 当前是否处于免费游戏
+    optional int64 review         = 8;   // 复盘标记
+    optional yhwy_WinInfo winInfo = 9;   // 中奖详情
+    repeated int64 cards          = 10;  // 原始停轮盘面，按行展开的 20 个格子
+    optional int64 scatterCount   = 11;  // 最终盘面 Scatter 数量
+    optional bool isRoundOver     = 12;  // 当前 round 是否结束
+    optional int64 state          = 13;  // 当前阶段：1=Base, 21=Free
+    optional int64 freeNum        = 14;  // 剩余免费次数
+    optional int64 freeTime       = 15;  // 已执行免费次数
+    repeated int64 winGrid        = 16;  // 中奖位置掩码盘面，按行展开
+    optional bool isGameOver      = 17;  // 整个免费大回合是否结束
+    repeated int64 effectCards    = 18;  // 复位/扩散后、揭示前盘面
+    repeated int64 finalCards     = 19;  // 揭示完成后的最终判奖盘面
+    optional int64 revealSymbol   = 20;  // 百变樱花本次揭示出的目标符号
+    optional int64 spreadToReel   = 21;  // 樱花扩散最远到第几列
+    optional bool isSakuraReset   = 22;  // 是否触发樱花复位
+    optional int64 resetDirection = 23;  // 复位方向：0=无,1=上移,2=下移
+    optional int64 lineMultiplier = 24;  // 所有中奖线赔率之和
+}
+
+// yhwy_WinInfo 汇总本次 step 的中奖线与免费次数变化。
+message yhwy_WinInfo {
+    repeated yhwy_WinArr winArr   = 1;  // 本次命中的所有中奖线
+    optional int64 addFreeNum     = 2;  // 本次新增的免费次数
+    optional int64 lineMultiplier = 3;  // 本次所有中奖线赔率之和
+}
+
+// yhwy_WinArr 描述单条中奖线。
+message yhwy_WinArr {
+    optional int64 roadNum = 1;  // 中奖线编号，从 0 开始
+    optional int64 odds    = 2;  // 该中奖线赔率
+    optional int64 symbol  = 3;  // 该中奖线命中的主符号
+    optional int64 count   = 4;  // 连续命中的数量
+}
