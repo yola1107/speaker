@@ -27,6 +27,7 @@ type Block struct {
 
 // rtpDebugData 保存 RTP 调试状态。
 type rtpDebugData struct {
-	open bool  // 是否开启 RTP 调试
-	mark int32 // 调试日志对齐标记
+	open             bool      // 是否开启 RTP 调试
+	mark             int32     // 调试日志对齐标记
+	originSymbolGrid int64Grid //
 }

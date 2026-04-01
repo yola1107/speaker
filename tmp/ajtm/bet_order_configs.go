@@ -41,6 +41,7 @@ type SymbolRoller struct {
 	Start       int              `json:"start"` // 当前补位读取起点
 	Fall        int              `json:"fall"`  // 当前窗口底部索引
 	BoardSymbol [_rowCount]int64 `json:"board"` // 当前列窗口
+	OriStart    int              `json:"-"`     // 原始补位读取起点
 }
 
 func (s *betOrderService) initGameConfigs() {
@@ -188,10 +189,11 @@ func buildSymbolRoller(col, realIndex int, reel []int64) SymbolRoller {
 	reelLen := len(reel)
 	start := rand.IntN(reelLen)
 	roller := SymbolRoller{
-		Real:  realIndex,
-		Col:   col,
-		Len:   reelLen,
-		Start: start,
+		Real:     realIndex,
+		Col:      col,
+		Len:      reelLen,
+		Start:    start,
+		OriStart: start,
 	}
 
 	if col == 0 || col == _colCount-1 {

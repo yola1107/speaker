@@ -233,11 +233,13 @@ func writeSpinDetail(buf *strings.Builder, svc *betOrderService, gameNum, step i
 		writeReelInfo(buf, svc)
 	}
 	fprintf(buf, "Step%d 初始盘面:\n", step)
-	writeGridToBuilder(buf, &svc.symbolGrid, nil)
+	writeGridToBuilder(buf, &svc.debug.originSymbolGrid, nil)
+	//	writeGridToBuilder(buf, &svc.symbolGrid, nil)
 
 	if len(svc.winInfos) > 0 {
 		fprintf(buf, "Step%d 中奖标记:\n", step)
-		writeGridToBuilder(buf, &svc.symbolGrid, &svc.winGrid)
+		// 中奖标记应基于「原始盘面」展示，避免与长符号转变后的 symbolGrid 混淆。
+		writeGridToBuilder(buf, &svc.debug.originSymbolGrid, &svc.winGrid)
 	}
 
 	if !svc.isRoundOver {
@@ -257,7 +259,19 @@ func writeReelInfo(buf *strings.Builder, svc *betOrderService) {
 	fprintf(buf, "滚轴配置Index: %d\n转轮信息长度/起始：", svc.scene.SymbolRoller[0].Real)
 	for c := 0; c < len(svc.scene.SymbolRoller); c++ {
 		rc := svc.scene.SymbolRoller[c]
-		fprintf(buf, "%d[%d～%d]  ", rc.Len, rc.Start, rc.Fall)
+		fprintf(buf, "%d[%d～%d]  ", rc.Len, rc.OriStart, rc.Fall)
+		//visibleCount := _rowCount
+		//if c == 0 || c == _colCount-1 {
+		//	visibleCount = _rowCount - 2
+		//}
+		//winStart := rc.OriStart
+		//winEnd := (rc.OriStart + visibleCount - 1) % rc.Len
+		//nextFill := rc.Start - 1
+		//if nextFill < 0 {
+		//	nextFill += rc.Len
+		//}
+		//// 注意：Fall 会被长符号写入过程调整，不等于原始可见窗口结束索引。
+		//fprintf(buf, "%d[%d～%d|fill=%d|fall=%d]  ", rc.Len, winStart, winEnd, nextFill, rc.Fall)
 	}
 	fprintf(buf, "\n")
 }

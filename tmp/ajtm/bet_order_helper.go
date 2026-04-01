@@ -107,6 +107,8 @@ func (s *betOrderService) handleSymbolGrid() {
 			s.symbolGrid[r][c] = s.scene.SymbolRoller[c].BoardSymbol[r]
 		}
 	}
+
+	s.debug.originSymbolGrid = s.symbolGrid
 }
 
 // moveSymbols 仅按 eliGrid 清除并下落。
