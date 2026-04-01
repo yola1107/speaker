@@ -2,8 +2,7 @@ package yhwy
 
 // 文档地址 https://gt7xqi.axshare.com/
 
-const GameID = 18959
-const Name = "樱花物语"
+const GameID = 18959 // "樱花物语"
 const _baseMultiplier = 25
 
 const (
@@ -11,7 +10,7 @@ const (
 	_colCount = 5
 )
 
-// 符号定义从 0 开始。
+// 符号ID
 const (
 	_blank   int64 = -1
 	_10      int64 = 0

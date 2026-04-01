@@ -47,23 +47,19 @@ type spreadConfig struct {
 	freeTotal int // FreeGame 权重总和，运行时预计算
 }
 
-// rollConf 定义 Base / Free 两种阶段采用的滚轴组。
 type rollConf struct {
-	Base rollCfgType `json:"base"` // 普通局滚轴配置
-	Free rollCfgType `json:"free"` // 免费局滚轴配置
+	Base rollCfgType `json:"base"`
+	Free rollCfgType `json:"free"`
 }
 
-// rollCfgType 描述某个阶段可使用的 reel set 及其随机权重。
 type rollCfgType struct {
-	UseKey []int `json:"use_key"` // 指向 RealData 的索引列表
-	Weight []int `json:"weight"`  // 各索引对应权重
-	WTotal int   `json:"-"`       // 权重总和，运行时预计算
+	UseKey []int `json:"use_key"`
+	Weight []int `json:"weight"`
+	WTotal int   `json:"-"`
 }
 
-// Reel 表示一组 5 列滚轴带数据。
 type Reel [][]int64
 
-// SymbolRoller 描述单列滚轴本次停轮时的抽样结果。
 type SymbolRoller struct {
 	Real        int              `json:"real"`  // 使用的 reel set 索引
 	Col         int              `json:"col"`   // 当前列号，0~4

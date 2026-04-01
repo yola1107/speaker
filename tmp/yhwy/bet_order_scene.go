@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// SpinSceneData 是玩家在 yhwy 中的最小持久化场景。
+// SpinSceneData 持久化场景
 type SpinSceneData struct {
 	Stage        int8                    `json:"stage"`        // 当前阶段：Base / Free
 	NextStage    int8                    `json:"nextStage"`    // 下一手切换到的阶段
