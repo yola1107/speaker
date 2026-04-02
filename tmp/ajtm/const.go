@@ -1,7 +1,6 @@
 package ajtm
 
-const GameID = 18985 // 埃及探秘
-
+const GameID = 18985       // 埃及探秘
 const _baseMultiplier = 20 // 固定下注倍率
 
 const (
@@ -11,7 +10,7 @@ const (
 
 // 符号ID
 const (
-	_blank    int64 = 0  // 空位
+	_blank    int64 = 0  // 空符号
 	_         int64 = 1  // 9
 	_         int64 = 2  // 10
 	_         int64 = 3  // J
@@ -28,10 +27,9 @@ const (
 	_treasure int64 = 14 // 夺宝
 )
 
-// Ways 至少连续命中 3 列才算中奖。
+// Ways 至少连续命中 3 列才算中奖
 const _minMatchCount = 3
 
-// 运行阶段。
 const (
 	_spinTypeBase    = 1  // 普通 spin
 	_spinTypeBaseEli = 11 // 普通消除 step
@@ -39,10 +37,11 @@ const (
 	_spinTypeFreeEli = 22 // 免费消除 step
 )
 
-// 长符号相关常量。
+// 长符号相关常量
 const (
-	_maxLongBlocks = 9    // 最多 3 列 * 每列 3 个长符号
-	_longSymbol    = 1000 // 尾部标记偏移
+	_maxLongBlocks  = 9    // 最多 3 列 * 每列 3 个长符号
+	_longSymbol     = 1000 // 尾部标记偏移
+	_perSymMultiple = 2    // 每个长符号倍数
 )
 
 /*

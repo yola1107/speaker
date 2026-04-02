@@ -40,13 +40,15 @@ type betOrderService struct {
 	lineMultiplier int64                // 本步基础中奖倍数
 	stepMultiplier int64                // 本步最终结算倍数
 	winInfos       []WinInfo            // 本步中奖明细
-	winLongBlocks  []Block              // 本步命中的长符号块
-	longEvents     []Block              // 本步长符号转变事件
 	symbolGrid     int64Grid            // 当前盘面
 	winGrid        int64Grid            // 中奖展示网格
 	eliGrid        int64Grid            // 实际消除网格
 	nextSymbolGrid int64Grid            // 消除并下落后的盘面
+	winMys         []Block              // 中奖的长符号(神秘符号)（transform 后补齐 NewSymbol）
 	debug          rtpDebugData
+
+	// 当3 个夺宝符号出现有界面上将触发免费模式，同时获得 3 倍的投注金额的奖金 同时获得 10 次免费旋转 ，每多一个夺宝符号将额外获得 2 倍的投注金额, 免费模式下不会有夺宝符号
+	extMul int64 // 基础进入到免费模式，基础模式额外奖励倍数
 }
 
 func newBetOrderService() *betOrderService {
@@ -60,14 +62,12 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, er
 	if err := s.getRequestContext(); err != nil {
 		return nil, "", InternalServerError
 	}
-
 	c, ok := client.GVA_CLIENT_BUCKET.GetClient(req.MemberId)
 	if !ok {
 		global.GVA_LOG.Error("betOrder", zap.Error(errors.New("user not exists")))
 		return nil, "", fmt.Errorf("client not exist")
 	}
 	s.client = c
-
 	c.BetLock.Lock()
 	defer c.BetLock.Unlock()
 
@@ -119,9 +119,10 @@ func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 		FreeNum:      int64(s.client.ClientOfFreeGame.GetFreeNum()),
 		FreeTime:     int64(s.client.ClientOfFreeGame.GetFreeTimes()),
 		WinGrid:      s.int64GridToArray(s.winGrid),
-		LongEvents:   s.buildLongEvents(),
 		IsGameOver:   s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0,
 		RoundWin:     s.calcRoundWin(),
+		RoundMysMul:  s.scene.MysMulTotal,
+		LongEvents:   s.buildLongEvents(),
 	}
 
 	pbData, err := proto.Marshal(result)
@@ -150,8 +151,8 @@ func (s *betOrderService) buildWinInfo() *pb.Ajtm_WinInfo {
 }
 
 func (s *betOrderService) buildLongEvents() []*pb.Ajtm_LongEvent {
-	events := make([]*pb.Ajtm_LongEvent, len(s.longEvents))
-	for i, event := range s.longEvents {
+	events := make([]*pb.Ajtm_LongEvent, len(s.winMys))
+	for i, event := range s.winMys {
 		events[i] = &pb.Ajtm_LongEvent{
 			Col:       event.Col,
 			HeadRow:   event.HeadRow,

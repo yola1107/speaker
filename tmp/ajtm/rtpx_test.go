@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	testRounds       = 100
+	testRounds       = 10000
 	progressInterval = 1e7
 	debugFileOpen    = 10
 	freeModeLogOnly  = 0
@@ -103,7 +103,8 @@ func TestRtp2(t *testing.T) {
 			}
 
 			cascadeCount++
-			stepWin := float64(svc.stepMultiplier) // svc.bonusAmount.Round(2).InexactFloat64()
+			stepMul := svc.stepMultiplier
+			stepWin := float64(stepMul) // svc.bonusAmount.Round(2).InexactFloat64()
 			roundWin += stepWin
 
 			if debugTraceStderr != 0 {
@@ -111,7 +112,7 @@ func TestRtp2(t *testing.T) {
 					"[hcsqy2 TestRtp2] baseRounds=%d baseGame=%d freeIdx=%d cascade=%d isFirst=%v wasFree=%v nowFree=%v isRoundOver=%v freeNum=%d stage=%d steps=%d nWin=%d winCells=%d stepMul=%d addFree=%d sym=%s nextPre=%s\n",
 					baseRounds, baseGameCount, freeRoundIdx, cascadeCount, isFirst, wasFreeBeforeSpin, isFree,
 					svc.isRoundOver, svc.scene.FreeNum, svc.scene.Stage, svc.scene.Steps, len(svc.winInfos),
-					winGridNonZeroCount(&svc.winGrid), svc.stepMultiplier, svc.addFreeTime,
+					winGridNonZeroCount(&svc.winGrid), stepMul, svc.addFreeTime,
 					gridFingerprint(&svc.symbolGrid), gridFingerprint(&svc.nextSymbolGrid))
 			}
 
@@ -274,6 +275,7 @@ func writeReelInfo(buf *strings.Builder, svc *betOrderService) {
 		//fprintf(buf, "%d[%d～%d|fill=%d|fall=%d]  ", rc.Len, winStart, winEnd, nextFill, rc.Fall)
 	}
 	fprintf(buf, "\n")
+	fprintf(buf, "MysCount：%v \n ", svc.scene.DownCount)
 }
 
 func writeRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggeringBaseRound int) {
@@ -299,8 +301,8 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 			if isFree && treasureCount > 0 {
 				fprintf(buf, "\t夺宝数量(当前盘面): %d\n", treasureCount)
 			} else if !isFree && svc.addFreeTime > 0 {
-				fprintf(buf, "\t本手触发免费: 夺宝=%d, +免费次数=%d, 剩余免费=%d, NextStage=%d\n",
-					treasureCount, svc.addFreeTime, svc.scene.FreeNum, svc.scene.NextStage)
+				fprintf(buf, "\t本手触发免费: 夺宝=%d, +免费次数=%d, 剩余免费=%d, NextStage=%d, extMul=%d，stepmul=%d, enterfree 💎💎💎\n",
+					treasureCount, svc.addFreeTime, svc.scene.FreeNum, svc.scene.NextStage, svc.extMul, svc.stepMultiplier)
 			}
 		}
 		return
@@ -317,16 +319,16 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 		if totalMultiplier > 0 {
 			lineWin = stepWin * float64(elem.Multiplier) / float64(totalMultiplier)
 		}
-		fprintf(buf, "\t符号:%2d, 支付线:%2d, 乘积: %d, 赔率: %4.2f, 下注: %g×%d, 奖金: %4.2f\n",
-			elem.Symbol, elem.LineCount+1, elem.SymbolCount, float64(elem.Odds), svc.req.BaseMoney, svc.req.Multiple, lineWin)
+		fprintf(buf, "\t符号: %2d, 连线: %d, 路数：%d, 赔率: %d, sysMul: %d, 奖金: %4.2f\n",
+			elem.Symbol, elem.SymbolCount, elem.LineCount, elem.Odds, svc.scene.MysMulTotal, lineWin)
 	}
 
 	isFreeMode := 0
 	if svc.isFreeRound {
 		isFreeMode = 1
 	}
-	fprintf(buf, "\tMode=%d, Stage=%d, Steps=%d, RoundMul=%d, stepMul=%d, lineMul=%d, 本回合累计 step 倍数: %.2f\n",
-		isFreeMode, svc.scene.Stage, svc.scene.Steps, svc.scene.RoundMultiplier, svc.stepMultiplier, svc.lineMultiplier, roundWin)
+	fprintf(buf, "\tMode=%d, Stage=%d, Steps=%d, RoundMul=%d, stepMul=%d, lineMul=%d, sysMul=%d, 本回合累计 step 倍数: %.2f\n",
+		isFreeMode, svc.scene.Stage, svc.scene.Steps, svc.scene.RoundMultiplier, svc.stepMultiplier, svc.lineMultiplier, svc.scene.MysMulTotal, roundWin)
 	if !svc.isRoundOver {
 		fprintf(buf, "\t连消继续 → 下一请求 Step%d（Stage 将为 Eli）\n", step+1)
 		return
@@ -343,7 +345,7 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 			fprintf(buf, "\t免费模式继续 — 剩余次数=%d, RoundMul=%d\n", svc.scene.FreeNum, svc.scene.RoundMultiplier)
 		}
 	} else if svc.addFreeTime > 0 {
-		fprintf(buf, "\t基础盘触发免费 — 夺宝=%d, 剩余免费=%d, NextStage=%d\n", treasureCount, svc.scene.FreeNum, svc.scene.NextStage)
+		fprintf(buf, "\t基础盘触发免费 — 夺宝=%d, 剩余免费=%d, NextStage=%d, extMul=%d\n", treasureCount, svc.scene.FreeNum, svc.scene.NextStage, svc.extMul)
 	}
 }
 
@@ -367,19 +369,55 @@ func saveDebugFiles(statsResult string, fileBuf, reportBuf *strings.Builder, sta
 	}
 }
 
+/*
+基础模式第 1 局
+realIndex-1,1,1
+randomIndex-5,5,3
+初始索引-2,1,119,36,12
+totalWin-309
+freeMultiple-0
+stepMultiplier-309
+
+基础模式第 1 局-免费模式第 1 局
+realIndex2-1,1,1,1,1,1
+realIndex3-1,1,1,1,2
+realIndex4-1,1,1,1,1,1
+freeAddMystery-2,4
+初始索引-79,7,61,14,103
+totalWin-309
+freeMultiple-1
+stepMultiplier-0
+*/
+
 func writeReportRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggerRound int) {
 	if isFree {
 		fprintf(buf, "基础模式第 %d 局-免费模式第 %d 局\n", triggerRound, gameNum)
+		for i := 0; i < 3; i++ {
+			//s.gameConfig.BigSyMultiples[0]
+			arr := []int64{1, 1, 1, 1, 1, 1}
+			idx := svc.debug.freeRandomIndex[i]
+			if idx > 0 {
+				arr = svc.gameConfig.BigSyMultiples[0][idx-1]
+			}
+			fprintf(buf, "realIndex%d-%v\n", i+2, arr)
+		}
+		if svc.debug.freeAddMystery[0] != 0 { // [col,row]
+			fprintf(buf, "freeAddMystery-%d,%d\n", svc.debug.freeAddMystery[0], svc.debug.freeAddMystery[1])
+		}
 	} else {
 		fprintf(buf, "基础模式第 %d 局\n", gameNum)
+		fprintf(buf, "realIndex-%d,%d,%d\n", svc.debug.realIndex[0], svc.debug.realIndex[1], svc.debug.realIndex[2])
+		fprintf(buf, "randomIndex-%d,%d,%d\n", svc.debug.randomIndex[0], svc.debug.randomIndex[1], svc.debug.randomIndex[2])
 	}
+
 	fprintf(buf, "初始索引-")
 	for c := 0; c < _colCount; c++ {
 		if c > 0 {
 			fprintf(buf, ",")
 		}
 		if svc.scene != nil && c < len(svc.scene.SymbolRoller) {
-			fprintf(buf, "%d", svc.scene.SymbolRoller[c].Start)
+			fprintf(buf, "%d", svc.scene.SymbolRoller[c].OriStart)
+			//fprintf(buf, "%d", svc.scene.SymbolRoller[c].Start)
 		} else {
 			fprintf(buf, "0")
 		}

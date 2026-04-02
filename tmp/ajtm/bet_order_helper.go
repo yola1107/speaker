@@ -161,11 +161,11 @@ func (s *betOrderService) fallingWinSymbols(next int64Grid) {
 
 func (s *betOrderService) findWinInfos() {
 	winInfos := make([]WinInfo, 0, _wild-_blank-1)
-	var displayGrid int64Grid
-	var eliminateGrid int64Grid
+	var winGrid int64Grid
+	var eliGrid int64Grid
+	var seenLongHead [_rowCount][_colCount]bool
 
-	s.winLongBlocks = s.winLongBlocks[:0]
-	seenLongHead := make(map[[2]int]struct{}, 8)
+	s.winMys = s.winMys[:0]
 
 	for symbol := _blank + 1; symbol < _wild; symbol++ {
 		info, ok := s.findSymbolWinInfo(symbol)
@@ -174,52 +174,50 @@ func (s *betOrderService) findWinInfos() {
 		}
 
 		winInfos = append(winInfos, *info)
-		s.mergeWinGrids(info.WinGrid, &displayGrid, &eliminateGrid, seenLongHead)
-	}
-
-	if s.scene.MysMultiplierTotal > 0 {
-		for i := range winInfos {
-			winInfos[i].MysMultiplier = s.scene.MysMultiplierTotal
-		}
+		s.mergeWinGrids(info.WinGrid, &winGrid, &eliGrid, &seenLongHead)
 	}
 
 	s.winInfos = winInfos
-	s.winGrid = displayGrid
-	s.eliGrid = eliminateGrid
+	s.winGrid = winGrid
+	s.eliGrid = eliGrid
+
+	// 每个命中的长符号（神秘符号）累计 +2，连消结束后在 syncGameStage 中清理。
+	if n := int64(len(s.winMys)); n > 0 {
+		s.scene.MysMulTotal += n * _perSymMultiple
+	}
 }
 
-func (s *betOrderService) mergeWinGrids(src int64Grid, displayGrid, eliminateGrid *int64Grid, seenLongHead map[[2]int]struct{}) {
+func (s *betOrderService) mergeWinGrids(src int64Grid, winGrid, eliGrid *int64Grid, seenLongHead *[_rowCount][_colCount]bool) {
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
-			if src[r][c] <= 0 {
+			cell := src[r][c]
+			if cell <= 0 {
 				continue
 			}
-			if s.isLongHeadAt(r, c) {
-				s.recordWinningLongBlock(r, c, displayGrid, seenLongHead)
+
+			head := s.symbolGrid[r][c]
+			isLongHead := r < _rowCount-1 && head > 0 && head < _longSymbol && s.symbolGrid[r+1][c] == _longSymbol+head
+			if isLongHead {
+				if !seenLongHead[r][c] {
+					seenLongHead[r][c] = true
+					s.winMys = append(s.winMys, Block{
+						Col:       int64(c),
+						HeadRow:   int64(r),
+						TailRow:   int64(r + 1),
+						OldSymbol: head,
+					})
+				}
+
+				// 长符号需要展示中奖，但不进入实际消除网格。
+				(*winGrid)[r][c] = head
+				if r+1 < _rowCount {
+					(*winGrid)[r+1][c] = s.symbolGrid[r+1][c]
+				}
 				continue
 			}
-			(*displayGrid)[r][c] = src[r][c]
-			(*eliminateGrid)[r][c] = src[r][c]
+			(*winGrid)[r][c] = cell
+			(*eliGrid)[r][c] = cell
 		}
-	}
-}
-
-func (s *betOrderService) recordWinningLongBlock(r, c int, displayGrid *int64Grid, seenLongHead map[[2]int]struct{}) {
-	key := [2]int{r, c}
-	if _, exists := seenLongHead[key]; !exists {
-		seenLongHead[key] = struct{}{}
-		s.winLongBlocks = append(s.winLongBlocks, Block{
-			Col:       int64(c),
-			HeadRow:   int64(r),
-			TailRow:   int64(r + 1),
-			OldSymbol: s.symbolGrid[r][c],
-		})
-	}
-
-	// 长符号需要展示中奖，但不进入实际消除网格。
-	(*displayGrid)[r][c] = s.symbolGrid[r][c]
-	if r+1 < _rowCount {
-		(*displayGrid)[r+1][c] = s.symbolGrid[r+1][c]
 	}
 }
 
@@ -287,12 +285,13 @@ func (s *betOrderService) isLongHeadAt(r, c int) bool {
 }
 
 func (s *betOrderService) transformWinningLongSymbols() {
-	s.longEvents = s.longEvents[:0]
-	if len(s.winLongBlocks) == 0 {
+	if len(s.winMys) == 0 {
 		return
 	}
 
-	for _, block := range s.winLongBlocks {
+	writeIdx := 0
+	for i := 0; i < len(s.winMys); i++ {
+		block := s.winMys[i]
 		r, c := int(block.HeadRow), int(block.Col)
 		if !s.isLongHeadAt(r, c) {
 			continue
@@ -307,17 +306,17 @@ func (s *betOrderService) transformWinningLongSymbols() {
 		s.scene.SymbolRoller[c].BoardSymbol[r] = newSymbol
 		s.scene.SymbolRoller[c].BoardSymbol[r+1] = _longSymbol + newSymbol
 
-		s.longEvents = append(s.longEvents, Block{
-			Col:       int64(c),
-			HeadRow:   int64(r),
-			TailRow:   int64(r + 1),
-			OldSymbol: oldSymbol,
-			NewSymbol: newSymbol,
-		})
+		block.OldSymbol = oldSymbol
+		block.NewSymbol = newSymbol
+		s.winMys[writeIdx] = block
+		writeIdx++
 	}
+	s.winMys = s.winMys[:writeIdx]
 }
 
 func randomLongTransformSymbol(oldSymbol int64) int64 {
+	return 1 // TODO delete
+
 	for {
 		// 仅在 1~12 中随机，排除自身和夺宝。
 		n := int64(rand.IntN(12) + 1)
@@ -327,18 +326,18 @@ func randomLongTransformSymbol(oldSymbol int64) int64 {
 	}
 }
 
-func (s *betOrderService) refreshLongCountFromRoller() {
-	// 免费模式未中奖时，按当前滚轴盘面重算 LongCount，供下一局继承。
-	for c := 0; c < _colCount; c++ {
-		s.scene.LongCount[c] = 0
-	}
-	for c := 1; c < _colCount-1; c++ {
-		for r := 0; r < _rowCount-1; r++ {
-			head := s.scene.SymbolRoller[c].BoardSymbol[r]
-			if head > 0 && head < _longSymbol && s.scene.SymbolRoller[c].BoardSymbol[r+1] == _longSymbol+head {
-				s.scene.LongCount[c]++
-				r++
-			}
-		}
-	}
-}
+//func (s *betOrderService) refreshLongCountFromRoller() {
+//	// 免费模式未中奖时，按当前滚轴盘面重算 MysCount，供下一局继承。
+//	for c := 0; c < _colCount; c++ {
+//		s.scene.MysCount[c] = 0
+//	}
+//	for c := 1; c < _colCount-1; c++ {
+//		for r := 0; r < _rowCount-1; r++ {
+//			head := s.scene.SymbolRoller[c].BoardSymbol[r]
+//			if head > 0 && head < _longSymbol && s.scene.SymbolRoller[c].BoardSymbol[r+1] == _longSymbol+head {
+//				s.scene.MysCount[c]++
+//				r++
+//			}
+//		}
+//	}
+//}

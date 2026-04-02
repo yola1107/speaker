@@ -5,13 +5,12 @@ type int64Grid [_rowCount][_colCount]int64
 
 // WinInfo 表示一个符号在当前 step 的 Ways 中奖结果。
 type WinInfo struct {
-	Symbol        int64     `json:"val"`     // 中奖符号 ID
-	LineCount     int64     `json:"roadNum"` // 路数
-	SymbolCount   int64     `json:"starNum"` // 连续命中列数
-	Odds          int64     `json:"odds"`    // 基础赔率
-	Multiplier    int64     `json:"mul"`     // 结算倍数 = Odds * LineCount
-	MysMultiplier int64     `json:"mysMul"`  // 神秘符号累计倍数
-	WinGrid       int64Grid `json:"loc"`     // 该符号的中奖网格
+	Symbol      int64     `json:"val"`     // 中奖符号 ID
+	LineCount   int64     `json:"roadNum"` // 路数
+	SymbolCount int64     `json:"starNum"` // 连续命中列数
+	Odds        int64     `json:"odds"`    // 基础赔率
+	Multiplier  int64     `json:"mul"`     // 结算倍数 = Odds * LineCount
+	WinGrid     int64Grid `json:"loc"`     // 该符号的中奖网格
 }
 
 // Block 统一描述长符号块。
@@ -30,4 +29,12 @@ type rtpDebugData struct {
 	open             bool      // 是否开启 RTP 调试
 	mark             int32     // 调试日志对齐标记
 	originSymbolGrid int64Grid //
+
+	//基础模式下统计
+	realIndex   [3]int // 1 2 3轴取的长符号个数// -1,1,1
+	randomIndex [3]int // 1 2 3轴随机到的布局索引+1
+
+	// 免费模式下统计
+	freeAddMystery  [2]int64 // 新增长符号 [col,row]
+	freeRandomIndex [3]int   // 1 2 3轴随机到的布局索引+1
 }

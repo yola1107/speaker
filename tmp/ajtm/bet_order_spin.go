@@ -3,6 +3,13 @@ package ajtm
 func (s *betOrderService) baseSpin() error {
 	if s.debug.open {
 		s.debug.mark = 0
+		//基础模式下统计
+		s.debug.realIndex = [3]int{}   // 1 2 3轴取的长符号个数// -1,1,1
+		s.debug.randomIndex = [3]int{} // 1 2 3轴随机到的布局索引+1
+
+		// 免费模式下统计
+		s.debug.freeAddMystery = [2]int64{} // 免费模式下 每次新生成一个的长符号
+
 		s.syncGameStage()
 	}
 	if err := s.initialize(); err != nil {
@@ -28,6 +35,7 @@ func (s *betOrderService) baseSpin() error {
 func (s *betOrderService) processWinInfos() {
 	s.addFreeTime = 0
 	s.debug.mark = 0
+	s.extMul = 0
 	s.scatterCount = s.getScatterCount()
 
 	if len(s.winInfos) > 0 {
@@ -45,7 +53,7 @@ func (s *betOrderService) processWin() {
 	}
 	s.lineMultiplier = totalMul
 
-	mysMul := s.scene.MysMultiplierTotal
+	mysMul := s.scene.MysMulTotal
 	if mysMul <= 0 {
 		mysMul = 1
 	}
@@ -72,28 +80,30 @@ func (s *betOrderService) processNoWin() {
 	s.stepMultiplier = 0
 	s.isRoundOver = true
 	s.scene.Steps = 0
-	s.longEvents = s.longEvents[:0]
+	s.winMys = s.winMys[:0]
 
 	if s.isFreeRound {
-		s.refreshLongCountFromRoller()
+		//s.refreshLongCountFromRoller()
 		if s.scene.FreeNum <= 0 {
 			s.scene.FreeNum = 0
-			s.scene.MysMultiplierTotal = 0
 			s.scene.NextStage = _spinTypeBase
 		} else {
 			s.scene.NextStage = _spinTypeFree
 		}
 
 	} else {
-		s.scene.MysMultiplierTotal = 0
-		if newFree, _ := s.calcNewFreeGameNum(s.scatterCount); newFree > 0 {
+		if newFree, extmul := s.calcNewFreeGameNum(s.scatterCount); newFree > 0 {
 			s.client.ClientOfFreeGame.Incr(uint64(newFree))
 			s.scene.FreeNum += newFree
 			s.addFreeTime = newFree
+			s.extMul = extmul
+			s.stepMultiplier += extmul
+			s.scene.RoundMultiplier += extmul
 		}
 
 		if s.scene.FreeNum > 0 {
 			s.scene.NextStage = _spinTypeFree
+			//s.scene.MysCount = [_colCount]int{} // 清理
 		} else {
 			s.scene.FreeNum = 0
 			s.scene.NextStage = _spinTypeBase

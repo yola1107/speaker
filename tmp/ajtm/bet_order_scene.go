@@ -12,14 +12,14 @@ import (
 )
 
 type SpinSceneData struct {
-	Steps              uint64                  `json:"steps"`     // 连消 step 数
-	Stage              int8                    `json:"stage"`     // 当前阶段
-	NextStage          int8                    `json:"nStage"`    // 下一阶段
-	RoundMultiplier    int64                   `json:"rMul"`      // 当前 round 累计倍数
-	FreeNum            int64                   `json:"freeNum"`   // 剩余免费次数
-	SymbolRoller       [_colCount]SymbolRoller `json:"sRoller"`   // 当前滚轴窗口
-	MysMultiplierTotal int64                   `json:"mysMul"`    // 神秘符号累计倍数
-	LongCount          [_colCount]int          `json:"longCount"` // 各列当前长符号数量，仅免费模式继承使用
+	Steps           uint64                  `json:"steps"`     // 连消 step 数
+	Stage           int8                    `json:"stage"`     // 当前阶段
+	NextStage       int8                    `json:"nStage"`    // 下一阶段
+	RoundMultiplier int64                   `json:"rMul"`      // 回合倍数 累计
+	FreeNum         int64                   `json:"freeNum"`   // 剩余免费次数
+	SymbolRoller    [_colCount]SymbolRoller `json:"sRoller"`   // 滚轮符号表
+	MysMulTotal     int64                   `json:"mysMul"`    // 长符号累计倍数 连消结束清理，每有一个长符号中奖倍数+2
+	DownCount       [_colCount]int          `json:"downCount"` // 各列当前长符号数量，仅免费模式继承使用
 }
 
 var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", GameID)
@@ -72,5 +72,6 @@ func (s *betOrderService) syncGameStage() {
 
 	if s.scene.Steps == 0 {
 		s.scene.RoundMultiplier = 0
+		s.scene.MysMulTotal = 0
 	}
 }
