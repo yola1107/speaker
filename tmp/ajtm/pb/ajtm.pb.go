@@ -21,35 +21,34 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// 埃及探秘 (GameID: 18985)
+// 盘面: 5x6
+// 玩法: Ways 消除 + 长符号转变
 type Ajtm_BetOrderResponse struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	OrderSN           string                 `protobuf:"bytes,1,opt,name=orderSN,proto3" json:"orderSN,omitempty"`
-	Balance           float64                `protobuf:"fixed64,2,opt,name=balance,proto3" json:"balance,omitempty"`
-	BetAmount         float64                `protobuf:"fixed64,3,opt,name=betAmount,proto3" json:"betAmount,omitempty"`
-	CurrentWin        float64                `protobuf:"fixed64,4,opt,name=currentWin,proto3" json:"currentWin,omitempty"`
-	FreeWin           float64                `protobuf:"fixed64,5,opt,name=freeWin,proto3" json:"freeWin,omitempty"`
-	TotalWin          float64                `protobuf:"fixed64,6,opt,name=totalWin,proto3" json:"totalWin,omitempty"`
-	Free              bool                   `protobuf:"varint,7,opt,name=free,proto3" json:"free,omitempty"`
-	Review            int64                  `protobuf:"varint,8,opt,name=review,proto3" json:"review,omitempty"`
-	WinInfo           *Ajtm_WinInfo          `protobuf:"bytes,9,opt,name=winInfo,proto3" json:"winInfo,omitempty"`
-	Cards             []int64                `protobuf:"varint,10,rep,packed,name=cards,proto3" json:"cards,omitempty"`
-	ScatterCount      int64                  `protobuf:"varint,11,opt,name=scatterCount,proto3" json:"scatterCount,omitempty"`
-	IsRoundOver       bool                   `protobuf:"varint,12,opt,name=isRoundOver,proto3" json:"isRoundOver,omitempty"`
-	Multi             int64                  `protobuf:"varint,13,opt,name=multi,proto3" json:"multi,omitempty"`
-	State             int64                  `protobuf:"varint,14,opt,name=state,proto3" json:"state,omitempty"`
-	FreeNum           int64                  `protobuf:"varint,15,opt,name=freeNum,proto3" json:"freeNum,omitempty"`
-	FreeTime          int64                  `protobuf:"varint,16,opt,name=freeTime,proto3" json:"freeTime,omitempty"`
-	WinGrid           []int64                `protobuf:"varint,17,rep,packed,name=winGrid,proto3" json:"winGrid,omitempty"`
-	IsGameOver        bool                   `protobuf:"varint,18,opt,name=isGameOver,proto3" json:"isGameOver,omitempty"`
-	RoundWin          float64                `protobuf:"fixed64,19,opt,name=roundWin,proto3" json:"roundWin,omitempty"`
-	MulIndex          int64                  `protobuf:"varint,20,opt,name=mulIndex,proto3" json:"mulIndex,omitempty"`
-	BaseMultipliers   []int64                `protobuf:"varint,21,rep,packed,name=baseMultipliers,proto3" json:"baseMultipliers,omitempty"`
-	FreeMultipliers   []int64                `protobuf:"varint,22,rep,packed,name=freeMultipliers,proto3" json:"freeMultipliers,omitempty"`
-	WildEliCount      int64                  `protobuf:"varint,23,opt,name=wildEliCount,proto3" json:"wildEliCount,omitempty"`
-	TotalWildEliCount int64                  `protobuf:"varint,24,opt,name=totalWildEliCount,proto3" json:"totalWildEliCount,omitempty"`
-	LongEvents        []*Ajtm_LongEvent      `protobuf:"bytes,25,rep,name=longEvents,proto3" json:"longEvents,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Sn                 *string                `protobuf:"bytes,1,opt,name=sn,proto3,oneof" json:"sn,omitempty"`                                   // 订单号
+	Balance            *float64               `protobuf:"fixed64,2,opt,name=balance,proto3,oneof" json:"balance,omitempty"`                       // 当前余额
+	BetAmount          *float64               `protobuf:"fixed64,3,opt,name=betAmount,proto3,oneof" json:"betAmount,omitempty"`                   // 本局下注金额
+	CurWin             *float64               `protobuf:"fixed64,4,opt,name=curWin,proto3,oneof" json:"curWin,omitempty"`                         // 本步赢分
+	FreeTotalWin       *float64               `protobuf:"fixed64,5,opt,name=freeTotalWin,proto3,oneof" json:"freeTotalWin,omitempty"`             // 免费模式累计赢分
+	TotalWin           *float64               `protobuf:"fixed64,6,opt,name=totalWin,proto3,oneof" json:"totalWin,omitempty"`                     // 当前大回合累计赢分
+	IsFree             *bool                  `protobuf:"varint,7,opt,name=isFree,proto3,oneof" json:"isFree,omitempty"`                          // 是否免费模式
+	Review             *int64                 `protobuf:"varint,8,opt,name=review,proto3,oneof" json:"review,omitempty"`                          // 复盘标记
+	WinInfo            *Ajtm_WinInfo          `protobuf:"bytes,9,opt,name=winInfo,proto3" json:"winInfo,omitempty"`                               // 中奖详情
+	Cards              []int64                `protobuf:"varint,10,rep,packed,name=cards,proto3" json:"cards,omitempty"`                          // 当前盘面
+	ScatterCount       *int64                 `protobuf:"varint,11,opt,name=scatterCount,proto3,oneof" json:"scatterCount,omitempty"`             // 当前盘面夺宝数量
+	IsRoundOver        *bool                  `protobuf:"varint,12,opt,name=isRoundOver,proto3,oneof" json:"isRoundOver,omitempty"`               // 当前 round 是否结束
+	State              *int64                 `protobuf:"varint,13,opt,name=state,proto3,oneof" json:"state,omitempty"`                           // 当前阶段
+	RemainingFreeTimes *int64                 `protobuf:"varint,14,opt,name=remainingFreeTimes,proto3,oneof" json:"remainingFreeTimes,omitempty"` // 剩余免费次数
+	TotalFreeTimes     *int64                 `protobuf:"varint,15,opt,name=totalFreeTimes,proto3,oneof" json:"totalFreeTimes,omitempty"`         // 已执行免费次数
+	StepMul            *int64                 `protobuf:"varint,16,opt,name=stepMul,proto3,oneof" json:"stepMul,omitempty"`                       // 本步最终倍数
+	WinGrid            []int64                `protobuf:"varint,17,rep,packed,name=winGrid,proto3" json:"winGrid,omitempty"`                      // 中奖展示网格
+	IsGameOver         *bool                  `protobuf:"varint,18,opt,name=isGameOver,proto3,oneof" json:"isGameOver,omitempty"`                 // 免费总流程是否结束
+	RoundWin           *float64               `protobuf:"fixed64,19,opt,name=roundWin,proto3,oneof" json:"roundWin,omitempty"`                    // 当前 round 累计赢分
+	MysMul             *int64                 `protobuf:"varint,20,opt,name=mysMul,proto3,oneof" json:"mysMul,omitempty"`                         // 当前神秘符号倍数
+	WinMys             []*Ajtm_WinMys         `protobuf:"bytes,21,rep,name=winMys,proto3" json:"winMys,omitempty"`                                // 长符号转变事件
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Ajtm_BetOrderResponse) Reset() {
@@ -82,58 +81,58 @@ func (*Ajtm_BetOrderResponse) Descriptor() ([]byte, []int) {
 	return file_ajtm_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Ajtm_BetOrderResponse) GetOrderSN() string {
-	if x != nil {
-		return x.OrderSN
+func (x *Ajtm_BetOrderResponse) GetSn() string {
+	if x != nil && x.Sn != nil {
+		return *x.Sn
 	}
 	return ""
 }
 
 func (x *Ajtm_BetOrderResponse) GetBalance() float64 {
-	if x != nil {
-		return x.Balance
+	if x != nil && x.Balance != nil {
+		return *x.Balance
 	}
 	return 0
 }
 
 func (x *Ajtm_BetOrderResponse) GetBetAmount() float64 {
-	if x != nil {
-		return x.BetAmount
+	if x != nil && x.BetAmount != nil {
+		return *x.BetAmount
 	}
 	return 0
 }
 
-func (x *Ajtm_BetOrderResponse) GetCurrentWin() float64 {
-	if x != nil {
-		return x.CurrentWin
+func (x *Ajtm_BetOrderResponse) GetCurWin() float64 {
+	if x != nil && x.CurWin != nil {
+		return *x.CurWin
 	}
 	return 0
 }
 
-func (x *Ajtm_BetOrderResponse) GetFreeWin() float64 {
-	if x != nil {
-		return x.FreeWin
+func (x *Ajtm_BetOrderResponse) GetFreeTotalWin() float64 {
+	if x != nil && x.FreeTotalWin != nil {
+		return *x.FreeTotalWin
 	}
 	return 0
 }
 
 func (x *Ajtm_BetOrderResponse) GetTotalWin() float64 {
-	if x != nil {
-		return x.TotalWin
+	if x != nil && x.TotalWin != nil {
+		return *x.TotalWin
 	}
 	return 0
 }
 
-func (x *Ajtm_BetOrderResponse) GetFree() bool {
-	if x != nil {
-		return x.Free
+func (x *Ajtm_BetOrderResponse) GetIsFree() bool {
+	if x != nil && x.IsFree != nil {
+		return *x.IsFree
 	}
 	return false
 }
 
 func (x *Ajtm_BetOrderResponse) GetReview() int64 {
-	if x != nil {
-		return x.Review
+	if x != nil && x.Review != nil {
+		return *x.Review
 	}
 	return 0
 }
@@ -153,43 +152,43 @@ func (x *Ajtm_BetOrderResponse) GetCards() []int64 {
 }
 
 func (x *Ajtm_BetOrderResponse) GetScatterCount() int64 {
-	if x != nil {
-		return x.ScatterCount
+	if x != nil && x.ScatterCount != nil {
+		return *x.ScatterCount
 	}
 	return 0
 }
 
 func (x *Ajtm_BetOrderResponse) GetIsRoundOver() bool {
-	if x != nil {
-		return x.IsRoundOver
+	if x != nil && x.IsRoundOver != nil {
+		return *x.IsRoundOver
 	}
 	return false
 }
 
-func (x *Ajtm_BetOrderResponse) GetMulti() int64 {
-	if x != nil {
-		return x.Multi
-	}
-	return 0
-}
-
 func (x *Ajtm_BetOrderResponse) GetState() int64 {
-	if x != nil {
-		return x.State
+	if x != nil && x.State != nil {
+		return *x.State
 	}
 	return 0
 }
 
-func (x *Ajtm_BetOrderResponse) GetFreeNum() int64 {
-	if x != nil {
-		return x.FreeNum
+func (x *Ajtm_BetOrderResponse) GetRemainingFreeTimes() int64 {
+	if x != nil && x.RemainingFreeTimes != nil {
+		return *x.RemainingFreeTimes
 	}
 	return 0
 }
 
-func (x *Ajtm_BetOrderResponse) GetFreeTime() int64 {
-	if x != nil {
-		return x.FreeTime
+func (x *Ajtm_BetOrderResponse) GetTotalFreeTimes() int64 {
+	if x != nil && x.TotalFreeTimes != nil {
+		return *x.TotalFreeTimes
+	}
+	return 0
+}
+
+func (x *Ajtm_BetOrderResponse) GetStepMul() int64 {
+	if x != nil && x.StepMul != nil {
+		return *x.StepMul
 	}
 	return 0
 }
@@ -202,68 +201,39 @@ func (x *Ajtm_BetOrderResponse) GetWinGrid() []int64 {
 }
 
 func (x *Ajtm_BetOrderResponse) GetIsGameOver() bool {
-	if x != nil {
-		return x.IsGameOver
+	if x != nil && x.IsGameOver != nil {
+		return *x.IsGameOver
 	}
 	return false
 }
 
 func (x *Ajtm_BetOrderResponse) GetRoundWin() float64 {
-	if x != nil {
-		return x.RoundWin
+	if x != nil && x.RoundWin != nil {
+		return *x.RoundWin
 	}
 	return 0
 }
 
-func (x *Ajtm_BetOrderResponse) GetMulIndex() int64 {
-	if x != nil {
-		return x.MulIndex
+func (x *Ajtm_BetOrderResponse) GetMysMul() int64 {
+	if x != nil && x.MysMul != nil {
+		return *x.MysMul
 	}
 	return 0
 }
 
-func (x *Ajtm_BetOrderResponse) GetBaseMultipliers() []int64 {
+func (x *Ajtm_BetOrderResponse) GetWinMys() []*Ajtm_WinMys {
 	if x != nil {
-		return x.BaseMultipliers
-	}
-	return nil
-}
-
-func (x *Ajtm_BetOrderResponse) GetFreeMultipliers() []int64 {
-	if x != nil {
-		return x.FreeMultipliers
-	}
-	return nil
-}
-
-func (x *Ajtm_BetOrderResponse) GetWildEliCount() int64 {
-	if x != nil {
-		return x.WildEliCount
-	}
-	return 0
-}
-
-func (x *Ajtm_BetOrderResponse) GetTotalWildEliCount() int64 {
-	if x != nil {
-		return x.TotalWildEliCount
-	}
-	return 0
-}
-
-func (x *Ajtm_BetOrderResponse) GetLongEvents() []*Ajtm_LongEvent {
-	if x != nil {
-		return x.LongEvents
+		return x.WinMys
 	}
 	return nil
 }
 
 type Ajtm_WinInfo struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	WinArr          []*Ajtm_WinArr         `protobuf:"bytes,1,rep,name=winArr,proto3" json:"winArr,omitempty"`
-	AddFreeNum      int64                  `protobuf:"varint,2,opt,name=addFreeNum,proto3" json:"addFreeNum,omitempty"`
-	WildEliMultiple int64                  `protobuf:"varint,3,opt,name=wildEliMultiple,proto3" json:"wildEliMultiple,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WinArr        []*Ajtm_WinArr         `protobuf:"bytes,1,rep,name=winArr,proto3" json:"winArr,omitempty"`                // 本步中奖条目
+	AddFreeNum    *int64                 `protobuf:"varint,2,opt,name=addFreeNum,proto3,oneof" json:"addFreeNum,omitempty"` // 本步新增免费次数
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Ajtm_WinInfo) Reset() {
@@ -304,23 +274,16 @@ func (x *Ajtm_WinInfo) GetWinArr() []*Ajtm_WinArr {
 }
 
 func (x *Ajtm_WinInfo) GetAddFreeNum() int64 {
-	if x != nil {
-		return x.AddFreeNum
-	}
-	return 0
-}
-
-func (x *Ajtm_WinInfo) GetWildEliMultiple() int64 {
-	if x != nil {
-		return x.WildEliMultiple
+	if x != nil && x.AddFreeNum != nil {
+		return *x.AddFreeNum
 	}
 	return 0
 }
 
 type Ajtm_WinArr struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	RoadNum       int64                  `protobuf:"varint,1,opt,name=roadNum,proto3" json:"roadNum,omitempty"`
-	Odds          int64                  `protobuf:"varint,2,opt,name=odds,proto3" json:"odds,omitempty"`
+	RoadNum       *int64                 `protobuf:"varint,1,opt,name=roadNum,proto3,oneof" json:"roadNum,omitempty"` // 路数
+	Odds          *int64                 `protobuf:"varint,2,opt,name=odds,proto3,oneof" json:"odds,omitempty"`       // 赔率
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -356,44 +319,44 @@ func (*Ajtm_WinArr) Descriptor() ([]byte, []int) {
 }
 
 func (x *Ajtm_WinArr) GetRoadNum() int64 {
-	if x != nil {
-		return x.RoadNum
+	if x != nil && x.RoadNum != nil {
+		return *x.RoadNum
 	}
 	return 0
 }
 
 func (x *Ajtm_WinArr) GetOdds() int64 {
-	if x != nil {
-		return x.Odds
+	if x != nil && x.Odds != nil {
+		return *x.Odds
 	}
 	return 0
 }
 
-type Ajtm_LongEvent struct {
+type Ajtm_WinMys struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Col           int64                  `protobuf:"varint,1,opt,name=col,proto3" json:"col,omitempty"`
-	HeadRow       int64                  `protobuf:"varint,2,opt,name=headRow,proto3" json:"headRow,omitempty"`
-	TailRow       int64                  `protobuf:"varint,3,opt,name=tailRow,proto3" json:"tailRow,omitempty"`
-	OldSymbol     int64                  `protobuf:"varint,4,opt,name=oldSymbol,proto3" json:"oldSymbol,omitempty"`
-	NewSymbol     int64                  `protobuf:"varint,5,opt,name=newSymbol,proto3" json:"newSymbol,omitempty"`
+	Col           *int64                 `protobuf:"varint,1,opt,name=col,proto3,oneof" json:"col,omitempty"`             // 列号
+	HeadRow       *int64                 `protobuf:"varint,2,opt,name=headRow,proto3,oneof" json:"headRow,omitempty"`     // 头部行号
+	TailRow       *int64                 `protobuf:"varint,3,opt,name=tailRow,proto3,oneof" json:"tailRow,omitempty"`     // 尾部行号
+	OldSymbol     *int64                 `protobuf:"varint,4,opt,name=oldSymbol,proto3,oneof" json:"oldSymbol,omitempty"` // 转变前符号
+	NewSymbol     *int64                 `protobuf:"varint,5,opt,name=newSymbol,proto3,oneof" json:"newSymbol,omitempty"` // 转变后符号
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Ajtm_LongEvent) Reset() {
-	*x = Ajtm_LongEvent{}
+func (x *Ajtm_WinMys) Reset() {
+	*x = Ajtm_WinMys{}
 	mi := &file_ajtm_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Ajtm_LongEvent) String() string {
+func (x *Ajtm_WinMys) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Ajtm_LongEvent) ProtoMessage() {}
+func (*Ajtm_WinMys) ProtoMessage() {}
 
-func (x *Ajtm_LongEvent) ProtoReflect() protoreflect.Message {
+func (x *Ajtm_WinMys) ProtoReflect() protoreflect.Message {
 	mi := &file_ajtm_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -405,42 +368,42 @@ func (x *Ajtm_LongEvent) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Ajtm_LongEvent.ProtoReflect.Descriptor instead.
-func (*Ajtm_LongEvent) Descriptor() ([]byte, []int) {
+// Deprecated: Use Ajtm_WinMys.ProtoReflect.Descriptor instead.
+func (*Ajtm_WinMys) Descriptor() ([]byte, []int) {
 	return file_ajtm_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *Ajtm_LongEvent) GetCol() int64 {
-	if x != nil {
-		return x.Col
+func (x *Ajtm_WinMys) GetCol() int64 {
+	if x != nil && x.Col != nil {
+		return *x.Col
 	}
 	return 0
 }
 
-func (x *Ajtm_LongEvent) GetHeadRow() int64 {
-	if x != nil {
-		return x.HeadRow
+func (x *Ajtm_WinMys) GetHeadRow() int64 {
+	if x != nil && x.HeadRow != nil {
+		return *x.HeadRow
 	}
 	return 0
 }
 
-func (x *Ajtm_LongEvent) GetTailRow() int64 {
-	if x != nil {
-		return x.TailRow
+func (x *Ajtm_WinMys) GetTailRow() int64 {
+	if x != nil && x.TailRow != nil {
+		return *x.TailRow
 	}
 	return 0
 }
 
-func (x *Ajtm_LongEvent) GetOldSymbol() int64 {
-	if x != nil {
-		return x.OldSymbol
+func (x *Ajtm_WinMys) GetOldSymbol() int64 {
+	if x != nil && x.OldSymbol != nil {
+		return *x.OldSymbol
 	}
 	return 0
 }
 
-func (x *Ajtm_LongEvent) GetNewSymbol() int64 {
-	if x != nil {
-		return x.NewSymbol
+func (x *Ajtm_WinMys) GetNewSymbol() int64 {
+	if x != nil && x.NewSymbol != nil {
+		return *x.NewSymbol
 	}
 	return 0
 }
@@ -450,55 +413,80 @@ var File_ajtm_proto protoreflect.FileDescriptor
 const file_ajtm_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
-	"ajtm.proto\x12\x04ajtm\"\xa5\x06\n" +
-	"\x15ajtm_BetOrderResponse\x12\x18\n" +
-	"\aorderSN\x18\x01 \x01(\tR\aorderSN\x12\x18\n" +
-	"\abalance\x18\x02 \x01(\x01R\abalance\x12\x1c\n" +
-	"\tbetAmount\x18\x03 \x01(\x01R\tbetAmount\x12\x1e\n" +
-	"\n" +
-	"currentWin\x18\x04 \x01(\x01R\n" +
-	"currentWin\x12\x18\n" +
-	"\afreeWin\x18\x05 \x01(\x01R\afreeWin\x12\x1a\n" +
-	"\btotalWin\x18\x06 \x01(\x01R\btotalWin\x12\x12\n" +
-	"\x04free\x18\a \x01(\bR\x04free\x12\x16\n" +
-	"\x06review\x18\b \x01(\x03R\x06review\x12,\n" +
+	"ajtm.proto\x12\x04ajtm\"\xcf\a\n" +
+	"\x15ajtm_BetOrderResponse\x12\x13\n" +
+	"\x02sn\x18\x01 \x01(\tH\x00R\x02sn\x88\x01\x01\x12\x1d\n" +
+	"\abalance\x18\x02 \x01(\x01H\x01R\abalance\x88\x01\x01\x12!\n" +
+	"\tbetAmount\x18\x03 \x01(\x01H\x02R\tbetAmount\x88\x01\x01\x12\x1b\n" +
+	"\x06curWin\x18\x04 \x01(\x01H\x03R\x06curWin\x88\x01\x01\x12'\n" +
+	"\ffreeTotalWin\x18\x05 \x01(\x01H\x04R\ffreeTotalWin\x88\x01\x01\x12\x1f\n" +
+	"\btotalWin\x18\x06 \x01(\x01H\x05R\btotalWin\x88\x01\x01\x12\x1b\n" +
+	"\x06isFree\x18\a \x01(\bH\x06R\x06isFree\x88\x01\x01\x12\x1b\n" +
+	"\x06review\x18\b \x01(\x03H\aR\x06review\x88\x01\x01\x12,\n" +
 	"\awinInfo\x18\t \x01(\v2\x12.ajtm.ajtm_WinInfoR\awinInfo\x12\x14\n" +
 	"\x05cards\x18\n" +
-	" \x03(\x03R\x05cards\x12\"\n" +
-	"\fscatterCount\x18\v \x01(\x03R\fscatterCount\x12 \n" +
-	"\visRoundOver\x18\f \x01(\bR\visRoundOver\x12\x14\n" +
-	"\x05multi\x18\r \x01(\x03R\x05multi\x12\x14\n" +
-	"\x05state\x18\x0e \x01(\x03R\x05state\x12\x18\n" +
-	"\afreeNum\x18\x0f \x01(\x03R\afreeNum\x12\x1a\n" +
-	"\bfreeTime\x18\x10 \x01(\x03R\bfreeTime\x12\x18\n" +
-	"\awinGrid\x18\x11 \x03(\x03R\awinGrid\x12\x1e\n" +
+	" \x03(\x03R\x05cards\x12'\n" +
+	"\fscatterCount\x18\v \x01(\x03H\bR\fscatterCount\x88\x01\x01\x12%\n" +
+	"\visRoundOver\x18\f \x01(\bH\tR\visRoundOver\x88\x01\x01\x12\x19\n" +
+	"\x05state\x18\r \x01(\x03H\n" +
+	"R\x05state\x88\x01\x01\x123\n" +
+	"\x12remainingFreeTimes\x18\x0e \x01(\x03H\vR\x12remainingFreeTimes\x88\x01\x01\x12+\n" +
+	"\x0etotalFreeTimes\x18\x0f \x01(\x03H\fR\x0etotalFreeTimes\x88\x01\x01\x12\x1d\n" +
+	"\astepMul\x18\x10 \x01(\x03H\rR\astepMul\x88\x01\x01\x12\x18\n" +
+	"\awinGrid\x18\x11 \x03(\x03R\awinGrid\x12#\n" +
 	"\n" +
-	"isGameOver\x18\x12 \x01(\bR\n" +
-	"isGameOver\x12\x1a\n" +
-	"\broundWin\x18\x13 \x01(\x01R\broundWin\x12\x1a\n" +
-	"\bmulIndex\x18\x14 \x01(\x03R\bmulIndex\x12(\n" +
-	"\x0fbaseMultipliers\x18\x15 \x03(\x03R\x0fbaseMultipliers\x12(\n" +
-	"\x0ffreeMultipliers\x18\x16 \x03(\x03R\x0ffreeMultipliers\x12\"\n" +
-	"\fwildEliCount\x18\x17 \x01(\x03R\fwildEliCount\x12,\n" +
-	"\x11totalWildEliCount\x18\x18 \x01(\x03R\x11totalWildEliCount\x124\n" +
+	"isGameOver\x18\x12 \x01(\bH\x0eR\n" +
+	"isGameOver\x88\x01\x01\x12\x1f\n" +
+	"\broundWin\x18\x13 \x01(\x01H\x0fR\broundWin\x88\x01\x01\x12\x1b\n" +
+	"\x06mysMul\x18\x14 \x01(\x03H\x10R\x06mysMul\x88\x01\x01\x12)\n" +
+	"\x06winMys\x18\x15 \x03(\v2\x11.ajtm.ajtm_WinMysR\x06winMysB\x05\n" +
+	"\x03_snB\n" +
 	"\n" +
-	"longEvents\x18\x19 \x03(\v2\x14.ajtm.ajtm_LongEventR\n" +
-	"longEvents\"\x83\x01\n" +
+	"\b_balanceB\f\n" +
+	"\n" +
+	"_betAmountB\t\n" +
+	"\a_curWinB\x0f\n" +
+	"\r_freeTotalWinB\v\n" +
+	"\t_totalWinB\t\n" +
+	"\a_isFreeB\t\n" +
+	"\a_reviewB\x0f\n" +
+	"\r_scatterCountB\x0e\n" +
+	"\f_isRoundOverB\b\n" +
+	"\x06_stateB\x15\n" +
+	"\x13_remainingFreeTimesB\x11\n" +
+	"\x0f_totalFreeTimesB\n" +
+	"\n" +
+	"\b_stepMulB\r\n" +
+	"\v_isGameOverB\v\n" +
+	"\t_roundWinB\t\n" +
+	"\a_mysMul\"m\n" +
 	"\fajtm_WinInfo\x12)\n" +
-	"\x06winArr\x18\x01 \x03(\v2\x11.ajtm.ajtm_WinArrR\x06winArr\x12\x1e\n" +
+	"\x06winArr\x18\x01 \x03(\v2\x11.ajtm.ajtm_WinArrR\x06winArr\x12#\n" +
 	"\n" +
-	"addFreeNum\x18\x02 \x01(\x03R\n" +
-	"addFreeNum\x12(\n" +
-	"\x0fwildEliMultiple\x18\x03 \x01(\x03R\x0fwildEliMultiple\";\n" +
-	"\vajtm_WinArr\x12\x18\n" +
-	"\aroadNum\x18\x01 \x01(\x03R\aroadNum\x12\x12\n" +
-	"\x04odds\x18\x02 \x01(\x03R\x04odds\"\x92\x01\n" +
-	"\x0eajtm_LongEvent\x12\x10\n" +
-	"\x03col\x18\x01 \x01(\x03R\x03col\x12\x18\n" +
-	"\aheadRow\x18\x02 \x01(\x03R\aheadRow\x12\x18\n" +
-	"\atailRow\x18\x03 \x01(\x03R\atailRow\x12\x1c\n" +
-	"\toldSymbol\x18\x04 \x01(\x03R\toldSymbol\x12\x1c\n" +
-	"\tnewSymbol\x18\x05 \x01(\x03R\tnewSymbolB\x1bZ\x19egame-grpc/game/common/pbb\x06proto3"
+	"addFreeNum\x18\x02 \x01(\x03H\x00R\n" +
+	"addFreeNum\x88\x01\x01B\r\n" +
+	"\v_addFreeNum\"Z\n" +
+	"\vajtm_WinArr\x12\x1d\n" +
+	"\aroadNum\x18\x01 \x01(\x03H\x00R\aroadNum\x88\x01\x01\x12\x17\n" +
+	"\x04odds\x18\x02 \x01(\x03H\x01R\x04odds\x88\x01\x01B\n" +
+	"\n" +
+	"\b_roadNumB\a\n" +
+	"\x05_odds\"\xe4\x01\n" +
+	"\vajtm_WinMys\x12\x15\n" +
+	"\x03col\x18\x01 \x01(\x03H\x00R\x03col\x88\x01\x01\x12\x1d\n" +
+	"\aheadRow\x18\x02 \x01(\x03H\x01R\aheadRow\x88\x01\x01\x12\x1d\n" +
+	"\atailRow\x18\x03 \x01(\x03H\x02R\atailRow\x88\x01\x01\x12!\n" +
+	"\toldSymbol\x18\x04 \x01(\x03H\x03R\toldSymbol\x88\x01\x01\x12!\n" +
+	"\tnewSymbol\x18\x05 \x01(\x03H\x04R\tnewSymbol\x88\x01\x01B\x06\n" +
+	"\x04_colB\n" +
+	"\n" +
+	"\b_headRowB\n" +
+	"\n" +
+	"\b_tailRowB\f\n" +
+	"\n" +
+	"_oldSymbolB\f\n" +
+	"\n" +
+	"_newSymbolB\x1bZ\x19egame-grpc/game/common/pbb\x06proto3"
 
 var (
 	file_ajtm_proto_rawDescOnce sync.Once
@@ -517,11 +505,11 @@ var file_ajtm_proto_goTypes = []any{
 	(*Ajtm_BetOrderResponse)(nil), // 0: ajtm.ajtm_BetOrderResponse
 	(*Ajtm_WinInfo)(nil),          // 1: ajtm.ajtm_WinInfo
 	(*Ajtm_WinArr)(nil),           // 2: ajtm.ajtm_WinArr
-	(*Ajtm_LongEvent)(nil),        // 3: ajtm.ajtm_LongEvent
+	(*Ajtm_WinMys)(nil),           // 3: ajtm.ajtm_WinMys
 }
 var file_ajtm_proto_depIdxs = []int32{
 	1, // 0: ajtm.ajtm_BetOrderResponse.winInfo:type_name -> ajtm.ajtm_WinInfo
-	3, // 1: ajtm.ajtm_BetOrderResponse.longEvents:type_name -> ajtm.ajtm_LongEvent
+	3, // 1: ajtm.ajtm_BetOrderResponse.winMys:type_name -> ajtm.ajtm_WinMys
 	2, // 2: ajtm.ajtm_WinInfo.winArr:type_name -> ajtm.ajtm_WinArr
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
@@ -535,6 +523,10 @@ func file_ajtm_proto_init() {
 	if File_ajtm_proto != nil {
 		return
 	}
+	file_ajtm_proto_msgTypes[0].OneofWrappers = []any{}
+	file_ajtm_proto_msgTypes[1].OneofWrappers = []any{}
+	file_ajtm_proto_msgTypes[2].OneofWrappers = []any{}
+	file_ajtm_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

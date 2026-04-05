@@ -45,10 +45,9 @@ type betOrderService struct {
 	eliGrid        int64Grid            // 实际消除网格
 	nextSymbolGrid int64Grid            // 消除并下落后的盘面
 	winMys         []Block              // 中奖的长符号(神秘符号)（transform 后补齐 NewSymbol）
+	mysMul         int64                // 长符号倍数
+	extMul         int64                // 触发免费模式额外奖励倍数; 3 个夺宝是3倍投注金额的奖金，每多一个夺宝符号将额外获得 2 倍的投注金额
 	debug          rtpDebugData
-
-	// 当3 个夺宝符号出现有界面上将触发免费模式，同时获得 3 倍的投注金额的奖金 同时获得 10 次免费旋转 ，每多一个夺宝符号将额外获得 2 倍的投注金额, 免费模式下不会有夺宝符号
-	extMul int64 // 基础进入到免费模式，基础模式额外奖励倍数
 }
 
 func newBetOrderService() *betOrderService {
@@ -102,27 +101,27 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, er
 
 func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 	result := &pb.Ajtm_BetOrderResponse{
-		OrderSN:      s.orderSn.OrderSN,
-		Balance:      s.gameOrder.CurBalance,
-		BetAmount:    s.betAmount.Round(2).InexactFloat64(),
-		CurrentWin:   s.bonusAmount.Round(2).InexactFloat64(),
-		FreeWin:      s.client.ClientOfFreeGame.GetFreeTotalMoney(),
-		TotalWin:     s.client.ClientOfFreeGame.GetGeneralWinTotal(),
-		Free:         s.isFreeRound,
-		Review:       s.req.Review,
-		WinInfo:      s.buildWinInfo(),
-		Cards:        s.int64GridToArray(s.symbolGrid),
-		ScatterCount: s.scatterCount,
-		IsRoundOver:  s.isRoundOver,
-		Multi:        s.stepMultiplier,
-		State:        int64(s.scene.Stage),
-		FreeNum:      int64(s.client.ClientOfFreeGame.GetFreeNum()),
-		FreeTime:     int64(s.client.ClientOfFreeGame.GetFreeTimes()),
-		WinGrid:      s.int64GridToArray(s.winGrid),
-		IsGameOver:   s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0,
-		RoundWin:     s.calcRoundWin(),
-		RoundMysMul:  s.scene.MysMulTotal,
-		LongEvents:   s.buildLongEvents(),
+		Sn:                 proto.String(s.orderSn.OrderSN),
+		Balance:            proto.Float64(s.gameOrder.CurBalance),
+		BetAmount:          proto.Float64(s.betAmount.Round(2).InexactFloat64()),
+		CurWin:             proto.Float64(s.bonusAmount.Round(2).InexactFloat64()),
+		FreeTotalWin:       proto.Float64(s.client.ClientOfFreeGame.GetFreeTotalMoney()),
+		TotalWin:           proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
+		IsFree:             proto.Bool(s.isFreeRound),
+		Review:             proto.Int64(s.req.Review),
+		WinInfo:            s.buildWinInfo(),
+		Cards:              s.int64GridToArray(s.symbolGrid),
+		ScatterCount:       proto.Int64(s.scatterCount),
+		IsRoundOver:        proto.Bool(s.isRoundOver),
+		State:              proto.Int64(int64(s.scene.Stage)),
+		RemainingFreeTimes: proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeNum())),
+		TotalFreeTimes:     proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeTimes())),
+		StepMul:            proto.Int64(s.stepMultiplier),
+		WinGrid:            s.int64GridToArray(s.winGrid),
+		IsGameOver:         proto.Bool(s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0),
+		RoundWin:           proto.Float64(s.calcRoundWin()),
+		MysMul:             proto.Int64(s.mysMul),
+		WinMys:             s.buildWinMys(),
 	}
 
 	pbData, err := proto.Marshal(result)
@@ -140,25 +139,25 @@ func (s *betOrderService) buildWinInfo() *pb.Ajtm_WinInfo {
 	winArr := make([]*pb.Ajtm_WinArr, len(s.winInfos))
 	for i, elem := range s.winInfos {
 		winArr[i] = &pb.Ajtm_WinArr{
-			RoadNum: elem.LineCount,
-			Odds:    elem.Odds,
+			RoadNum: proto.Int64(elem.LineCount),
+			Odds:    proto.Int64(elem.Odds),
 		}
 	}
 	return &pb.Ajtm_WinInfo{
 		WinArr:     winArr,
-		AddFreeNum: s.addFreeTime,
+		AddFreeNum: proto.Int64(s.addFreeTime),
 	}
 }
 
-func (s *betOrderService) buildLongEvents() []*pb.Ajtm_LongEvent {
-	events := make([]*pb.Ajtm_LongEvent, len(s.winMys))
+func (s *betOrderService) buildWinMys() []*pb.Ajtm_WinMys {
+	events := make([]*pb.Ajtm_WinMys, len(s.winMys))
 	for i, event := range s.winMys {
-		events[i] = &pb.Ajtm_LongEvent{
-			Col:       event.Col,
-			HeadRow:   event.HeadRow,
-			TailRow:   event.TailRow,
-			OldSymbol: event.OldSymbol,
-			NewSymbol: event.NewSymbol,
+		events[i] = &pb.Ajtm_WinMys{
+			Col:       proto.Int64(event.Col),
+			HeadRow:   proto.Int64(event.HeadRow),
+			TailRow:   proto.Int64(event.TailRow),
+			OldSymbol: proto.Int64(event.OldSymbol),
+			NewSymbol: proto.Int64(event.NewSymbol),
 		}
 	}
 	return events
@@ -168,9 +167,19 @@ func (s *betOrderService) calcRoundWin() float64 {
 	if s.scene.RoundMultiplier == 0 {
 		return 0
 	}
-	return s.betAmount.
+	return decimal.NewFromFloat(s.req.BaseMoney).
+		Mul(decimal.NewFromInt(s.req.Multiple)).
 		Mul(decimal.NewFromInt(s.scene.RoundMultiplier)).
-		Div(decimal.NewFromInt(_baseMultiplier)).
-		Round(2).
-		InexactFloat64()
+		Round(2).InexactFloat64()
 }
+
+//func (s *betOrderService) calcRoundWin() float64 {
+//	if s.scene.RoundMultiplier == 0 {
+//		return 0
+//	}
+//	return s.betAmount.
+//		Mul(decimal.NewFromInt(s.scene.RoundMultiplier)).
+//		Div(decimal.NewFromInt(_baseMultiplier)).
+//		Round(2).
+//		InexactFloat64()
+//}

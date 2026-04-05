@@ -2,7 +2,6 @@ package ajtm
 
 import (
 	"fmt"
-	"math/rand/v2"
 	"strconv"
 	"strings"
 
@@ -74,13 +73,11 @@ func (s *betOrderService) updateBonusAmount(stepMultiplier int64) {
 		s.bonusAmount = decimal.Zero
 		return
 	}
-	bonusAmount := s.betAmount.
-		Mul(decimal.NewFromInt(stepMultiplier)).
-		Div(decimal.NewFromInt(_baseMultiplier))
-	s.bonusAmount = bonusAmount
-
+	s.bonusAmount = decimal.NewFromFloat(s.req.BaseMoney).
+		Mul(decimal.NewFromInt(s.req.Multiple)).
+		Mul(decimal.NewFromInt(s.stepMultiplier))
 	if s.bonusAmount.GreaterThan(decimal.Zero) {
-		rounded := bonusAmount.Round(2).InexactFloat64()
+		rounded := s.bonusAmount.Round(2).InexactFloat64()
 		s.client.ClientOfFreeGame.IncrGeneralWinTotal(rounded)
 		s.client.ClientOfFreeGame.IncRoundBonus(rounded)
 		if s.isFreeRound {
@@ -180,11 +177,6 @@ func (s *betOrderService) findWinInfos() {
 	s.winInfos = winInfos
 	s.winGrid = winGrid
 	s.eliGrid = eliGrid
-
-	// 每个命中的长符号（神秘符号）累计 +2，连消结束后在 syncGameStage 中清理。
-	if n := int64(len(s.winMys)); n > 0 {
-		s.scene.MysMulTotal += n * _perSymMultiple
-	}
 }
 
 func (s *betOrderService) mergeWinGrids(src int64Grid, winGrid, eliGrid *int64Grid, seenLongHead *[_rowCount][_colCount]bool) {
@@ -298,7 +290,7 @@ func (s *betOrderService) transformWinningLongSymbols() {
 		}
 
 		oldSymbol := s.symbolGrid[r][c]
-		newSymbol := randomLongTransformSymbol(oldSymbol)
+		newSymbol := randomMysSymbol(oldSymbol)
 
 		// 长符号中奖后先转变，再参与后续盘面流转。
 		s.symbolGrid[r][c] = newSymbol
@@ -313,31 +305,3 @@ func (s *betOrderService) transformWinningLongSymbols() {
 	}
 	s.winMys = s.winMys[:writeIdx]
 }
-
-func randomLongTransformSymbol(oldSymbol int64) int64 {
-	return 1 // TODO delete
-
-	for {
-		// 仅在 1~12 中随机，排除自身和夺宝。
-		n := int64(rand.IntN(12) + 1)
-		if n != oldSymbol && n != _treasure {
-			return n
-		}
-	}
-}
-
-//func (s *betOrderService) refreshLongCountFromRoller() {
-//	// 免费模式未中奖时，按当前滚轴盘面重算 MysCount，供下一局继承。
-//	for c := 0; c < _colCount; c++ {
-//		s.scene.MysCount[c] = 0
-//	}
-//	for c := 1; c < _colCount-1; c++ {
-//		for r := 0; r < _rowCount-1; r++ {
-//			head := s.scene.SymbolRoller[c].BoardSymbol[r]
-//			if head > 0 && head < _longSymbol && s.scene.SymbolRoller[c].BoardSymbol[r+1] == _longSymbol+head {
-//				s.scene.MysCount[c]++
-//				r++
-//			}
-//		}
-//	}
-//}

@@ -24,6 +24,11 @@ type Block struct {
 	NewSymbol int64 `json:"newSymbol"` // 转变后符号
 }
 
+type initLongPos struct {
+	Col     int
+	HeadRow int
+}
+
 // rtpDebugData 保存 RTP 调试状态。
 type rtpDebugData struct {
 	open             bool      // 是否开启 RTP 调试
@@ -35,6 +40,5 @@ type rtpDebugData struct {
 	randomIndex [3]int // 1 2 3轴随机到的布局索引+1
 
 	// 免费模式下统计
-	freeAddMystery  [2]int64 // 新增长符号 [col,row]
-	freeRandomIndex [3]int   // 1 2 3轴随机到的布局索引+1
+	freeAddMystery [2]int64 // 新增长符号 [col,row]
 }

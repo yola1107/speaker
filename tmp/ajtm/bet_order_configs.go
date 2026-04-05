@@ -2,6 +2,7 @@ package ajtm
 
 import (
 	"math/rand/v2"
+	"sort"
 
 	"egame-grpc/game/common"
 
@@ -14,6 +15,7 @@ type gameConfigJson struct {
 	FreeGameBonus     int64      `json:"free_game_bonus"`                // 触发免费时的基础奖励倍数
 	ExtraAddFreeBonus int64      `json:"extra_add_free_bonus"`           // 每多一个夺宝追加的奖励倍数
 	FreeGameScatter   int64      `json:"trigger_free_game_need_scatter"` // 触发免费所需夺宝数
+	MaxWinMultiplier  int64      `json:"max_win_multiplier"`             // 最大奖励倍数
 	BaseBigSyWeights  []int64    `json:"base_mysterious_symbol_weights"` // 基础模式每列长符号数量权重
 	BigSyMultiples    []Location `json:"mystery_symbol_multiples"`       // 长符号布局模板
 	RollCfg           RollConf   `json:"roll_cfg"`
@@ -61,6 +63,10 @@ func (s *betOrderService) parseGameConfigs() {
 	s.gameConfig = &gameConfigJson{}
 	if err := jsoniter.UnmarshalFromString(raw, s.gameConfig); err != nil {
 		panic(err)
+	}
+
+	if s.gameConfig.MaxWinMultiplier <= 0 {
+		panic(" s.gameConfig.MaxWinMultiplier <= 0 ")
 	}
 
 	s.validateRollCfg(&s.gameConfig.RollCfg.Base)
@@ -133,7 +139,7 @@ func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) (int64, int64) 
 	}
 	mul := s.gameConfig.FreeGameBonus +
 		(scatterCount-s.gameConfig.FreeGameScatter)*s.gameConfig.ExtraAddFreeBonus
-	return s.gameConfig.FreeGameTimes, mul
+	return s.gameConfig.FreeGameTimes, mul * _baseMultiplier
 }
 
 func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64 {
@@ -147,33 +153,31 @@ func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64
 	return table[starN-1]
 }
 
-// initSpinSymbol 根据 base/free 配置选 reel，并生成初始盘面。
+// initSpinSymbol 根据当前模式生成初始盘面，并完成长符号落盘。
 func (s *betOrderService) initSpinSymbol() [_colCount]SymbolRoller {
-	cfg := s.gameConfig.RollCfg.Base
+	rollCfg := s.gameConfig.RollCfg.Base
 	if s.isFreeRound {
-		cfg = s.gameConfig.RollCfg.Free
+		rollCfg = s.gameConfig.RollCfg.Free
 	}
-	realIndex := cfg.UseKey[pickWeightIndex(cfg.Weight)]
-	return s.getSceneSymbol(realIndex)
-}
-
-func (s *betOrderService) getSceneSymbol(realIndex int) [_colCount]SymbolRoller {
-	var symbols [_colCount]SymbolRoller
+	realIndex := rollCfg.UseKey[pickWeightIndex(rollCfg.Weight)]
 	realData := s.gameConfig.RealData[realIndex]
 
-	for c := 0; c < _colCount; c++ {
-		symbols[c] = buildSymbolRoller(c, realIndex, realData[c])
+	// 构建不含长符号的基础盘面。
+	var symbols [_colCount]SymbolRoller
+	for col := 0; col < _colCount; col++ {
+		symbols[col] = buildSymbolRoller(col, realIndex, realData[col])
 	}
 
-	spinLongBlocks := s.buildSpinLongBlocks(&symbols)
-	s.scene.DownCount = [_colCount]int{}
-	for _, block := range spinLongBlocks {
-		s.writeLongBlockToBoard(&symbols, block)
-		if s.isFreeRound && block.Col > 0 && block.Col < _colCount-1 {
-			s.scene.DownCount[int(block.Col)]++
+	// 规划并落盘长符号。
+	positions := s.buildSpinLongPositions(&symbols)
+	nextDownCount := [_colCount]int{}
+	for _, pos := range positions {
+		s.writeLongToBoard(&symbols, pos.Col, pos.HeadRow)
+		if s.isFreeRound && pos.Col > 0 && pos.Col < _colCount-1 {
+			nextDownCount[pos.Col]++
 		}
 	}
-
+	s.scene.DownCount = nextDownCount
 	return symbols
 }
 
@@ -203,80 +207,98 @@ func buildSymbolRoller(col, realIndex int, reel []int64) SymbolRoller {
 	return roller
 }
 
-// writeLongBlockToBoard 把一个长符号块写入当前列盘面，并同步补位索引。
-func (s *betOrderService) writeLongBlockToBoard(symbols *[_colCount]SymbolRoller, block Block) {
-	col := int(block.Col)
-	headRow := int(block.HeadRow)
-	tailRow := int(block.TailRow)
+// writeLongToBoard 把一个 2 格长符号写入当前列盘面，并同步补位索引。
+func (s *betOrderService) writeLongToBoard(symbols *[_colCount]SymbolRoller, col, headRow int) {
+	tailRow := headRow + 1
 	if col <= 0 || col >= _colCount-1 || headRow < 0 || tailRow >= _rowCount || tailRow != headRow+1 {
 		return
 	}
 
-	symbols[col].Fall--
-	if symbols[col].Fall < 0 {
-		symbols[col].Fall = symbols[col].Len - 1
+	roller := &symbols[col]
+	roller.Fall--
+	if roller.Fall < 0 {
+		roller.Fall = roller.Len - 1
 	}
 
-	board := &symbols[col].BoardSymbol
+	board := &roller.BoardSymbol
 	head := (*board)[headRow]
-	for r := _rowCount - 1; r > tailRow; r-- {
-		(*board)[r] = (*board)[r-1]
+
+	if s.isFreeRound {
+		origin := *board
+		head = randomMysSymbol(_treasure)
+		(*board)[headRow] = head
+		(*board)[tailRow] = _longSymbol + head
+
+		if tailRow+1 < _rowCount {
+			dst := (*board)[tailRow+1:]
+			srcEnd := headRow + len(dst)
+			copy(dst, origin[headRow:srcEnd])
+		}
+		return
+	}
+
+	if tailRow+1 < _rowCount {
+		copy((*board)[tailRow+1:], (*board)[tailRow:_rowCount-1])
 	}
 	(*board)[tailRow] = _longSymbol + head
 }
 
-// buildSpinLongBlocks 构建本局初始盘面要写入的长符号块。
-// 基础模式按列随机生成，免费模式先恢复继承块，再尝试新增 1 个。
-func (s *betOrderService) buildSpinLongBlocks(symbols *[_colCount]SymbolRoller) []Block {
+// buildSpinLongPositions 规划本局需要写入的长符号坐标。
+func (s *betOrderService) buildSpinLongPositions(symbols *[_colCount]SymbolRoller) []initLongPos {
 	if s.isFreeRound {
-		blocks := make([]Block, 0, _maxLongBlocks)
-		candidates := make([]Block, 0, _maxLongBlocks)
 		maxPerCol := _rowCount / 2
+		maxBlocks := (_colCount - 2) * maxPerCol
+		positions := make([]initLongPos, 0, maxBlocks)
+		candidates := make([]initLongPos, 0, maxBlocks)
 
-		for c := 1; c < _colCount-1; c++ {
-			downCnt := s.scene.DownCount[c]
+		for col := 1; col < _colCount-1; col++ {
+			inherited := s.scene.DownCount[col]
+			if inherited < 0 {
+				inherited = 0
+			}
+			if inherited > maxPerCol {
+				inherited = maxPerCol
+			}
+
 			var occupied [_rowCount]bool
-			for count := downCnt - 1; count >= 0; count-- {
-				headRow := _rowCount - 2 - count*2
+			firstHeadRow := _rowCount - inherited*2
+			for i := 0; i < inherited; i++ {
+				headRow := firstHeadRow + i*2
 				tailRow := headRow + 1
 				occupied[headRow], occupied[tailRow] = true, true
-				blocks = append(blocks, Block{Col: int64(c), HeadRow: int64(headRow), TailRow: int64(tailRow)})
+				positions = append(positions, initLongPos{Col: col, HeadRow: headRow})
 			}
-			if downCnt < maxPerCol {
-				for r := 0; r < _rowCount-1; r++ {
-					if occupied[r] || occupied[r+1] {
-						continue
-					}
-					candidates = append(candidates, Block{Col: int64(c), HeadRow: int64(r), TailRow: int64(r + 1)})
-				}
-			}
-		}
 
-		if len(blocks) < _maxLongBlocks && len(candidates) > 0 {
-			added := candidates[rand.IntN(len(candidates))]
-			insertAt := len(blocks)
-			for i, block := range blocks {
-				if block.Col != added.Col {
+			if inherited == maxPerCol {
+				continue
+			}
+			for headRow := 0; headRow < _rowCount-1; headRow++ {
+				if occupied[headRow] || occupied[headRow+1] {
 					continue
 				}
-				if block.HeadRow > added.HeadRow {
-					insertAt = i
-					break
-				}
-			}
-
-			blocks = append(blocks, Block{})
-			copy(blocks[insertAt+1:], blocks[insertAt:])
-			blocks[insertAt] = added
-			if s.debug.open {
-				s.debug.freeAddMystery = [2]int64{added.Col, added.HeadRow}
+				candidates = append(candidates, initLongPos{Col: col, HeadRow: headRow})
 			}
 		}
-		return blocks
+
+		if len(positions) < maxBlocks && len(candidates) > 0 {
+			added := candidates[rand.IntN(len(candidates))]
+			positions = append(positions, added)
+			if s.debug.open {
+				s.debug.freeAddMystery = [2]int64{int64(added.Col), int64(added.HeadRow)}
+			}
+		}
+
+		sort.Slice(positions, func(i, j int) bool {
+			if positions[i].Col != positions[j].Col {
+				return positions[i].Col < positions[j].Col
+			}
+			return positions[i].HeadRow < positions[j].HeadRow
+		})
+		return positions
 	}
 
-	blocks := make([]Block, 0, _maxLongBlocks)
-	for c := 1; c < _colCount-1; c++ {
+	positions := make([]initLongPos, 0, _maxLongBlocks)
+	for col := 1; col < _colCount-1; col++ {
 		longCount := pickWeightIndex(s.gameConfig.BaseBigSyWeights)
 		if longCount == 0 || longCount > len(s.gameConfig.BigSyMultiples) {
 			continue
@@ -287,62 +309,60 @@ func (s *betOrderService) buildSpinLongBlocks(symbols *[_colCount]SymbolRoller) 
 			continue
 		}
 
-		//columnBlocks := collectLongBlocksByColumn(blocks, c)
 		startIdx := rand.IntN(len(patterns))
 		for i := 0; i < len(patterns); i++ {
 			idx := (startIdx + i) % len(patterns)
-			pattern := patterns[idx]
-			if patternBlocks, ok := s.buildColumnLongBlocksByPattern(pattern, nil, c, symbols[c].BoardSymbol, true); ok {
-				blocks = append(blocks, patternBlocks...)
-
-				if s.debug.open {
-					s.debug.realIndex[c-1] += len(patternBlocks)
-					s.debug.randomIndex[c-1] = idx + 1
-				}
-				break
+			heads, ok := buildColumnLongHeadsByPattern(patterns[idx], symbols[col].BoardSymbol, true)
+			if !ok {
+				continue
 			}
+			for _, headRow := range heads {
+				positions = append(positions, initLongPos{Col: col, HeadRow: headRow})
+			}
+			if s.debug.open {
+				s.debug.realIndex[col-1] += len(heads)
+				s.debug.randomIndex[col-1] = idx + 1
+			}
+			break
 		}
 	}
-	return blocks
+	return positions
 }
 
-// buildColumnLongBlocksByPattern 按单列模板构建长符号块。
-// forbidTreasure=true 时，长符号头部不能落在夺宝符号上。
-func (s *betOrderService) buildColumnLongBlocksByPattern(pattern []int64, columnBlocks []Block, col int, board [_rowCount]int64, forbidTreasure bool) ([]Block, bool) {
-	var patternBlocks []Block
-	row := 1
+// buildColumnLongHeadsByPattern 按单列模板构建长符号 headRow 列表。
+func buildColumnLongHeadsByPattern(pattern []int64, board [_rowCount]int64, forbidTreasure bool) ([]int, bool) {
+	heads := make([]int, 0, len(pattern))
+	row := 0
 
 	for _, value := range pattern {
-		if value > 1 {
-			headRow, tailRow := int64(row-1), int64(row)
-			if tailRow >= _rowCount {
-				return nil, false
-			}
-			if forbidTreasure && board[int(headRow)] == _treasure {
-				return nil, false
-			}
-			if hasLongBlockRowConflict(columnBlocks, headRow, tailRow) || hasLongBlockRowConflict(patternBlocks, headRow, tailRow) {
-				return nil, false
-			}
-
-			patternBlocks = append(patternBlocks, Block{
-				Col:     int64(col),
-				HeadRow: headRow,
-				TailRow: tailRow,
-			})
+		if value <= 1 {
 			row++
+			continue
 		}
-		row++
+
+		headRow := row
+		tailRow := row + 1
+		if tailRow >= _rowCount {
+			return nil, false
+		}
+		if forbidTreasure && board[headRow] == _treasure {
+			return nil, false
+		}
+
+		heads = append(heads, headRow)
+		row += 2
 	}
-	return patternBlocks, true
+	return heads, true
 }
 
-func hasLongBlockRowConflict(blocks []Block, headRow, tailRow int64) bool {
-	for _, block := range blocks {
-		if block.HeadRow == headRow || block.TailRow == headRow ||
-			block.HeadRow == tailRow || block.TailRow == tailRow {
-			return true
+func randomMysSymbol(oldSymbol int64) int64 {
+	//return 1 // TODO delete
+
+	for {
+		// 仅在 1~13 中随机，排除自身和夺宝。
+		n := int64(rand.IntN(13) + 1)
+		if n != oldSymbol && n != _treasure {
+			return n
 		}
 	}
-	return false
 }

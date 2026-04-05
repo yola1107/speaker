@@ -3,13 +3,14 @@ package ajtm
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
 const (
-	testRounds       = 10000
+	testRounds       = 1e4 //500000
 	progressInterval = 1e7
 	debugFileOpen    = 10
 	freeModeLogOnly  = 0
@@ -20,7 +21,7 @@ const (
 	maxInnerCascadeSteps = 2000
 	// maxTotalSpins：整次 TestRtp2 的 baseSpin 调用上限。baseRounds 只在基础盘回合结束时 +1，
 	// 若免费内反复加次导致 FreeNum 永不归零，外层 for baseRounds < testRounds 会永远进不去下一基础局，需此上限快速失败。
-	maxTotalSpins = 5_000_000
+	maxTotalSpins = 50_000_000
 )
 
 func TestRtp2(t *testing.T) {
@@ -162,12 +163,19 @@ func TestRtp2(t *testing.T) {
 					var freeMul int64
 					if isFree {
 						curRound = freeRoundWin
-						freeMul = int64(gameNum)
+						//freeMul = int64(gameNum)
+						freeMul = svc.mysMul // svc.scene.MysMulTotal
+
+						if freeMul == 0 {
+							freeMul = 1
+						}
 					} else {
 						curRound = roundWin
 						freeMul = 0
 					}
+
 					writeReportRoundSummary(reportBuf, totalWinAcc, freeMul, int64(curRound), isFree)
+					//writeReportRoundSummary(reportBuf, totalWinAcc, freeMul, int64(curRound), isFree)
 				}
 
 				// 统计连消步数
@@ -320,7 +328,7 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 			lineWin = stepWin * float64(elem.Multiplier) / float64(totalMultiplier)
 		}
 		fprintf(buf, "\t符号: %2d, 连线: %d, 路数：%d, 赔率: %d, sysMul: %d, 奖金: %4.2f\n",
-			elem.Symbol, elem.SymbolCount, elem.LineCount, elem.Odds, svc.scene.MysMulTotal, lineWin)
+			elem.Symbol, elem.SymbolCount, elem.LineCount, elem.Odds, svc.mysMul, lineWin)
 	}
 
 	isFreeMode := 0
@@ -328,7 +336,7 @@ func writeStepSummary(buf *strings.Builder, svc *betOrderService, step int, isFr
 		isFreeMode = 1
 	}
 	fprintf(buf, "\tMode=%d, Stage=%d, Steps=%d, RoundMul=%d, stepMul=%d, lineMul=%d, sysMul=%d, 本回合累计 step 倍数: %.2f\n",
-		isFreeMode, svc.scene.Stage, svc.scene.Steps, svc.scene.RoundMultiplier, svc.stepMultiplier, svc.lineMultiplier, svc.scene.MysMulTotal, roundWin)
+		isFreeMode, svc.scene.Stage, svc.scene.Steps, svc.scene.RoundMultiplier, svc.stepMultiplier, svc.lineMultiplier, svc.mysMul, roundWin)
 	if !svc.isRoundOver {
 		fprintf(buf, "\t连消继续 → 下一请求 Step%d（Stage 将为 Eli）\n", step+1)
 		return
@@ -389,17 +397,29 @@ freeMultiple-1
 stepMultiplier-0
 */
 
+//realIndex2-1,1,1,1,1,1
+//realIndex3-1,1,1,1,2
+//realIndex4-1,1,1,1,1,1
+
+//基础模式第 73 局-免费模式第 2 局
+//realIndex2-[1 1 1 1 2]
+//realIndex3-[2 1 1 1 1]
+//freeAddMystery-2,0
+//初始索引-46,111,85,2,38
+//totalWin-849
+//freeMultiple-2
+//stepMultiplier-0
+
 func writeReportRoundHeader(buf *strings.Builder, svc *betOrderService, gameNum int, isFree bool, triggerRound int) {
 	if isFree {
 		fprintf(buf, "基础模式第 %d 局-免费模式第 %d 局\n", triggerRound, gameNum)
-		for i := 0; i < 3; i++ {
-			//s.gameConfig.BigSyMultiples[0]
-			arr := []int64{1, 1, 1, 1, 1, 1}
-			idx := svc.debug.freeRandomIndex[i]
-			if idx > 0 {
-				arr = svc.gameConfig.BigSyMultiples[0][idx-1]
+		for i := 1; i < _colCount-1; i++ { // 1 2 3
+			board := [_rowCount]int64{}
+			for r := 0; r < _rowCount; r++ {
+				board[r] = svc.debug.originSymbolGrid[r][i]
+				//board[r] = svc.symbolGrid[r][i]
 			}
-			fprintf(buf, "realIndex%d-%v\n", i+2, arr)
+			fprintf(buf, "realIndex%d-%v\n", i+1, buildFreeModeColumnLayout(board))
 		}
 		if svc.debug.freeAddMystery[0] != 0 { // [col,row]
 			fprintf(buf, "freeAddMystery-%d,%d\n", svc.debug.freeAddMystery[0], svc.debug.freeAddMystery[1])
@@ -536,5 +556,69 @@ func writeGridToBuilder(buf *strings.Builder, grid *int64Grid, winGrid *int64Gri
 			}
 		}
 		buf.WriteByte('\n')
+	}
+}
+
+// buildFreeModeColumnLayout 把免费模式单列长符号坐标转成类似 BigSyMultiples 的布局串。
+// 示例: "[1 1 2 1 1]" 表示 headRow=2 的位置是长符号。
+func buildFreeModeColumnLayout(board [_rowCount]int64) string {
+	layout := make([]int64, 0, _rowCount)
+	for r := 0; r < _rowCount; r++ {
+		if r < _rowCount-1 {
+			head := board[r]
+			if head > 0 && head < _longSymbol && board[r+1] == _longSymbol+head {
+				layout = append(layout, 2)
+				r++ // 长符号占两格，跳过 tail
+				continue
+			}
+		}
+		// 非长符号尾标记按普通格子记 1，异常情况下也能保持长度可读。
+		layout = append(layout, 1)
+	}
+
+	s := ""
+	for k, v := range layout {
+		s += strconv.Itoa(int(v))
+		if k < _rowCount-1 {
+			s += ","
+		}
+	}
+	return s
+	//return fmt.Sprintf("%v", layout)
+}
+
+func TestBuildColumnLongHeadsByPattern(t *testing.T) {
+	patterns := [][]int64{
+		{2, 1, 1, 1, 1},
+		{1, 2, 1, 1, 1},
+		{1, 1, 2, 1, 1},
+		{1, 1, 1, 2, 1},
+		{1, 1, 1, 1, 2},
+
+		//{2, 2, 1, 1},
+		//{2, 1, 2, 1},
+		//{2, 1, 1, 2},
+		//{1, 2, 2, 1},
+		//{1, 2, 1, 2},
+		//{1, 1, 2, 2},
+	}
+
+	//var board = [6]int64{_treasure, _treasure, _treasure, _treasure, _treasure, _treasure}
+
+	for i := 0; i < _rowCount; i++ {
+		t.Logf("\n")
+
+		var board [_rowCount]int64
+		board[i] = _treasure
+
+		for k, p := range patterns {
+			heads, ok := buildColumnLongHeadsByPattern(p, board, true)
+			if !ok {
+				t.Logf("======> valid pattern: k=%d p=%v b=%v ", k, p, board)
+			} else {
+				t.Logf("pattern: k=%d p=%v b=%v heads=%v", k, p, board, heads)
+			}
+		}
+
 	}
 }

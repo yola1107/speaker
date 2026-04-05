@@ -72,6 +72,5 @@ func (s *betOrderService) syncGameStage() {
 
 	if s.scene.Steps == 0 {
 		s.scene.RoundMultiplier = 0
-		s.scene.MysMulTotal = 0
 	}
 }

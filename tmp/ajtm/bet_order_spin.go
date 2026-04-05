@@ -37,6 +37,8 @@ func (s *betOrderService) processWinInfos() {
 	s.debug.mark = 0
 	s.extMul = 0
 	s.scatterCount = s.getScatterCount()
+	s.scene.MysMulTotal += int64(len(s.winMys) * _perSymMultiple) // 中奖长符号倍数累加
+	s.mysMul = s.scene.MysMulTotal
 
 	if len(s.winInfos) > 0 {
 		s.processWin()
@@ -57,6 +59,8 @@ func (s *betOrderService) processWin() {
 	if mysMul <= 0 {
 		mysMul = 1
 	}
+	s.mysMul = mysMul
+
 	s.stepMultiplier = s.lineMultiplier * mysMul
 	s.isRoundOver = false
 
@@ -83,10 +87,10 @@ func (s *betOrderService) processNoWin() {
 	s.winMys = s.winMys[:0]
 
 	if s.isFreeRound {
-		//s.refreshLongCountFromRoller()
 		if s.scene.FreeNum <= 0 {
 			s.scene.FreeNum = 0
 			s.scene.NextStage = _spinTypeBase
+			s.scene.MysMulTotal = 0 //进入基础模式清理
 		} else {
 			s.scene.NextStage = _spinTypeFree
 		}
@@ -103,10 +107,11 @@ func (s *betOrderService) processNoWin() {
 
 		if s.scene.FreeNum > 0 {
 			s.scene.NextStage = _spinTypeFree
-			//s.scene.MysCount = [_colCount]int{} // 清理
+			s.scene.MysMulTotal = 0 // 基础模式每局都清理
 		} else {
 			s.scene.FreeNum = 0
 			s.scene.NextStage = _spinTypeBase
+			s.scene.MysMulTotal = 0 // 基础模式每局都清理
 		}
 	}
 }
