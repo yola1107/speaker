@@ -68,26 +68,15 @@ func (s *betOrderService) int64GridToArray(grid int64Grid) []int64 {
 	return elements
 }
 
-func cloneGrid(src int64Grid) int64Grid {
-	var dst int64Grid
-	for r := 0; r < _rowCount; r++ {
-		for c := 0; c < _colCount; c++ {
-			dst[r][c] = src[r][c]
-		}
-	}
-	return dst
-}
-
 func (s *betOrderService) updateBonusAmount(stepMultiplier int64) {
 	if s.debug.open || stepMultiplier == 0 {
 		s.bonusAmount = decimal.Zero
 		return
 	}
 
-	s.bonusAmount = s.betAmount.
-		Mul(decimal.NewFromInt(stepMultiplier)).
-		Div(decimal.NewFromInt(_baseMultiplier))
-
+	s.bonusAmount = decimal.NewFromFloat(s.req.BaseMoney).
+		Mul(decimal.NewFromInt(s.req.Multiple)).
+		Mul(decimal.NewFromInt(s.stepMultiplier))
 	if s.bonusAmount.GreaterThan(decimal.Zero) {
 		rounded := s.bonusAmount.Round(2).InexactFloat64()
 		s.client.ClientOfFreeGame.IncrGeneralWinTotal(rounded)
@@ -101,16 +90,54 @@ func (s *betOrderService) updateBonusAmount(stepMultiplier int64) {
 func (s *betOrderService) handleSymbolGrid() {
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
-			s.originGrid[r][c] = s.scene.SymbolRoller[c].BoardSymbol[r]
+			s.symbolGrid[r][c] = s.scene.SymbolRoller[c].BoardSymbol[r]
 		}
 	}
+
+	s.handleMystery()
+}
+
+func (s *betOrderService) handleMystery() {
+	s.debug.origin = s.symbolGrid
+	s.mysteryGrid = int64Grid{}
+
+	sakuraEndCol := -1
+	if s.isHitSakuraTriggerRate() {
+		sakuraEndCol = s.pickSakuraReels()
+	}
+
+	hit := false
+	x := s.pickMMysterySymbol()
+	for c := 0; c < _colCount; c++ {
+		for r := 0; r < _rowCount; r++ {
+			sym := s.symbolGrid[r][c]
+			if sym != _mystery && c >= sakuraEndCol && (!s.isFreeRound || s.scene.Lock[r][c] == 0) {
+				continue
+			}
+			s.mysteryGrid[r][c] = x
+			s.symbolGrid[r][c] = x
+			hit = true
+		}
+	}
+
+	// 免费游戏保存所有揭开的符号位置
+	if s.isFreeRound {
+		s.scene.Lock = s.mysteryGrid
+	}
+
+	if !hit {
+		s.debug.mysSymbol = -1
+	} else {
+		s.debug.mysSymbol = x
+	}
+	s.debug.sakuraCol = sakuraEndCol
 }
 
 func (s *betOrderService) getScatterCount() int64 {
 	var count int64
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
-			if s.finalGrid[r][c] == _Scatter {
+			if s.symbolGrid[r][c] == _treasure {
 				count++
 			}
 		}
@@ -118,111 +145,73 @@ func (s *betOrderService) getScatterCount() int64 {
 	return count
 }
 
-func markLineHitsOnTotal(line []int, winGrid *int64Grid, total *int64Grid) {
-	for _, p := range line {
-		r, c := p/_colCount, p%_colCount
-		if (*winGrid)[r][c] > 0 {
-			(*total)[r][c] = 1
-		}
-	}
-}
-
-func isRegularSymbol(symbol int64) bool {
-	return symbol >= _10 && symbol <= _Miko
-}
-
 func (s *betOrderService) checkSymbolGridWin() {
 	var winInfos []WinInfo
 	var totalWinGrid int64Grid
 
 	for i, line := range s.gameConfig.Lines {
-		allWild := true
-		for _, p := range line {
-			r := p / _colCount
-			c := p % _colCount
-			if s.finalGrid[r][c] != _Wild {
-				allWild = false
-				break
+		firstP := line[0]
+		firstR := firstP / _colCount
+		firstC := firstP % _colCount
+		firstSymbol := s.symbolGrid[firstR][firstC]
+
+		var (
+			symbolCandidates [_wild + 1]int64
+			candCount        int
+		)
+
+		if firstSymbol == _wild {
+			for symbol := _blank + 1; symbol <= _wild; symbol++ {
+				symbolCandidates[candCount] = symbol
+				candCount++
 			}
-		}
-		if allWild {
-			if odds := s.getSymbolBaseMultiplier(_Wild, len(line)); odds > 0 {
-				var winGrid int64Grid
-				for _, p := range line {
-					r := p / _colCount
-					c := p % _colCount
-					winGrid[r][c] = 1
-				}
-				winInfos = append(winInfos, WinInfo{
-					Symbol:      _Wild,
-					SymbolCount: int64(len(line)),
-					LineCount:   int64(i),
-					Odds:        odds,
-					WinGrid:     winGrid,
-				})
-				markLineHitsOnTotal(line, &winGrid, &totalWinGrid)
-			}
+		} else if firstSymbol >= _blank+1 && firstSymbol <= _wild {
+			symbolCandidates[0] = firstSymbol
+			candCount = 1
+		} else {
 			continue
 		}
 
-		firstPos := line[0]
-		firstR, firstC := firstPos/_colCount, firstPos%_colCount
-		firstSymbol := s.finalGrid[firstR][firstC]
-
-		var candidates []int64
-		switch {
-		case firstSymbol == _Wild:
-			candidates = []int64{_10, _J, _Q, _K, _A, _Geta, _Fan, _Bell, _Ninja, _Miko}
-		case isRegularSymbol(firstSymbol):
-			candidates = []int64{firstSymbol}
-		default:
-			continue
-		}
-
-		var best *WinInfo
-		for _, symbol := range candidates {
-			var count int
+		for idx := 0; idx < candCount; idx++ {
+			symbol := symbolCandidates[idx]
+			var count int64
 			var winGrid int64Grid
+			var exist bool
+
 			for _, p := range line {
 				r, c := p/_colCount, p%_colCount
-				curr := s.finalGrid[r][c]
-				if curr == symbol || curr == _Wild {
-					winGrid[r][c] = 1
+				currSymbol := s.symbolGrid[r][c]
+				if currSymbol == symbol || currSymbol == _wild {
+					if currSymbol == symbol {
+						exist = true
+					}
+					winGrid[r][c] = currSymbol
 					count++
-					continue
+				} else {
+					break
 				}
-				break
 			}
-			if count < _minMatchCount {
-				continue
-			}
-			odds := s.getSymbolBaseMultiplier(symbol, count)
-			if odds <= 0 {
-				continue
-			}
-			cur := &WinInfo{
-				Symbol:      symbol,
-				SymbolCount: int64(count),
-				LineCount:   int64(i),
-				Odds:        odds,
-				WinGrid:     winGrid,
-			}
-			if best == nil || cur.Odds > best.Odds || (cur.Odds == best.Odds && cur.Symbol > best.Symbol) {
-				best = cur
-			}
-		}
 
-		if best != nil {
-			winInfos = append(winInfos, *best)
-			markLineHitsOnTotal(line, &best.WinGrid, &totalWinGrid)
+			if count >= _minMatchCount && exist {
+				if odds := s.getSymbolBaseMultiplier(symbol, int(count)); odds > 0 {
+					winInfos = append(winInfos, WinInfo{
+						Symbol:      symbol,
+						SymbolCount: count,
+						LineCount:   int64(i),
+						Odds:        odds,
+						WinGrid:     winGrid,
+					})
+					for _, p := range line {
+						r, c := p/_colCount, p%_colCount
+						if winGrid[r][c] > 0 {
+							totalWinGrid[r][c] = 1
+						}
+					}
+				}
+			}
 		}
 	}
 
-	var totalOdds int64
-	for _, w := range winInfos {
-		totalOdds += w.Odds
-	}
-	s.lineMultiplier = totalOdds
 	s.winInfos = winInfos
 	s.winGrid = totalWinGrid
 }

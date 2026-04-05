@@ -15,4 +15,8 @@ type WinInfo struct {
 // rtpDebugData 控制本地 RTP / 冒烟测试时的调试行为。
 type rtpDebugData struct {
 	open bool // true 表示启用测试模式，不走线上缓存/扣费逻辑
+
+	origin    int64Grid // 原始符号
+	sakuraCol int       // 樱吹雪替换到的最远列（3/4/5） 默认-1
+	mysSymbol int64     // 百变樱花本次统一揭示出的目标符号
 }

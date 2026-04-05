@@ -19,7 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// betOrderService 封装 yhwy 单次下注请求的完整执行上下文。
+// betOrderService .
 type betOrderService struct {
 	req            *request.BetOrderReq // 原始下注请求
 	merchant       *merchant.Merchant   // 商户信息
@@ -41,16 +41,11 @@ type betOrderService struct {
 	lineMultiplier int64                // 全部中奖线赔率之和
 	stepMultiplier int64                // 本 step 最终结算倍数
 	winInfos       []WinInfo            // 本次命中的所有中奖线明细
-	originGrid     int64Grid            // 原始停轮盘面
-	mysteryGrid    int64Grid            // 复位/扩散后、揭示前盘面
-	finalGrid      int64Grid            // 揭示完成后的最终判奖盘面
+	symbolGrid     int64Grid            // 原始停轮盘面
 	winGrid        int64Grid            // 所有中奖位置的掩码盘面
-	revealSymbol   int64                // 百变樱花本次统一揭示出的目标符号
-	spreadToReel   int64                // 樱花扩散最远到第几列，未扩散时为 1
-	isSakuraReset  bool                 // 第 1 列是否触发樱花复位
-	resetDirection int64                // 复位方向：无 / 上移 / 下移
+	debug          rtpDebugData         // 本地测试控制开关
 
-	debug rtpDebugData // 本地测试控制开关
+	mysteryGrid int64Grid // 樱花效果后、揭示前盘面
 }
 
 func newBetOrderService() *betOrderService {
@@ -84,7 +79,6 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, er
 	}
 
 	if err = s.reloadScene(); err != nil {
-		global.GVA_LOG.Error("betOrder: reloadScene failed", zap.Error(err))
 		return nil, "", err
 	}
 	if err = s.baseSpin(); err != nil {
@@ -105,30 +99,25 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, er
 
 func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 	result := &pb.Yhwy_BetOrderResponse{
-		OrderSN:        proto.String(s.orderSn.OrderSN),
-		Balance:        proto.Float64(s.gameOrder.CurBalance),
-		BetAmount:      proto.Float64(s.betAmount.Round(2).InexactFloat64()),
-		CurrentWin:     proto.Float64(s.bonusAmount.Round(2).InexactFloat64()),
-		FreeWin:        proto.Float64(s.client.ClientOfFreeGame.GetFreeTotalMoney()),
-		TotalWin:       proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
-		Free:           proto.Bool(s.isFreeRound),
-		Review:         proto.Int64(s.req.Review),
-		WinInfo:        s.buildWinInfo(),
-		Cards:          s.int64GridToArray(s.originGrid),
-		ScatterCount:   proto.Int64(s.scatterCount),
-		IsRoundOver:    proto.Bool(s.isRoundOver),
-		State:          proto.Int64(int64(s.scene.Stage)),
-		FreeNum:        proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeNum())),
-		FreeTime:       proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeTimes())),
-		WinGrid:        s.int64GridToArray(s.winGrid),
-		IsGameOver:     proto.Bool(s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0),
-		EffectCards:    s.int64GridToArray(s.mysteryGrid),
-		FinalCards:     s.int64GridToArray(s.finalGrid),
-		RevealSymbol:   proto.Int64(s.revealSymbol),
-		SpreadToReel:   proto.Int64(s.spreadToReel),
-		IsSakuraReset:  proto.Bool(s.isSakuraReset),
-		ResetDirection: proto.Int64(s.resetDirection),
-		LineMultiplier: proto.Int64(s.lineMultiplier),
+		Sn:                 proto.String(s.orderSn.OrderSN),
+		Balance:            proto.Float64(s.gameOrder.CurBalance),
+		BetAmount:          proto.Float64(s.betAmount.Round(2).InexactFloat64()),
+		CurWin:             proto.Float64(s.bonusAmount.Round(2).InexactFloat64()),
+		FreeTotalWin:       proto.Float64(s.client.ClientOfFreeGame.GetFreeTotalMoney()),
+		TotalWin:           proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
+		IsFree:             proto.Bool(s.isFreeRound),
+		Review:             proto.Int64(s.req.Review),
+		WinInfo:            s.buildWinInfo(),
+		Cards:              s.int64GridToArray(s.symbolGrid),
+		ScatterCount:       proto.Int64(s.scatterCount),
+		IsRoundOver:        proto.Bool(s.isRoundOver),
+		State:              proto.Int64(int64(s.scene.Stage)),
+		RemainingFreeTimes: proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeNum())),
+		TotalFreeTimes:     proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeTimes())),
+		WinGrid:            s.int64GridToArray(s.winGrid),
+		IsGameOver:         proto.Bool(s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0),
+		LineMultiplier:     proto.Int64(s.stepMultiplier),
+		MysGrid:            s.int64GridToArray(s.mysteryGrid),
 	}
 
 	pbData, err := proto.Marshal(result)
@@ -148,13 +137,12 @@ func (s *betOrderService) buildWinInfo() *pb.Yhwy_WinInfo {
 		winArr[i] = &pb.Yhwy_WinArr{
 			RoadNum: proto.Int64(elem.LineCount),
 			Odds:    proto.Int64(elem.Odds),
-			Symbol:  proto.Int64(elem.Symbol),
-			Count:   proto.Int64(elem.SymbolCount),
+			//Symbol:  proto.Int64(elem.Symbol),
+			//Count:   proto.Int64(elem.SymbolCount),
 		}
 	}
 	return &pb.Yhwy_WinInfo{
-		WinArr:         winArr,
-		AddFreeNum:     proto.Int64(s.addFreeTime),
-		LineMultiplier: proto.Int64(s.lineMultiplier),
+		WinArr:     winArr,
+		AddFreeNum: proto.Int64(s.addFreeTime),
 	}
 }

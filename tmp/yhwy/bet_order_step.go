@@ -106,15 +106,15 @@ func (s *betOrderService) updateGameOrder() error {
 
 func (s *betOrderService) fillInGameOrderDetails() error {
 	var err error
-	if s.gameOrder.BetRawDetail, err = json.CJSON.MarshalToString(s.finalGrid); err != nil {
-		global.GVA_LOG.Error("fillInGameOrderDetails: marshal finalGrid", zap.Error(err))
+	if s.gameOrder.BetRawDetail, err = json.CJSON.MarshalToString(s.symbolGrid); err != nil {
+		global.GVA_LOG.Error("fillInGameOrderDetails: marshal symbolGrid", zap.Error(err))
 		return err
 	}
 	if s.gameOrder.BonusRawDetail, err = json.CJSON.MarshalToString(s.winGrid); err != nil {
 		global.GVA_LOG.Error("fillInGameOrderDetails: marshal winGrid", zap.Error(err))
 		return err
 	}
-	s.gameOrder.BetDetail = s.symbolGridToString(s.finalGrid)
+	s.gameOrder.BetDetail = s.symbolGridToString(s.symbolGrid)
 	s.gameOrder.BonusDetail = s.symbolGridToString(s.winGrid)
 	winDetails, err := json.CJSON.MarshalToString(s.buildWinInfo())
 	if err != nil {

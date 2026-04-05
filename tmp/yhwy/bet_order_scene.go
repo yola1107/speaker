@@ -13,10 +13,13 @@ import (
 
 // SpinSceneData 持久化场景
 type SpinSceneData struct {
-	Stage        int8                    `json:"stage"`        // 当前阶段：Base / Free
-	NextStage    int8                    `json:"nextStage"`    // 下一手切换到的阶段
+	Stage        int8                    `json:"stage"`        // 运行阶段
+	NextStage    int8                    `json:"nStage"`       // 下一阶段
 	FreeNum      int64                   `json:"freeNum"`      // 剩余免费次数
-	SymbolRoller [_colCount]SymbolRoller `json:"symbolRoller"` // 上一次抽出的 5 列滚轴结果
+	SymbolRoller [_colCount]SymbolRoller `json:"symbolRoller"` // 滚轮符号表
+	Lock         int64Grid               `json:"lock"`         // 锁定的百变樱花位置 (免费游戏)
+
+	//CollectCount  int64                   `json:"collectCount"`  // 樱花收集总数
 }
 
 var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", GameID)
@@ -46,6 +49,7 @@ func (s *betOrderService) reloadScene() error {
 	s.scene = new(SpinSceneData)
 	if v := global.GVA_REDIS.Get(context.Background(), s.sceneKey()).Val(); len(v) > 0 {
 		if err := jsoniter.UnmarshalFromString(v, s.scene); err != nil {
+			global.GVA_LOG.Error("betOrder: reloadScene failed", zap.Error(err))
 			s.cleanScene()
 			return err
 		}
@@ -56,11 +60,7 @@ func (s *betOrderService) reloadScene() error {
 
 func (s *betOrderService) syncGameStage() {
 	if s.scene.Stage == 0 {
-		if s.scene.FreeNum > 0 {
-			s.scene.Stage = _spinTypeFree
-		} else {
-			s.scene.Stage = _spinTypeBase
-		}
+		s.scene.Stage = _spinTypeBase
 	}
 	if s.scene.NextStage > 0 {
 		s.scene.Stage = s.scene.NextStage

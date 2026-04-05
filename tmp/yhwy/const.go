@@ -1,6 +1,6 @@
 package yhwy
 
-// 文档地址 https://gt7xqi.axshare.com/
+// 文档地址 https://fn8fjx.axshare.com/?id=msyn5a&p=%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E_4&g=1
 
 const GameID = 18959 // "樱花物语"
 const _baseMultiplier = 25
@@ -10,36 +10,61 @@ const (
 	_colCount = 5
 )
 
-// 符号ID
 const (
-	_blank   int64 = -1
-	_10      int64 = 0
-	_J       int64 = 1
-	_Q       int64 = 2
-	_K       int64 = 3
-	_A       int64 = 4
-	_Geta    int64 = 5
-	_Fan     int64 = 6
-	_Bell    int64 = 7
-	_Ninja   int64 = 8
-	_Miko    int64 = 9
-	_Scatter int64 = 10
-	_Mystery int64 = 11
-	_Wild    int64 = 12
+	_blank    int64 = 0
+	_         int64 = 1
+	_         int64 = 2
+	_         int64 = 3
+	_         int64 = 4
+	_         int64 = 5
+	_         int64 = 6
+	_         int64 = 7
+	_         int64 = 8
+	_         int64 = 9
+	_         int64 = 10
+	_wild     int64 = 11 // wild
+	_mystery  int64 = 12 // 百变樱花
+	_treasure int64 = 13 // 夺宝
 )
 
-const (
-	_symbolCount   = 13
-	_minMatchCount = 3
-)
+const _minMatchCount = 3
 
 const (
 	_spinTypeBase = 1
 	_spinTypeFree = 21
 )
 
-const (
-	_resetDirectionNone int64 = 0
-	_resetDirectionUp   int64 = 1
-	_resetDirectionDown int64 = 2
-)
+/*
+玩法特色简介：
+	1、百变樱花符号（神秘符号）：
+		   ◇ 滚轴中的百变樱花符号堆叠，旋转结束后，盘面中的所有百变樱花符号根据几率揭示为同一种其他奖励符号
+	2、免费游戏：
+		   ◇ 3个SCATTER符号触发免费游戏(暂定8次)
+           ◇ 免费游戏中出现百变樱花符号将会锁定在盘面中，直到免费环节结束
+
+三、玩法规则
+1、BaseGame：
+       ◇ 百搭符号：百搭符号可出现在1～5列滚轮中，也可由【百变樱花】揭示出
+       ◇ 百变樱花：在滚轮中堆叠配置，总是会连续出现。停轮后，盘面中所有的【百变樱花】将同时揭示为同一种赔付符号（SCATTER除外）
+               ◇  百变樱花揭示符号权重配置：
+                      {
+                         “symbol_id”:[1,2,3,4,5,6,7,8,9,10,11],
+                          “base_open_weight”:[10,20,30,40,50,60,70,80,100,100],
+                          “free_open_weight”:[10,20,30,40,50,60,70,80,100,100]
+
+                      }
+               ◇  樱花收集（前端演示用，不影响真实触发樱吹雪概率）：樱花揭示时的花辨将被收集到机台上方，根据收集数量，樱花堆显示不同等级的外观。共4级外观
+                      “lv_collect_count”:[0,10,40,100]
+       ◇ 樱吹雪：每次旋转时，有机率触发樱吹雪：将第1列至第3列、第1列至第4列或第1列至第5列（随机选择其中一种情况）的所有符号，全部替换为百变樱花符号
+
+               ◇  触发后，樱花收集进度重置
+                      “sakura_trigger_rate”:3%,
+                      “sakura_reels”:[3,4,5],
+                      “sakura_reels_weight”:[1000,100,10],
+
+       ◇ SCATTER：【SCATTER】符号只出现在第1、3、5列，全屏3个【SCATTER】时，触发8次免费游戏
+2、FreeGame：
+       ◇ 免费游戏中出现【百变樱花】符号将会锁定在盘面中，直到免费环节结束
+       ◇ 【百变樱花】符号揭示后，在下次旋转时再恢复为【百变樱花】
+       ◇ 免费游戏中不再出现SCATTER符号
+*/

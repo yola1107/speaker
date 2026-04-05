@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.34.1
-// source: pb/yhwy.proto
+// source: yhwy.proto
 
 package pb
 
@@ -23,38 +23,33 @@ const (
 
 // yhwy_BetOrderResponse 是单次下注返回给前端的完整结果。
 type Yhwy_BetOrderResponse struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	OrderSN        *string                `protobuf:"bytes,1,opt,name=orderSN,proto3,oneof" json:"orderSN,omitempty"`                 // 订单号
-	Balance        *float64               `protobuf:"fixed64,2,opt,name=balance,proto3,oneof" json:"balance,omitempty"`               // 当前余额
-	BetAmount      *float64               `protobuf:"fixed64,3,opt,name=betAmount,proto3,oneof" json:"betAmount,omitempty"`           // 本轮投注额
-	CurrentWin     *float64               `protobuf:"fixed64,4,opt,name=currentWin,proto3,oneof" json:"currentWin,omitempty"`         // 本次 step 赢得金额
-	FreeWin        *float64               `protobuf:"fixed64,5,opt,name=freeWin,proto3,oneof" json:"freeWin,omitempty"`               // 当前免费阶段累计赢得金额
-	TotalWin       *float64               `protobuf:"fixed64,6,opt,name=totalWin,proto3,oneof" json:"totalWin,omitempty"`             // 本大回合累计赢得金额
-	Free           *bool                  `protobuf:"varint,7,opt,name=free,proto3,oneof" json:"free,omitempty"`                      // 当前是否处于免费游戏
-	Review         *int64                 `protobuf:"varint,8,opt,name=review,proto3,oneof" json:"review,omitempty"`                  // 复盘标记
-	WinInfo        *Yhwy_WinInfo          `protobuf:"bytes,9,opt,name=winInfo,proto3,oneof" json:"winInfo,omitempty"`                 // 中奖详情
-	Cards          []int64                `protobuf:"varint,10,rep,packed,name=cards,proto3" json:"cards,omitempty"`                  // 原始停轮盘面，按行展开的 20 个格子
-	ScatterCount   *int64                 `protobuf:"varint,11,opt,name=scatterCount,proto3,oneof" json:"scatterCount,omitempty"`     // 最终盘面 Scatter 数量
-	IsRoundOver    *bool                  `protobuf:"varint,12,opt,name=isRoundOver,proto3,oneof" json:"isRoundOver,omitempty"`       // 当前 round 是否结束
-	State          *int64                 `protobuf:"varint,13,opt,name=state,proto3,oneof" json:"state,omitempty"`                   // 当前阶段：1=Base, 21=Free
-	FreeNum        *int64                 `protobuf:"varint,14,opt,name=freeNum,proto3,oneof" json:"freeNum,omitempty"`               // 剩余免费次数
-	FreeTime       *int64                 `protobuf:"varint,15,opt,name=freeTime,proto3,oneof" json:"freeTime,omitempty"`             // 已执行免费次数
-	WinGrid        []int64                `protobuf:"varint,16,rep,packed,name=winGrid,proto3" json:"winGrid,omitempty"`              // 中奖位置掩码盘面，按行展开
-	IsGameOver     *bool                  `protobuf:"varint,17,opt,name=isGameOver,proto3,oneof" json:"isGameOver,omitempty"`         // 整个免费大回合是否结束
-	EffectCards    []int64                `protobuf:"varint,18,rep,packed,name=effectCards,proto3" json:"effectCards,omitempty"`      // 复位/扩散后、揭示前盘面
-	FinalCards     []int64                `protobuf:"varint,19,rep,packed,name=finalCards,proto3" json:"finalCards,omitempty"`        // 揭示完成后的最终判奖盘面
-	RevealSymbol   *int64                 `protobuf:"varint,20,opt,name=revealSymbol,proto3,oneof" json:"revealSymbol,omitempty"`     // 百变樱花本次揭示出的目标符号
-	SpreadToReel   *int64                 `protobuf:"varint,21,opt,name=spreadToReel,proto3,oneof" json:"spreadToReel,omitempty"`     // 樱花扩散最远到第几列
-	IsSakuraReset  *bool                  `protobuf:"varint,22,opt,name=isSakuraReset,proto3,oneof" json:"isSakuraReset,omitempty"`   // 是否触发樱花复位
-	ResetDirection *int64                 `protobuf:"varint,23,opt,name=resetDirection,proto3,oneof" json:"resetDirection,omitempty"` // 复位方向：0=无,1=上移,2=下移
-	LineMultiplier *int64                 `protobuf:"varint,24,opt,name=lineMultiplier,proto3,oneof" json:"lineMultiplier,omitempty"` // 所有中奖线赔率之和
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Sn                 *string                `protobuf:"bytes,1,opt,name=sn,proto3,oneof" json:"sn,omitempty"`                                   // 订单号
+	Balance            *float64               `protobuf:"fixed64,2,opt,name=balance,proto3,oneof" json:"balance,omitempty"`                       // 玩家当前余额
+	BetAmount          *float64               `protobuf:"fixed64,3,opt,name=betAmount,proto3,oneof" json:"betAmount,omitempty"`                   // 本局下注金额 (baseMoney * multiple * 50)
+	CurWin             *float64               `protobuf:"fixed64,4,opt,name=curWin,proto3,oneof" json:"curWin,omitempty"`                         // 本局赢取金额
+	FreeTotalWin       *float64               `protobuf:"fixed64,5,opt,name=freeTotalWin,proto3,oneof" json:"freeTotalWin,omitempty"`             // 免费游戏累计赢取 (ClientOfFreeGame.GetFreeTotalMoney)
+	TotalWin           *float64               `protobuf:"fixed64,6,opt,name=totalWin,proto3,oneof" json:"totalWin,omitempty"`                     // 本回合总赢取 (ClientOfFreeGame.GetGeneralWinTotal)
+	IsFree             *bool                  `protobuf:"varint,7,opt,name=isFree,proto3,oneof" json:"isFree,omitempty"`                          // 是否处于免费模式
+	Review             *int64                 `protobuf:"varint,8,opt,name=review,proto3,oneof" json:"review,omitempty"`                          // 复盘标志 1=复盘 0=正常
+	WinInfo            *Yhwy_WinInfo          `protobuf:"bytes,9,opt,name=winInfo,proto3,oneof" json:"winInfo,omitempty"`                         // 中奖详情
+	Cards              []int64                `protobuf:"varint,10,rep,packed,name=cards,proto3" json:"cards,omitempty"`                          // 符号网格 8×5，按行优先 elements共40个（服务端方向，不翻转）
+	ScatterCount       *int64                 `protobuf:"varint,11,opt,name=scatterCount,proto3,oneof" json:"scatterCount,omitempty"`             // Scatter 个数（Base=底4行；Free=已解锁行）
+	IsRoundOver        *bool                  `protobuf:"varint,12,opt,name=isRoundOver,proto3,oneof" json:"isRoundOver,omitempty"`               // 是否本局结束
+	State              *int64                 `protobuf:"varint,13,opt,name=state,proto3,oneof" json:"state,omitempty"`                           // 游戏状态 0=普通 1=免费
+	RemainingFreeTimes *int64                 `protobuf:"varint,14,opt,name=remainingFreeTimes,proto3,oneof" json:"remainingFreeTimes,omitempty"` // 剩余免费次数 ClientOfFreeGame.GetFreeNum
+	TotalFreeTimes     *int64                 `protobuf:"varint,15,opt,name=totalFreeTimes,proto3,oneof" json:"totalFreeTimes,omitempty"`         // 已使用免费次数 ClientOfFreeGame.GetFreeTimes
+	WinGrid            []int64                `protobuf:"varint,16,rep,packed,name=winGrid,proto3" json:"winGrid,omitempty"`                      // 中奖位置网格 8×5（仅标记底4行，1=中奖位 0=未中奖）
+	IsGameOver         *bool                  `protobuf:"varint,17,opt,name=isGameOver,proto3,oneof" json:"isGameOver,omitempty"`                 // 大回合结束
+	LineMultiplier     *int64                 `protobuf:"varint,18,opt,name=lineMultiplier,proto3,oneof" json:"lineMultiplier,omitempty"`         // 本次所有中奖线赔率之和
+	MysGrid            []int64                `protobuf:"varint,19,rep,packed,name=mysGrid,proto3" json:"mysGrid,omitempty"`                      // 百变樱花盘面
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Yhwy_BetOrderResponse) Reset() {
 	*x = Yhwy_BetOrderResponse{}
-	mi := &file_pb_yhwy_proto_msgTypes[0]
+	mi := &file_yhwy_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -66,7 +61,7 @@ func (x *Yhwy_BetOrderResponse) String() string {
 func (*Yhwy_BetOrderResponse) ProtoMessage() {}
 
 func (x *Yhwy_BetOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pb_yhwy_proto_msgTypes[0]
+	mi := &file_yhwy_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -79,12 +74,12 @@ func (x *Yhwy_BetOrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Yhwy_BetOrderResponse.ProtoReflect.Descriptor instead.
 func (*Yhwy_BetOrderResponse) Descriptor() ([]byte, []int) {
-	return file_pb_yhwy_proto_rawDescGZIP(), []int{0}
+	return file_yhwy_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Yhwy_BetOrderResponse) GetOrderSN() string {
-	if x != nil && x.OrderSN != nil {
-		return *x.OrderSN
+func (x *Yhwy_BetOrderResponse) GetSn() string {
+	if x != nil && x.Sn != nil {
+		return *x.Sn
 	}
 	return ""
 }
@@ -103,16 +98,16 @@ func (x *Yhwy_BetOrderResponse) GetBetAmount() float64 {
 	return 0
 }
 
-func (x *Yhwy_BetOrderResponse) GetCurrentWin() float64 {
-	if x != nil && x.CurrentWin != nil {
-		return *x.CurrentWin
+func (x *Yhwy_BetOrderResponse) GetCurWin() float64 {
+	if x != nil && x.CurWin != nil {
+		return *x.CurWin
 	}
 	return 0
 }
 
-func (x *Yhwy_BetOrderResponse) GetFreeWin() float64 {
-	if x != nil && x.FreeWin != nil {
-		return *x.FreeWin
+func (x *Yhwy_BetOrderResponse) GetFreeTotalWin() float64 {
+	if x != nil && x.FreeTotalWin != nil {
+		return *x.FreeTotalWin
 	}
 	return 0
 }
@@ -124,9 +119,9 @@ func (x *Yhwy_BetOrderResponse) GetTotalWin() float64 {
 	return 0
 }
 
-func (x *Yhwy_BetOrderResponse) GetFree() bool {
-	if x != nil && x.Free != nil {
-		return *x.Free
+func (x *Yhwy_BetOrderResponse) GetIsFree() bool {
+	if x != nil && x.IsFree != nil {
+		return *x.IsFree
 	}
 	return false
 }
@@ -173,16 +168,16 @@ func (x *Yhwy_BetOrderResponse) GetState() int64 {
 	return 0
 }
 
-func (x *Yhwy_BetOrderResponse) GetFreeNum() int64 {
-	if x != nil && x.FreeNum != nil {
-		return *x.FreeNum
+func (x *Yhwy_BetOrderResponse) GetRemainingFreeTimes() int64 {
+	if x != nil && x.RemainingFreeTimes != nil {
+		return *x.RemainingFreeTimes
 	}
 	return 0
 }
 
-func (x *Yhwy_BetOrderResponse) GetFreeTime() int64 {
-	if x != nil && x.FreeTime != nil {
-		return *x.FreeTime
+func (x *Yhwy_BetOrderResponse) GetTotalFreeTimes() int64 {
+	if x != nil && x.TotalFreeTimes != nil {
+		return *x.TotalFreeTimes
 	}
 	return 0
 }
@@ -201,48 +196,6 @@ func (x *Yhwy_BetOrderResponse) GetIsGameOver() bool {
 	return false
 }
 
-func (x *Yhwy_BetOrderResponse) GetEffectCards() []int64 {
-	if x != nil {
-		return x.EffectCards
-	}
-	return nil
-}
-
-func (x *Yhwy_BetOrderResponse) GetFinalCards() []int64 {
-	if x != nil {
-		return x.FinalCards
-	}
-	return nil
-}
-
-func (x *Yhwy_BetOrderResponse) GetRevealSymbol() int64 {
-	if x != nil && x.RevealSymbol != nil {
-		return *x.RevealSymbol
-	}
-	return 0
-}
-
-func (x *Yhwy_BetOrderResponse) GetSpreadToReel() int64 {
-	if x != nil && x.SpreadToReel != nil {
-		return *x.SpreadToReel
-	}
-	return 0
-}
-
-func (x *Yhwy_BetOrderResponse) GetIsSakuraReset() bool {
-	if x != nil && x.IsSakuraReset != nil {
-		return *x.IsSakuraReset
-	}
-	return false
-}
-
-func (x *Yhwy_BetOrderResponse) GetResetDirection() int64 {
-	if x != nil && x.ResetDirection != nil {
-		return *x.ResetDirection
-	}
-	return 0
-}
-
 func (x *Yhwy_BetOrderResponse) GetLineMultiplier() int64 {
 	if x != nil && x.LineMultiplier != nil {
 		return *x.LineMultiplier
@@ -250,19 +203,25 @@ func (x *Yhwy_BetOrderResponse) GetLineMultiplier() int64 {
 	return 0
 }
 
+func (x *Yhwy_BetOrderResponse) GetMysGrid() []int64 {
+	if x != nil {
+		return x.MysGrid
+	}
+	return nil
+}
+
 // yhwy_WinInfo 汇总本次 step 的中奖线与免费次数变化。
 type Yhwy_WinInfo struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	WinArr         []*Yhwy_WinArr         `protobuf:"bytes,1,rep,name=winArr,proto3" json:"winArr,omitempty"`                        // 本次命中的所有中奖线
-	AddFreeNum     *int64                 `protobuf:"varint,2,opt,name=addFreeNum,proto3,oneof" json:"addFreeNum,omitempty"`         // 本次新增的免费次数
-	LineMultiplier *int64                 `protobuf:"varint,3,opt,name=lineMultiplier,proto3,oneof" json:"lineMultiplier,omitempty"` // 本次所有中奖线赔率之和
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WinArr        []*Yhwy_WinArr         `protobuf:"bytes,1,rep,name=winArr,proto3" json:"winArr,omitempty"`                // 本次命中的所有中奖线
+	AddFreeNum    *int64                 `protobuf:"varint,2,opt,name=addFreeNum,proto3,oneof" json:"addFreeNum,omitempty"` // 本次新增的免费次数
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Yhwy_WinInfo) Reset() {
 	*x = Yhwy_WinInfo{}
-	mi := &file_pb_yhwy_proto_msgTypes[1]
+	mi := &file_yhwy_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -274,7 +233,7 @@ func (x *Yhwy_WinInfo) String() string {
 func (*Yhwy_WinInfo) ProtoMessage() {}
 
 func (x *Yhwy_WinInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_pb_yhwy_proto_msgTypes[1]
+	mi := &file_yhwy_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -287,7 +246,7 @@ func (x *Yhwy_WinInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Yhwy_WinInfo.ProtoReflect.Descriptor instead.
 func (*Yhwy_WinInfo) Descriptor() ([]byte, []int) {
-	return file_pb_yhwy_proto_rawDescGZIP(), []int{1}
+	return file_yhwy_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Yhwy_WinInfo) GetWinArr() []*Yhwy_WinArr {
@@ -304,27 +263,18 @@ func (x *Yhwy_WinInfo) GetAddFreeNum() int64 {
 	return 0
 }
 
-func (x *Yhwy_WinInfo) GetLineMultiplier() int64 {
-	if x != nil && x.LineMultiplier != nil {
-		return *x.LineMultiplier
-	}
-	return 0
-}
-
 // yhwy_WinArr 描述单条中奖线。
 type Yhwy_WinArr struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RoadNum       *int64                 `protobuf:"varint,1,opt,name=roadNum,proto3,oneof" json:"roadNum,omitempty"` // 中奖线编号，从 0 开始
 	Odds          *int64                 `protobuf:"varint,2,opt,name=odds,proto3,oneof" json:"odds,omitempty"`       // 该中奖线赔率
-	Symbol        *int64                 `protobuf:"varint,3,opt,name=symbol,proto3,oneof" json:"symbol,omitempty"`   // 该中奖线命中的主符号
-	Count         *int64                 `protobuf:"varint,4,opt,name=count,proto3,oneof" json:"count,omitempty"`     // 连续命中的数量
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Yhwy_WinArr) Reset() {
 	*x = Yhwy_WinArr{}
-	mi := &file_pb_yhwy_proto_msgTypes[2]
+	mi := &file_yhwy_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -336,7 +286,7 @@ func (x *Yhwy_WinArr) String() string {
 func (*Yhwy_WinArr) ProtoMessage() {}
 
 func (x *Yhwy_WinArr) ProtoReflect() protoreflect.Message {
-	mi := &file_pb_yhwy_proto_msgTypes[2]
+	mi := &file_yhwy_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -349,7 +299,7 @@ func (x *Yhwy_WinArr) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Yhwy_WinArr.ProtoReflect.Descriptor instead.
 func (*Yhwy_WinArr) Descriptor() ([]byte, []int) {
-	return file_pb_yhwy_proto_rawDescGZIP(), []int{2}
+	return file_yhwy_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Yhwy_WinArr) GetRoadNum() int64 {
@@ -366,35 +316,20 @@ func (x *Yhwy_WinArr) GetOdds() int64 {
 	return 0
 }
 
-func (x *Yhwy_WinArr) GetSymbol() int64 {
-	if x != nil && x.Symbol != nil {
-		return *x.Symbol
-	}
-	return 0
-}
+var File_yhwy_proto protoreflect.FileDescriptor
 
-func (x *Yhwy_WinArr) GetCount() int64 {
-	if x != nil && x.Count != nil {
-		return *x.Count
-	}
-	return 0
-}
-
-var File_pb_yhwy_proto protoreflect.FileDescriptor
-
-const file_pb_yhwy_proto_rawDesc = "" +
+const file_yhwy_proto_rawDesc = "" +
 	"\n" +
-	"\rpb/yhwy.proto\x12\x04yhwy\"\xfa\b\n" +
-	"\x15yhwy_BetOrderResponse\x12\x1d\n" +
-	"\aorderSN\x18\x01 \x01(\tH\x00R\aorderSN\x88\x01\x01\x12\x1d\n" +
+	"\n" +
+	"yhwy.proto\x12\x04yhwy\"\x8e\a\n" +
+	"\x15yhwy_BetOrderResponse\x12\x13\n" +
+	"\x02sn\x18\x01 \x01(\tH\x00R\x02sn\x88\x01\x01\x12\x1d\n" +
 	"\abalance\x18\x02 \x01(\x01H\x01R\abalance\x88\x01\x01\x12!\n" +
-	"\tbetAmount\x18\x03 \x01(\x01H\x02R\tbetAmount\x88\x01\x01\x12#\n" +
-	"\n" +
-	"currentWin\x18\x04 \x01(\x01H\x03R\n" +
-	"currentWin\x88\x01\x01\x12\x1d\n" +
-	"\afreeWin\x18\x05 \x01(\x01H\x04R\afreeWin\x88\x01\x01\x12\x1f\n" +
-	"\btotalWin\x18\x06 \x01(\x01H\x05R\btotalWin\x88\x01\x01\x12\x17\n" +
-	"\x04free\x18\a \x01(\bH\x06R\x04free\x88\x01\x01\x12\x1b\n" +
+	"\tbetAmount\x18\x03 \x01(\x01H\x02R\tbetAmount\x88\x01\x01\x12\x1b\n" +
+	"\x06curWin\x18\x04 \x01(\x01H\x03R\x06curWin\x88\x01\x01\x12'\n" +
+	"\ffreeTotalWin\x18\x05 \x01(\x01H\x04R\ffreeTotalWin\x88\x01\x01\x12\x1f\n" +
+	"\btotalWin\x18\x06 \x01(\x01H\x05R\btotalWin\x88\x01\x01\x12\x1b\n" +
+	"\x06isFree\x18\a \x01(\bH\x06R\x06isFree\x88\x01\x01\x12\x1b\n" +
 	"\x06review\x18\b \x01(\x03H\aR\x06review\x88\x01\x01\x121\n" +
 	"\awinInfo\x18\t \x01(\v2\x12.yhwy.yhwy_WinInfoH\bR\awinInfo\x88\x01\x01\x12\x14\n" +
 	"\x05cards\x18\n" +
@@ -402,86 +337,66 @@ const file_pb_yhwy_proto_rawDesc = "" +
 	"\fscatterCount\x18\v \x01(\x03H\tR\fscatterCount\x88\x01\x01\x12%\n" +
 	"\visRoundOver\x18\f \x01(\bH\n" +
 	"R\visRoundOver\x88\x01\x01\x12\x19\n" +
-	"\x05state\x18\r \x01(\x03H\vR\x05state\x88\x01\x01\x12\x1d\n" +
-	"\afreeNum\x18\x0e \x01(\x03H\fR\afreeNum\x88\x01\x01\x12\x1f\n" +
-	"\bfreeTime\x18\x0f \x01(\x03H\rR\bfreeTime\x88\x01\x01\x12\x18\n" +
+	"\x05state\x18\r \x01(\x03H\vR\x05state\x88\x01\x01\x123\n" +
+	"\x12remainingFreeTimes\x18\x0e \x01(\x03H\fR\x12remainingFreeTimes\x88\x01\x01\x12+\n" +
+	"\x0etotalFreeTimes\x18\x0f \x01(\x03H\rR\x0etotalFreeTimes\x88\x01\x01\x12\x18\n" +
 	"\awinGrid\x18\x10 \x03(\x03R\awinGrid\x12#\n" +
 	"\n" +
 	"isGameOver\x18\x11 \x01(\bH\x0eR\n" +
-	"isGameOver\x88\x01\x01\x12 \n" +
-	"\veffectCards\x18\x12 \x03(\x03R\veffectCards\x12\x1e\n" +
-	"\n" +
-	"finalCards\x18\x13 \x03(\x03R\n" +
-	"finalCards\x12'\n" +
-	"\frevealSymbol\x18\x14 \x01(\x03H\x0fR\frevealSymbol\x88\x01\x01\x12'\n" +
-	"\fspreadToReel\x18\x15 \x01(\x03H\x10R\fspreadToReel\x88\x01\x01\x12)\n" +
-	"\risSakuraReset\x18\x16 \x01(\bH\x11R\risSakuraReset\x88\x01\x01\x12+\n" +
-	"\x0eresetDirection\x18\x17 \x01(\x03H\x12R\x0eresetDirection\x88\x01\x01\x12+\n" +
-	"\x0elineMultiplier\x18\x18 \x01(\x03H\x13R\x0elineMultiplier\x88\x01\x01B\n" +
-	"\n" +
-	"\b_orderSNB\n" +
+	"isGameOver\x88\x01\x01\x12+\n" +
+	"\x0elineMultiplier\x18\x12 \x01(\x03H\x0fR\x0elineMultiplier\x88\x01\x01\x12\x18\n" +
+	"\amysGrid\x18\x13 \x03(\x03R\amysGridB\x05\n" +
+	"\x03_snB\n" +
 	"\n" +
 	"\b_balanceB\f\n" +
 	"\n" +
-	"_betAmountB\r\n" +
-	"\v_currentWinB\n" +
-	"\n" +
-	"\b_freeWinB\v\n" +
-	"\t_totalWinB\a\n" +
-	"\x05_freeB\t\n" +
+	"_betAmountB\t\n" +
+	"\a_curWinB\x0f\n" +
+	"\r_freeTotalWinB\v\n" +
+	"\t_totalWinB\t\n" +
+	"\a_isFreeB\t\n" +
 	"\a_reviewB\n" +
 	"\n" +
 	"\b_winInfoB\x0f\n" +
 	"\r_scatterCountB\x0e\n" +
 	"\f_isRoundOverB\b\n" +
-	"\x06_stateB\n" +
-	"\n" +
-	"\b_freeNumB\v\n" +
-	"\t_freeTimeB\r\n" +
-	"\v_isGameOverB\x0f\n" +
-	"\r_revealSymbolB\x0f\n" +
-	"\r_spreadToReelB\x10\n" +
-	"\x0e_isSakuraResetB\x11\n" +
-	"\x0f_resetDirectionB\x11\n" +
-	"\x0f_lineMultiplier\"\xad\x01\n" +
+	"\x06_stateB\x15\n" +
+	"\x13_remainingFreeTimesB\x11\n" +
+	"\x0f_totalFreeTimesB\r\n" +
+	"\v_isGameOverB\x11\n" +
+	"\x0f_lineMultiplier\"m\n" +
 	"\fyhwy_WinInfo\x12)\n" +
 	"\x06winArr\x18\x01 \x03(\v2\x11.yhwy.yhwy_WinArrR\x06winArr\x12#\n" +
 	"\n" +
 	"addFreeNum\x18\x02 \x01(\x03H\x00R\n" +
-	"addFreeNum\x88\x01\x01\x12+\n" +
-	"\x0elineMultiplier\x18\x03 \x01(\x03H\x01R\x0elineMultiplier\x88\x01\x01B\r\n" +
-	"\v_addFreeNumB\x11\n" +
-	"\x0f_lineMultiplier\"\xa7\x01\n" +
+	"addFreeNum\x88\x01\x01B\r\n" +
+	"\v_addFreeNum\"Z\n" +
 	"\vyhwy_WinArr\x12\x1d\n" +
 	"\aroadNum\x18\x01 \x01(\x03H\x00R\aroadNum\x88\x01\x01\x12\x17\n" +
-	"\x04odds\x18\x02 \x01(\x03H\x01R\x04odds\x88\x01\x01\x12\x1b\n" +
-	"\x06symbol\x18\x03 \x01(\x03H\x02R\x06symbol\x88\x01\x01\x12\x19\n" +
-	"\x05count\x18\x04 \x01(\x03H\x03R\x05count\x88\x01\x01B\n" +
+	"\x04odds\x18\x02 \x01(\x03H\x01R\x04odds\x88\x01\x01B\n" +
 	"\n" +
 	"\b_roadNumB\a\n" +
-	"\x05_oddsB\t\n" +
-	"\a_symbolB\b\n" +
-	"\x06_countB\x19Z\x17egame-grpc/game/yhwy/pbb\x06proto3"
+	"\x05_oddsB\x19Z\x17egame-grpc/game/yhwy/pbb\x06proto3"
 
 var (
-	file_pb_yhwy_proto_rawDescOnce sync.Once
-	file_pb_yhwy_proto_rawDescData []byte
+	file_yhwy_proto_rawDescOnce sync.Once
+	file_yhwy_proto_rawDescData []byte
 )
 
-func file_pb_yhwy_proto_rawDescGZIP() []byte {
-	file_pb_yhwy_proto_rawDescOnce.Do(func() {
-		file_pb_yhwy_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_pb_yhwy_proto_rawDesc), len(file_pb_yhwy_proto_rawDesc)))
+func file_yhwy_proto_rawDescGZIP() []byte {
+	file_yhwy_proto_rawDescOnce.Do(func() {
+		file_yhwy_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_yhwy_proto_rawDesc), len(file_yhwy_proto_rawDesc)))
 	})
-	return file_pb_yhwy_proto_rawDescData
+	return file_yhwy_proto_rawDescData
 }
 
-var file_pb_yhwy_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
-var file_pb_yhwy_proto_goTypes = []any{
+var file_yhwy_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_yhwy_proto_goTypes = []any{
 	(*Yhwy_BetOrderResponse)(nil), // 0: yhwy.yhwy_BetOrderResponse
 	(*Yhwy_WinInfo)(nil),          // 1: yhwy.yhwy_WinInfo
 	(*Yhwy_WinArr)(nil),           // 2: yhwy.yhwy_WinArr
 }
-var file_pb_yhwy_proto_depIdxs = []int32{
+var file_yhwy_proto_depIdxs = []int32{
 	1, // 0: yhwy.yhwy_BetOrderResponse.winInfo:type_name -> yhwy.yhwy_WinInfo
 	2, // 1: yhwy.yhwy_WinInfo.winArr:type_name -> yhwy.yhwy_WinArr
 	2, // [2:2] is the sub-list for method output_type
@@ -491,29 +406,29 @@ var file_pb_yhwy_proto_depIdxs = []int32{
 	0, // [0:2] is the sub-list for field type_name
 }
 
-func init() { file_pb_yhwy_proto_init() }
-func file_pb_yhwy_proto_init() {
-	if File_pb_yhwy_proto != nil {
+func init() { file_yhwy_proto_init() }
+func file_yhwy_proto_init() {
+	if File_yhwy_proto != nil {
 		return
 	}
-	file_pb_yhwy_proto_msgTypes[0].OneofWrappers = []any{}
-	file_pb_yhwy_proto_msgTypes[1].OneofWrappers = []any{}
-	file_pb_yhwy_proto_msgTypes[2].OneofWrappers = []any{}
+	file_yhwy_proto_msgTypes[0].OneofWrappers = []any{}
+	file_yhwy_proto_msgTypes[1].OneofWrappers = []any{}
+	file_yhwy_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pb_yhwy_proto_rawDesc), len(file_pb_yhwy_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_yhwy_proto_rawDesc), len(file_yhwy_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_pb_yhwy_proto_goTypes,
-		DependencyIndexes: file_pb_yhwy_proto_depIdxs,
-		MessageInfos:      file_pb_yhwy_proto_msgTypes,
+		GoTypes:           file_yhwy_proto_goTypes,
+		DependencyIndexes: file_yhwy_proto_depIdxs,
+		MessageInfos:      file_yhwy_proto_msgTypes,
 	}.Build()
-	File_pb_yhwy_proto = out.File
-	file_pb_yhwy_proto_goTypes = nil
-	file_pb_yhwy_proto_depIdxs = nil
+	File_yhwy_proto = out.File
+	file_yhwy_proto_goTypes = nil
+	file_yhwy_proto_depIdxs = nil
 }
