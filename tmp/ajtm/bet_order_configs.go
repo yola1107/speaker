@@ -10,14 +10,15 @@ import (
 )
 
 type gameConfigJson struct {
-	PayTable          [][]int64  `json:"pay_table"`                      // 赔率表 [symbol-1][列数-1]
-	FreeGameTimes     int64      `json:"free_game_times"`                // 基础免费次数
-	FreeGameBonus     int64      `json:"free_game_bonus"`                // 触发免费时的基础奖励倍数
-	ExtraAddFreeBonus int64      `json:"extra_add_free_bonus"`           // 每多一个夺宝追加的奖励倍数
-	FreeGameScatter   int64      `json:"trigger_free_game_need_scatter"` // 触发免费所需夺宝数
-	MaxWinMultiplier  int64      `json:"max_win_multiplier"`             // 最大奖励倍数
-	BaseBigSyWeights  []int64    `json:"base_mysterious_symbol_weights"` // 基础模式每列长符号数量权重
-	BigSyMultiples    []Location `json:"mystery_symbol_multiples"`       // 长符号布局模板
+	PayTable          [][]int64  `json:"pay_table"`                              // 赔率表 [symbol-1][列数-1]
+	FreeGameTimes     int64      `json:"free_game_times"`                        // 基础免费次数
+	FreeGameBonus     int64      `json:"free_game_bonus"`                        // 触发免费时的基础奖励倍数
+	ExtraAddFreeBonus int64      `json:"extra_add_free_bonus"`                   // 每多一个夺宝追加的奖励倍数
+	FreeGameScatter   int64      `json:"trigger_free_game_need_scatter"`         // 触发免费所需夺宝数
+	MaxWinMultiplier  int64      `json:"max_win_multiplier"`                     // 最大奖励倍数
+	BaseMysAddProb    int64      `json:"base_mysterious_symbol_add_probability"` // 基础模式补位补长概率(万分比)
+	BaseBigSyWeights  []int64    `json:"base_mysterious_symbol_weights"`         // 基础模式每列长符号数量权重
+	BigSyMultiples    []Location `json:"mystery_symbol_multiples"`               // 长符号布局模板
 	RollCfg           RollConf   `json:"roll_cfg"`
 	RealData          []Reals    `json:"real_data"`
 }
@@ -68,6 +69,9 @@ func (s *betOrderService) parseGameConfigs() {
 	if s.gameConfig.MaxWinMultiplier <= 0 {
 		panic(" s.gameConfig.MaxWinMultiplier <= 0 ")
 	}
+	//if s.gameConfig.BaseMysAddProb < 0 || s.gameConfig.BaseMysAddProb > 10000 {
+	//	panic("base_mysterious_symbol_add_probability out of range")
+	//}
 
 	s.validateRollCfg(&s.gameConfig.RollCfg.Base)
 	s.validateRollCfg(&s.gameConfig.RollCfg.Free)
@@ -99,6 +103,45 @@ func (rs *SymbolRoller) getFallSymbol(gameConfig *gameConfigJson) int64 {
 		rs.Start = reelLen - 1
 	}
 	return gameConfig.RealData[rs.Real][rs.Col][rs.Start]
+}
+
+// ringSymbolForBase 用于基础模式补位，支持每列最多追加1个长符号。
+// 规则：取到夺宝先按单格补位，若剩余空位>=2则继续顺延尝试长符号。
+//
+// 重要前置：
+// 1) 该函数依赖 dropSymbols 的结果：每列空位必须在有效区间顶部连续分布；
+// 2) 因此这里只统计顶部连续空位数 emptyCount，再按滚轴顺序自下而上补位；
+// 3) 若后续修改 dropSymbols 导致空位不再顶部连续，需要同步调整此函数。
+func (rs *SymbolRoller) ringSymbolForBase(gameConfig *gameConfigJson) {
+	isEdgeCol := rs.Col == 0 || rs.Col == _colCount-1
+	validTop, validBottom := 0, _rowCount-1
+	if isEdgeCol {
+		validTop, validBottom = 1, _rowCount-2
+	}
+
+	emptyCount := 0
+	for r := validTop; r <= validBottom && rs.BoardSymbol[r] == 0; r++ {
+		emptyCount++
+	}
+	if emptyCount <= 0 {
+		return
+	}
+
+	canTryLong := !isEdgeCol && emptyCount >= 2 &&
+		gameConfig.BaseMysAddProb > 0 && rand.Int64N(10000) < gameConfig.BaseMysAddProb
+
+	for row := validTop + emptyCount - 1; row >= validTop; row-- {
+		remaining := row - validTop + 1
+		symbol := rs.getFallSymbol(gameConfig)
+		if canTryLong && remaining >= 2 && symbol != _treasure {
+			rs.BoardSymbol[row-1] = symbol
+			rs.BoardSymbol[row] = _longSymbol + symbol
+			canTryLong = false
+			row--
+			continue
+		}
+		rs.BoardSymbol[row] = symbol
+	}
 }
 
 func pickWeightIndex[T int | int64](weights []T) int {

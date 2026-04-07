@@ -146,13 +146,16 @@ func (s *betOrderService) dropSymbols(grid *int64Grid) {
 }
 
 func (s *betOrderService) fallingWinSymbols(next int64Grid) {
-	for r := 0; r < _rowCount; r++ {
-		for c := 0; c < _colCount; c++ {
-			s.scene.SymbolRoller[c].BoardSymbol[r] = next[r][c]
+	for col := range s.scene.SymbolRoller {
+		roller := &s.scene.SymbolRoller[col]
+		for r := 0; r < _rowCount; r++ {
+			roller.BoardSymbol[r] = next[r][col]
 		}
-	}
-	for i := range s.scene.SymbolRoller {
-		s.scene.SymbolRoller[i].ringSymbol(s.gameConfig)
+		if s.isFreeRound {
+			roller.ringSymbol(s.gameConfig)
+		} else {
+			roller.ringSymbolForBase(s.gameConfig)
+		}
 	}
 }
 
