@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"egame-grpc/game/common"
-	"egame-grpc/game/common/pb"
+	"egame-grpc/game/sjxj/pb"
 	"egame-grpc/global"
 	"egame-grpc/global/client"
 	"egame-grpc/model/game"
@@ -52,9 +52,6 @@ func newBetOrderService() *betOrderService {
 
 func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, error) {
 	s.req = req
-	if err := s.getRequestContext(); err != nil {
-		return nil, "", InternalServerError
-	}
 	c, ok := client.GVA_CLIENT_BUCKET.GetClient(req.MemberId)
 	if !ok {
 		global.GVA_LOG.Error("betOrder", zap.Error(errors.New("user not exists")))
@@ -63,6 +60,9 @@ func (s *betOrderService) betOrder(req *request.BetOrderReq) ([]byte, string, er
 	s.client = c
 	c.BetLock.Lock()
 	defer c.BetLock.Unlock()
+	if err := s.getRequestContext(); err != nil {
+		return nil, "", InternalServerError
+	}
 
 	lastOrder, _, err := c.GetLastOrder()
 	if err != nil {
@@ -99,27 +99,42 @@ func (s *betOrderService) getBetResultMap() ([]byte, string, error) {
 	if !s.isFreeRound {
 		unlocked = _rowCountReward
 	}
+	// "free_unlock_thresholds": [0, 0, 0, 0, 8, 12, 16, 20],
+	freeUnlockTh := make([]int64, _rowCount)
+	if s.isFreeRound && s.scene.UnlockedRows < _rowCount {
+		for r, v := range s.gameConfig.FreeUnlockThresholds {
+			x := v - s.scatterCount
+			if x < 0 {
+				x = 0
+			}
+			freeUnlockTh[r] = x
+		}
+	}
 	result := &pb.Sjxj_BetOrderResponse{
-		OrderSN:          proto.String(s.orderSn.OrderSN),
-		Balance:          proto.Float64(s.gameOrder.CurBalance),
-		BetAmount:        proto.Float64(s.betAmount.Round(2).InexactFloat64()),
-		CurrentWin:       proto.Float64(s.bonusAmount.Round(2).InexactFloat64()),
-		FreeWin:          proto.Float64(s.client.ClientOfFreeGame.GetFreeTotalMoney()),
-		TotalWin:         proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
-		Free:             proto.Bool(s.isFreeRound),
-		Review:           proto.Int64(s.req.Review),
-		WinInfo:          s.buildWinInfo(),
-		Cards:            s.int64GridToPbBoard(s.symbolGrid),
-		ScatterCount:     proto.Int64(s.scatterCount),
-		IsRoundOver:      proto.Bool(s.isRoundOver),
-		State:            proto.Int64(btoi(s.isFreeRound)),
-		FreeNum:          proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeNum())),
-		FreeTime:         proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeTimes())),
-		WinGrid:          s.int64GridToPbBoard(s.winGrid),
-		IsGameOver:       proto.Bool(s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0),
-		RoundWin:         proto.Float64(s.calcRoundWin()),
-		UnlockedRows:     proto.Int32(int32(unlocked)),
-		PrevUnlockedRows: proto.Int32(int32(s.scene.PrevUnlockedRows)),
+		Sn:                 proto.String(s.orderSn.OrderSN),
+		Balance:            proto.Float64(s.gameOrder.CurBalance),
+		BetAmount:          proto.Float64(s.betAmount.Round(2).InexactFloat64()),
+		CurWin:             proto.Float64(s.bonusAmount.Round(2).InexactFloat64()),
+		FreeTotalWin:       proto.Float64(s.client.ClientOfFreeGame.GetFreeTotalMoney()),
+		TotalWin:           proto.Float64(s.client.ClientOfFreeGame.GetGeneralWinTotal()),
+		IsFree:             proto.Bool(s.isFreeRound),
+		Review:             proto.Int64(s.req.Review),
+		WinInfo:            s.buildWinInfo(),
+		Cards:              s.int64GridToArray(s.symbolGrid),
+		ScatterCount:       proto.Int64(s.scatterCount),
+		IsRoundOver:        proto.Bool(s.isRoundOver),
+		State:              proto.Int64(btoi(s.isFreeRound)),
+		RemainingFreeTimes: proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeNum())),
+		TotalFreeTimes:     proto.Int64(int64(s.client.ClientOfFreeGame.GetFreeTimes())),
+		WinGrid:            s.int64GridToArray(s.winGrid),
+		IsGameOver:         proto.Bool(s.isFreeRound && s.isRoundOver && s.scene.FreeNum <= 0),
+		RoundWin:           proto.Float64(s.calcRoundWin()),
+		UnlockedRows:       proto.Int32(int32(unlocked)),
+		PrevUnlockedRows:   proto.Int32(int32(s.scene.PrevUnlockedRows)),
+		BaseBet:            proto.Float64(s.req.BaseMoney),
+		Multiplier:         proto.Int64(s.req.Multiple),
+		NewFreeTimes:       proto.Int64(s.addFreeTime),
+		FreeUnlockTh:       freeUnlockTh,
 	}
 	pbData, err := proto.Marshal(result)
 	if err != nil {
@@ -142,24 +157,23 @@ func (s *betOrderService) buildWinInfo() *pb.Sjxj_WinInfo {
 	}
 	return &pb.Sjxj_WinInfo{
 		WinArr:           winArr,
-		AddFreeNum:       proto.Int64(s.addFreeTime),
 		FreeGameMultiple: proto.Int64(s.stepMultiplier),
 	}
 }
 
-func (s *betOrderService) int64GridToPbBoard(grid int64Grid) *pb.Board {
+func (s *betOrderService) int64GridToArray(grid int64Grid) []int64 {
 	elements := make([]int64, _rowCount*_colCount)
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
 			elements[r*_colCount+c] = grid[r][c]
 		}
 	}
-	return &pb.Board{Elements: elements}
+	return elements
 }
 
 func (s *betOrderService) calcRoundWin() float64 {
-	return decimal.NewFromFloat(s.req.BaseMoney).
-		Mul(decimal.NewFromInt(s.req.Multiple)).
-		Mul(decimal.NewFromInt(s.stepMultiplier)).
-		Round(2).InexactFloat64()
+	if s.stepMultiplier == 0 {
+		return 0
+	}
+	return s.bonusAmount.Round(2).InexactFloat64()
 }

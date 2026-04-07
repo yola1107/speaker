@@ -1,7 +1,6 @@
 package sjxj
 
-const _gameID = 18969
-const GameID = 18969
+const GameID = 18969 // 世界小姐
 const _baseMultiplier = 50
 
 const (

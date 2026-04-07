@@ -41,19 +41,17 @@ func main() {
 
 	start := time.Now()
 
-	// 模拟局数
 	const loops = 100000000
-	// 基础乘数（对齐sjxj生产版：奖金 = 倍数 / baseMultiplier）
+	// 单注：仅作 RTP 分母，与 missWorld 原版一致（赔表/免费倍数为固定数值，不随 baseMultiplier 变）。
+	const betPerSpin = 50.0
+	// 生产环境若使用 bonusAmount = betAmount * mult / baseMultiplier，只影响真钱换算，与本模拟 RTP 无关。
 	const baseMultiplier = 50
-	// 单次普通游戏下注额（按 baseMultiplier 计算 RTP）
-	const betPerSpin = float64(baseMultiplier)
 
 	var freeEnterCount int
-	var baseTotalWin int // 倍数总和
-	var freeTotalWin int // 倍数总和
+	var baseTotalWin int
+	var freeTotalWin int
 	var baseGameWinCount int
-	var freeStepsCount int // 免费游戏总步数
-	// 0~4 分别表示在免费游戏里最终额外解锁 0~4 行的次数。
+	var freeStepsCount int
 	var freeUnlockRowsStats [5]int
 
 	for i := 0; i < loops; i++ {
@@ -76,8 +74,6 @@ func main() {
 				maxUnlockedRows = step.UnlockedRows
 			}
 		}
-		// Free game pays once when respins reach 0: sum all scatter-cell multipliers on the final grid.
-		// TotalMultiplier on each step is the running total on the board; summing steps double-counts.
 		if n := len(result.FreeSteps); n > 0 {
 			freeTotalWin += result.FreeSteps[n-1].TotalMultiplier
 		}
@@ -93,38 +89,29 @@ func main() {
 	}
 
 	totalBet := float64(loops) * betPerSpin
-	// 对齐sjxj：奖金直接就是stepMultiplier（倍数）
-	// 因为：bonusAmount = betAmount * stepMultiplier / baseMultiplier
-	//            = (baseMoney * multiple * 50) * stepMultiplier / 50
-	//            = baseMoney * multiple * stepMultiplier
-	// 当 baseMoney=1, multiple=1 时，bonusAmount = stepMultiplier
-	baseActualWin := float64(baseTotalWin)
-	freeActualWin := float64(freeTotalWin)
-	totalActualWin := baseActualWin + freeActualWin
-
-	baseRTP := baseActualWin / totalBet
-	freeRTP := freeActualWin / totalBet
-	totalRTP := totalActualWin / totalBet
+	baseRTP := float64(baseTotalWin) / totalBet
+	freeRTP := float64(freeTotalWin) / totalBet
+	totalRTP := float64(baseTotalWin+freeTotalWin) / totalBet
 
 	baseGameWinRate := float64(baseGameWinCount) / float64(loops)
 	freeTriggerRate := float64(freeEnterCount) / float64(loops)
-	avgFreePerTrigger := float64(0)
+	avgFreePerTrigger := 0.0
 	if freeEnterCount > 0 {
 		avgFreePerTrigger = float64(freeStepsCount) / float64(freeEnterCount)
 	}
 
 	fmt.Printf("模拟次数: %d\n", loops)
-	fmt.Printf("基础乘数: %d (下注额 = baseMoney * multiple * %d)\n", baseMultiplier, baseMultiplier)
+	fmt.Printf("单注(用于RTP): %.0f（与 baseMultiplier 脱钩；改 baseMultiplier 不改变下列 RTP）\n", betPerSpin)
+	fmt.Printf("baseMultiplier(仅对照生产公式, 不参与本程序 RTP): %d\n", baseMultiplier)
 	fmt.Printf("1) 进入免费游戏次数: %d\n", freeEnterCount)
-	fmt.Printf("2) 普通游戏总倍数: %d, 实际奖金: %.2f\n", baseTotalWin, baseActualWin)
+	fmt.Printf("2) 普通游戏总中奖金额: %d\n", baseTotalWin)
 	fmt.Printf("3) 普通游戏RTP: %.6f\n", baseRTP)
 	fmt.Printf("4) baseGame中奖次数: %d, baseGame中奖比例: %.6f\n", baseGameWinCount, baseGameWinRate)
-	fmt.Printf("5) 免费游戏总倍数: %d, 实际奖金: %.2f\n", freeTotalWin, freeActualWin)
+	fmt.Printf("5) 免费游戏总中奖金额: %d\n", freeTotalWin)
 	fmt.Printf("6) 免费游戏RTP: %.6f\n", freeRTP)
 	fmt.Printf("7) 总RTP: %.6f\n", totalRTP)
 	fmt.Printf("8) 免费游戏最终解锁额外行数统计[0,1,2,3,4]: %v\n", freeUnlockRowsStats)
 	fmt.Printf("9) 基础模式触发免费局比例: %.4f%% (%d/%d)\n", freeTriggerRate*100, freeEnterCount, loops)
-	fmt.Printf("10) 平均每次触发获得免费游戏: %.2f 次\n", avgFreePerTrigger)
-
+	fmt.Printf("10) 平均每次触发获得免费步数: %.2f\n", avgFreePerTrigger)
 	fmt.Printf("耗时: %s\n", time.Since(start))
 }

@@ -1,6 +1,7 @@
 package sjxj
 
-import "math/rand/v2"
+// import "math/rand/v2"
+import "egame-grpc/game/common/rand"
 
 func (s *betOrderService) baseSpin() error {
 	if s.debug.open {
@@ -9,10 +10,17 @@ func (s *betOrderService) baseSpin() error {
 	if err := s.initialize(); err != nil {
 		return err
 	}
-	if s.isFreeRound && s.scene.FreeNum > 0 {
-		s.client.ClientOfFreeGame.IncrFreeTimes()
-		s.client.ClientOfFreeGame.Decr()
-		s.scene.FreeNum--
+	if s.isFreeRound {
+		if s.scene.FreeNum > 0 {
+			s.client.ClientOfFreeGame.IncrFreeTimes()
+			s.client.ClientOfFreeGame.Decr()
+			s.scene.FreeNum--
+		}
+		// 基础进入免费首局：填符号前按已锁定夺宝推进 UnlockedRows（阶段1）
+		if s.scene.BaseEnterFreeFirstStep {
+			s.unlockByLockedScatter()
+			s.scene.BaseEnterFreeFirstStep = false
+		}
 	}
 	s.scene.SymbolRoller = s.initSpinSymbol()
 	s.handleSymbolGrid()
@@ -28,7 +36,6 @@ func (s *betOrderService) processWinInfos() {
 	if s.isFreeRound {
 		s.winGrid = int64Grid{}
 		s.winInfos = []WinInfo{}
-
 		s.tryUnlockNextRow()
 		isFullScatter, freeGameMul, newScatterCount := s.calcCurrentFreeGameMul()
 		s.scatterCount = newScatterCount
@@ -67,6 +74,7 @@ func (s *betOrderService) processWinInfos() {
 			s.scene.NextStage = _spinTypeFree
 			s.scene.UnlockedRows = _rowCountReward
 			s.scene.PrevUnlockedRows = _rowCountReward
+			s.scene.BaseEnterFreeFirstStep = true
 			s.lockScatter()
 		} else {
 			s.scene.NextStage = _spinTypeBase
@@ -77,28 +85,41 @@ func (s *betOrderService) processWinInfos() {
 }
 
 func (s *betOrderService) lockScatter() {
-	nextLock := [_rowCount][_colCount]int64{}
 	cfg := s.gameConfig.FreeScatterMulByRow
+	s.scene.ScatterLock = int64Grid{}
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
 			if s.symbolGrid[r][c] == _treasure {
-				mul := s.scene.ScatterLock[r][c]
-				if mul == 0 {
-					mul = cfg[r][rand.IntN(len(cfg[r]))]
-				}
-				nextLock[r][c] = mul
+				s.scene.ScatterLock[r][c] = cfg[r][rand.IntN(len(cfg[r]))]
 			}
 		}
 	}
-	s.scene.ScatterLock = nextLock
+}
+
+// unlockByLockedScatter 基础进入免费首局：按 ScatterLock 中已锁定夺宝数量推进 UnlockedRows。
+// 不修改 PrevUnlockedRows，后续 tryUnlockNextRow 会以阶段1结果为 Prev 基准。
+func (s *betOrderService) unlockByLockedScatter() {
+	for s.scene.UnlockedRows < _rowCount {
+		startRow := _rowCount - s.scene.UnlockedRows
+		var count int64
+		for r := startRow; r < _rowCount; r++ {
+			for c := 0; c < _colCount; c++ {
+				if s.scene.ScatterLock[r][c] != 0 {
+					count++
+				}
+			}
+		}
+		if count < s.gameConfig.FreeUnlockThresholds[s.scene.UnlockedRows] {
+			break
+		}
+		s.scene.UnlockedRows++
+	}
 }
 
 func (s *betOrderService) tryUnlockNextRow() {
 	s.scene.PrevUnlockedRows = s.scene.UnlockedRows
-	if s.scene.UnlockedRows >= _rowCount {
-		return
-	}
 	for s.scene.UnlockedRows < _rowCount {
+		s.scatterCount = s.getScatterCount()
 		if s.scatterCount < s.gameConfig.FreeUnlockThresholds[s.scene.UnlockedRows] {
 			break
 		}

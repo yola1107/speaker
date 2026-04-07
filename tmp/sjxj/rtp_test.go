@@ -173,7 +173,7 @@ func newBerService() *betOrderService {
 		req: &request.BetOrderReq{
 			MerchantId: 20020,
 			MemberId:   1,
-			GameId:     _gameID,
+			GameId:     GameID,
 			BaseMoney:  1,
 			Multiple:   1,
 		},
@@ -188,7 +188,7 @@ func newBerService() *betOrderService {
 			Currency:   "USD",
 		},
 		game: &game.Game{
-			ID: _gameID,
+			ID: GameID,
 		},
 		client: &client.Client{
 			ClientOfFreeGame: &client.ClientOfFreeGame{},

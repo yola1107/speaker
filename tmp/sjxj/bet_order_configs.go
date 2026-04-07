@@ -1,9 +1,10 @@
 package sjxj
 
 import (
-	"math/rand/v2"
+	"fmt"
 
 	"egame-grpc/game/common"
+	"egame-grpc/game/common/rand"
 
 	jsoniter "github.com/json-iterator/go"
 )
@@ -56,11 +57,11 @@ func (s *betOrderService) parseGameConfigs() {
 	if s.gameConfig.FreeUnlockResetSpins <= 0 {
 		panic("s.gameConfig.FreeUnlockResetSpins <= 0")
 	}
-	if len(s.gameConfig.FreeUnlockThresholds) != _rowCount {
-		panic("len(s.gameConfig.FreeUnlockThresholds) != 8")
+	if len(s.gameConfig.FreeUnlockThresholds) < _rowCount {
+		panic(fmt.Sprintf("len(FreeUnlockThresholds) < %d", _rowCount))
 	}
-	if len(s.gameConfig.FreeScatterMulByRow) < 8 {
-		panic("len(s.gameConfig.FreeScatterMulByRow) < 8")
+	if len(s.gameConfig.FreeScatterMulByRow) < _rowCount {
+		panic(fmt.Sprintf("len(FreeScatterMulByRow) < %d", _rowCount))
 	}
 	// 固定索引：base 用 real_data[0]，free 用 real_data[1]
 	if len(s.gameConfig.RealData) < 2 {
@@ -110,7 +111,6 @@ func (s *betOrderService) getSceneSymbolFree() [_colCount]SymbolRoller {
 			if s.scene.ScatterLock[r][c] != 0 {
 				roller.BoardSymbol[r] = _treasure
 			} else {
-				roller.BoardSymbol[r] = 0
 				needRows = append(needRows, r)
 			}
 		}

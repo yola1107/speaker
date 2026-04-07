@@ -12,16 +12,17 @@ import (
 )
 
 type SpinSceneData struct {
-	Stage            int8                    `json:"stage"`            // 运行阶段
-	NextStage        int8                    `json:"nStage"`           // 下一阶段
-	FreeNum          int64                   `json:"freeNum"`          // 剩余免费次数（独立统计，不依赖client）
-	SymbolRoller     [_colCount]SymbolRoller `json:"sRoller"`          // 滚轮符号表
-	ScatterLock      int64Grid               `json:"scatterLock"`      // Free 专用：ScatterLock 8×5（0=未锁，>0=锁定为夺宝且值即夺宝倍数）
-	UnlockedRows     int                     `json:"unlockedRows"`     // 当前已解锁行数（范围 4-8，初始4行）
-	PrevUnlockedRows int                     `json:"prevUnlockedRows"` // 上一局结束时的解锁行数
+	Stage                  int8                    `json:"stage"`                  // 运行阶段
+	NextStage              int8                    `json:"nStage"`                 // 下一阶段
+	FreeNum                int64                   `json:"freeNum"`                // 剩余免费次数（独立统计，不依赖client）
+	SymbolRoller           [_colCount]SymbolRoller `json:"sRoller"`                // 滚轮符号表
+	ScatterLock            int64Grid               `json:"scatterLock"`            // Free 专用：ScatterLock 8×5（0=未锁，>0=锁定为夺宝且值即夺宝倍数）
+	UnlockedRows           int                     `json:"unlockedRows"`           // 当前已解锁行数（范围 4-8，初始4行）
+	PrevUnlockedRows       int                     `json:"prevUnlockedRows"`       // 上一局结束时的解锁行数
+	BaseEnterFreeFirstStep bool                    `json:"baseEnterFreeFirstStep"` // 基础进入免费后，免费首局只做一次阶段1解锁（按锁定夺宝）
 }
 
-var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", _gameID)
+var sceneDataKeyPrefix = fmt.Sprintf("scene-%d", GameID)
 
 func (s *betOrderService) sceneKey() string {
 	return fmt.Sprintf("%s:%s:%d", global.GVA_CONFIG.System.Site, sceneDataKeyPrefix, s.member.ID)
@@ -70,5 +71,6 @@ func (s *betOrderService) syncGameStage() {
 		s.scene.ScatterLock = int64Grid{}
 		s.scene.UnlockedRows = _rowCountReward
 		s.scene.PrevUnlockedRows = _rowCountReward
+		s.scene.BaseEnterFreeFirstStep = false
 	}
 }

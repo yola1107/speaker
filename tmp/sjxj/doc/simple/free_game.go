@@ -42,8 +42,8 @@ func playFreeGame(start Matrix) []FreeSpinStep {
 	}
 
 	unlockedRows := 4
-	// 对齐sjxj：初始解锁行数设为4，后续在每步中根据盘面动态计算
-	// 注意：sjxj 不使用触发盘面计算初始解锁行数，而是在第一次免费spin时才计算
+	// 进入免费：先按已解锁区域（从4行起）级联统计 scatter，直到无法再解锁更多行。
+	unlockedRows = settleUnlockedRows(grid, unlockedRows)
 
 	respins := FreeGameTimes
 
@@ -59,7 +59,7 @@ func playFreeGame(start Matrix) []FreeSpinStep {
 		// 对齐sjxj：使用 ScatterLock 锁定夺宝位置，其余从 free reel 重新填充整盘
 		rerollWithScatterLock(&grid, &multiplierGrid, &scatterLock, unlockedRows)
 
-		// 对齐sjxj：tryUnlockNextRow 根据“进入本步时 unlockedRows 对应区域内 scatter 数”计算可解锁档位
+		// 每步 spin 后：在扩大后的解锁区内重数 scatter，级联解锁直到稳定。
 		unlockedRows = settleUnlockedRows(grid, unlockedRows)
 		newUnlockRows := unlockedRows - beforeUnlockRows
 
@@ -176,15 +176,18 @@ func randomFreeReelSymbol(col int) int {
 }
 
 func settleUnlockedRows(grid Matrix, currentUnlockedRows int) int {
-	// 对齐 sjxj：tryUnlockNextRow 使用进入本步骤时的“当前已解锁区 scatter 数”
-	// 来决定最多能解锁到哪一档，过程中不随 UnlockedRows 变化而重算 currScatter。
-	// 同时 sjxj 的 UnlockedRows 只会增加，不会在步骤内降低。
-	currScatter := countScatterInBottomRows(grid, currentUnlockedRows)
-	targetUnlockedRows := calcUnlockedRowsByScatterCount(currScatter)
-	if targetUnlockedRows < currentUnlockedRows {
-		targetUnlockedRows = currentUnlockedRows
+	// 用当前解锁高度数 scatter → 映射目标行数；若变高则在更大区域内重数，
+	// 直到目标不再超过当前解锁行数（与 missWorld 级联逻辑一致）。
+	unlockedRows := currentUnlockedRows
+	for unlockedRows < Rows {
+		count := countScatterInBottomRows(grid, unlockedRows)
+		targetUnlockedRows := calcUnlockedRowsByScatterCount(count)
+		if targetUnlockedRows <= unlockedRows {
+			break
+		}
+		unlockedRows = targetUnlockedRows
 	}
-	return targetUnlockedRows
+	return unlockedRows
 }
 
 func calcUnlockedRowsByScatterCount(scatterCount int) int {

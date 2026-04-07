@@ -2,11 +2,11 @@ package sjxj
 
 import (
 	"fmt"
-	"math/rand/v2"
 	"strconv"
 	"strings"
 
 	"egame-grpc/game/common"
+	"egame-grpc/game/common/rand"
 	"egame-grpc/gamelogic"
 	"egame-grpc/global"
 

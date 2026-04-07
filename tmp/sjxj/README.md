@@ -84,26 +84,30 @@
 - 上一基础局已把 `NextStage=Free` 写入场景。
 - 本次 `reloadScene()` 后 `syncGameStage()` 会把 `Stage` 切到 Free。
 - `UnlockedRows` 初始为 4，`PrevUnlockedRows` 初始为 4。
+- `BaseEnterFreeFirstStep=true`：表示本次为“基础进入免费”的首局，需要在填充滚轴符号前仅一次做阶段1解锁（Stage 1），解锁依据为当前 `scatterLock` 中已锁定夺宝的数量推进 `UnlockedRows`。
 - `scatterLock[r][c] > 0` 表示该位置固定为 Scatter 且值即固定倍数。
 
 ### 3.2 免费局执行顺序（当前实现）
 
 1. `baseSpin()` 开始时先消耗 1 次免费：`FreeNum--`。
-2. `getSceneSymbolFree()` 生成盘面：
+2. 若 `BaseEnterFreeFirstStep=true`（仅免费首局生效）：
+   - 在 `initSpinSymbol()/handleSymbolGrid()` 之前调用 `unlockByLockedScatter()`，基于 `ScatterLock` 中已锁定夺宝数量推进 `UnlockedRows`（Stage 1）；
+   - 随后清空 `BaseEnterFreeFirstStep=false`，避免重复执行。
+3. 生成免费盘面（锁定位置优先）：
    - 锁定位置直接放 Scatter；
    - 其余格子从 `real_data[1]` 补齐。
-3. `processWinInfos()` 的免费分支执行：
+4. `processWinInfos()` 的免费分支执行：
    - 清空 `winInfos` / `winGrid`（当前实现不做免费线奖逐局结算）；
    - `scatterCount = getScatterCount()`（按已解锁行统计）；
    - `tryUnlockNextRow()`：当 `S >= threshold[UnlockedRows]` 时可连续解多行；
-   - `calcFreeRoundMulFullAndScatterCount()`：补齐本次免费回合 scatterLock、统计已解锁区 scatter 总数，并判断是否已满屏夺宝。
+   - `calcCurrentFreeGameMul()`：补齐本次免费回合 scatterLock、统计已解锁区 scatter 总数，并判断是否已满屏夺宝。
      - 对本次新出现 Scatter 分配固定倍数并写回 `scatterLock`；
      - 统计已解锁区的夺宝倍数和；
      - 判断“已解锁区是否满屏夺宝”。
-4. 解锁后补次：
+5. 解锁后补次：
    - 若本局有新增解锁，且当前 `FreeNum < free_unlock_reset_spins`（默认 3），补到 3；
    - `addFreeTime = 补入数量`（用于回包与统计）。
-5. 结束判定：
+6. 结束判定：
    - 若 `FreeNum <= 0` 或 `isFullTreasureScreen == true`：
      - 本局 `stepMultiplier = freeGameMul`（一次性结算）；
      - `NextStage = Base`；
@@ -145,8 +149,9 @@ Base 请求
 Free 请求
   -> load scene/sync stage(进入Free)
   -> freeNum先-1
+  -> BaseEnterFreeFirstStep?是：unlockByLockedScatter（阶段1，仅一次）; BaseEnterFreeFirstStep=false
   -> 生成免费盘面(real_data[1], scatterLock优先)
-  -> 统计S(已解锁行), 解锁判定, 新Scatter写入lock并赋倍数
+  -> processWinInfos(Stage2)：统计S(已解锁行)、tryUnlockNextRow、calcCurrentFreeGameMul（新Scatter写入lock并赋倍数）
   -> 若解锁则freeNum补到>=3
   -> freeNum<=0 或 已解锁区满屏Scatter ?
        是: stepMul=freeMul, clearLock, next=Base
@@ -174,6 +179,7 @@ Free 请求
   - `FreeNum`：剩余免费次数；
   - `ScatterLock[8][5]`：锁定散布与倍数；
   - `UnlockedRows/PrevUnlockedRows`：当前与上局解锁行数。
+  - `BaseEnterFreeFirstStep`：基础进入免费首局仅执行一次的阶段1解锁标识（填符号前按 `ScatterLock` 推进 `UnlockedRows`）。
 - 每次请求结束都会 `saveScene()`，支持断线恢复。
 
 ---
@@ -239,8 +245,8 @@ Free 请求
                      ▼                                  ▼
           ┌──────────────────────┐          ┌──────────────────────┐
           │ getSceneSymbolBase   │          │ FreeNum-- (先消耗一次) │
-          │ real_data[0]随机8x5   │          │ getSceneSymbolFree    │
-          └──────────┬───────────┘          │ lock优先 + real_data[1]│
+          │ real_data[0]随机8x5   │          │ Stage1: unlockByLockedScatter │
+          └──────────┬───────────┘          │ getSceneSymbolFree(lock优先) │
                      │                      └──────────┬───────────┘
                      ▼                                 │
           ┌──────────────────────┐                     ▼
