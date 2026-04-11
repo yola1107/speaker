@@ -102,7 +102,7 @@ func (s *betOrderService) handleMystery() {
 	s.mysteryGrid = int64Grid{}
 
 	sakuraEndCol := -1
-	if s.isHitSakuraTriggerRate() {
+	if !s.isFreeRound && s.isHitSakuraTriggerRate() {
 		sakuraEndCol = s.pickSakuraReels()
 	}
 
@@ -172,6 +172,11 @@ func (s *betOrderService) checkSymbolGridWin() {
 			continue
 		}
 
+		var bestWin WinInfo
+		var hasBest bool
+		bestOdds := int64(-1)
+		var bestCount int64
+
 		for idx := 0; idx < candCount; idx++ {
 			symbol := symbolCandidates[idx]
 			var count int64
@@ -194,19 +199,32 @@ func (s *betOrderService) checkSymbolGridWin() {
 
 			if count >= _minMatchCount && exist {
 				if odds := s.getSymbolBaseMultiplier(symbol, int(count)); odds > 0 {
-					winInfos = append(winInfos, WinInfo{
-						Symbol:      symbol,
-						SymbolCount: count,
-						LineCount:   int64(i),
-						Odds:        odds,
-						WinGrid:     winGrid,
-					})
-					for _, p := range line {
-						r, c := p/_colCount, p%_colCount
-						if winGrid[r][c] > 0 {
-							totalWinGrid[r][c] = 1
-						}
+					better := odds > bestOdds
+					if !better && odds == bestOdds {
+						better = count > bestCount
 					}
+					if better {
+						bestOdds = odds
+						bestCount = count
+						bestWin = WinInfo{
+							Symbol:      symbol,
+							SymbolCount: count,
+							LineCount:   int64(i),
+							Odds:        odds,
+							WinGrid:     winGrid,
+						}
+						hasBest = true
+					}
+				}
+			}
+		}
+
+		if hasBest {
+			winInfos = append(winInfos, bestWin)
+			for _, p := range line {
+				r, c := p/_colCount, p%_colCount
+				if bestWin.WinGrid[r][c] > 0 {
+					totalWinGrid[r][c] = 1
 				}
 			}
 		}

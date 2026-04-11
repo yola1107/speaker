@@ -8,31 +8,21 @@ import (
 	jsoniter "github.com/json-iterator/go"
 )
 
-// gameConfigJson .
+// gameConfigJson 与 game_json.go 中 JSON 顶层字段一致（扁平结构，无 free/mystery 嵌套）。
 type gameConfigJson struct {
-	PayTable [][]int64     `json:"pay_table"` // 赔付表，索引为符号 ID，列为 1~5 连的赔率
-	Lines    [][]int       `json:"lines"`     // 25 条固定线定义，位置编号范围为 0~19
-	Free     freeConfig    `json:"free"`      // 免费游戏触发配置
-	Mystery  mysteryConfig `json:"mystery"`   // 百变樱花揭示配置
-	RollCfg  rollConf      `json:"roll_cfg"`  // 不同阶段使用的滚轴组配置
-	RealData []Reel        `json:"real_data"` // 实际滚轴带数据
-}
-
-// freeConfig 定义免费游戏的基础规则。
-type freeConfig struct {
-	ScatterMin int64 `json:"scatter_min"` // 触发免费所需最少 Scatter 数量
-	FreeTimes  int64 `json:"free_times"`  // 单次触发赠送的免费次数
-}
-
-// mysteryConfig 定义百变樱花最终揭示为哪种符号。
-type mysteryConfig struct {
-	SymbolId          []int64 `json:"symbol_id"`           // 百变樱花最终揭示为哪种符号
-	BaseOpenWeights   []int   `json:"base_open_weight"`    // BaseGame 对应权重
-	FreeOpenWeights   []int   `json:"free_open_weight"`    // FreeGame 对应权重
-	LvCollectCount    []int64 `json:"lv_collect_count"`    // 樱花收集外观阈值
-	SakuraTriggerRate float64 `json:"sakura_trigger_rate"` // 樱吹雪触发概率（百分比）
-	SakuraReels       []int   `json:"sakura_reels"`        // 樱吹雪可替换到的最远列（3/4/5）
-	SakuraReelsWeight []int   `json:"sakura_reels_weight"` // 对应权重
+	PayTable          [][]int64 `json:"pay_table"`           // 赔付表，索引为符号 ID，列为 1~5 连的赔率
+	Lines             [][]int   `json:"lines"`               // 25 条固定线定义，位置编号范围为 0~1
+	LvCollectCount    []int64   `json:"lv_collect_count"`    // 樱花收集外观阈值（前端展示等）
+	ChangeSymbolId    []int64   `json:"change_symbol_id"`    // 百变樱花可揭示为的符号 ID
+	BaseOpenWeights   []int     `json:"base_open_weight"`    // BaseGame 揭示权重
+	FreeOpenWeights   []int     `json:"free_open_weight"`    // FreeGame 揭示权重
+	SakuraTriggerRate int64     `json:"sakura_trigger_rate"` // 樱吹雪触发：万分比
+	SakuraReels       []int     `json:"sakura_reels"`        // 樱吹雪可替换到的最远列（3/4/5）
+	SakuraReelsWeight []int     `json:"sakura_reels_weight"` // 对应权重
+	ScatterCount      []int64   `json:"scatter_count"`       // 与 free_spins 等长、升序；达到该档 scatter 数时触发对应免费次数
+	FreeSpins         []int64   `json:"free_spins"`          // 与 scatter_count 一一对应
+	RollCfg           rollConf  `json:"roll_cfg"`            // 不同阶段使用的滚轴组配置
+	RealData          []Reel    `json:"real_data"`           // 实际滚轴带数据
 
 	_baseOpenWeightTotal int // BaseGame 权重总和，运行时预计算
 	_freeOpenWeightTotal int // FreeGame 权重总和，运行时预计算
@@ -85,6 +75,7 @@ func (s *betOrderService) parseGameConfigs() {
 	s.validateRollCfg(&s.gameConfig.RollCfg.Free)
 
 	s.validateMysteryConfigs()
+	s.validateFreeSpinConfigs()
 }
 
 func (s *betOrderService) validateRollCfg(rollCfg *rollCfgType) {
@@ -100,35 +91,48 @@ func (s *betOrderService) validateRollCfg(rollCfg *rollCfgType) {
 	}
 }
 
+func (s *betOrderService) validateFreeSpinConfigs() {
+	sc := s.gameConfig.ScatterCount
+	fs := s.gameConfig.FreeSpins
+	if len(sc) == 0 || len(sc) != len(fs) {
+		panic("invalid scatter_count / free_spins")
+	}
+	for _, spins := range fs {
+		if spins <= 0 {
+			panic("invalid free_spins value")
+		}
+	}
+}
+
 func (s *betOrderService) validateMysteryConfigs() {
-	if cnt := len(s.gameConfig.Mystery.SymbolId); cnt == 0 ||
-		cnt != len(s.gameConfig.Mystery.BaseOpenWeights) ||
-		cnt != len(s.gameConfig.Mystery.FreeOpenWeights) {
+	if cnt := len(s.gameConfig.ChangeSymbolId); cnt == 0 ||
+		cnt != len(s.gameConfig.BaseOpenWeights) ||
+		cnt != len(s.gameConfig.FreeOpenWeights) {
 		panic("invalid mystery base config")
 	}
 
-	for _, w := range s.gameConfig.Mystery.BaseOpenWeights {
-		s.gameConfig.Mystery._baseOpenWeightTotal += w
+	for _, w := range s.gameConfig.BaseOpenWeights {
+		s.gameConfig._baseOpenWeightTotal += w
 	}
-	if s.gameConfig.Mystery._baseOpenWeightTotal <= 0 {
+	if s.gameConfig._baseOpenWeightTotal <= 0 {
 		panic("invalid mystery base weight total")
 	}
-	for _, w := range s.gameConfig.Mystery.FreeOpenWeights {
-		s.gameConfig.Mystery._freeOpenWeightTotal += w
+	for _, w := range s.gameConfig.FreeOpenWeights {
+		s.gameConfig._freeOpenWeightTotal += w
 	}
-	if s.gameConfig.Mystery._freeOpenWeightTotal <= 0 {
+	if s.gameConfig._freeOpenWeightTotal <= 0 {
 		panic("invalid mystery free weight total")
 	}
 
-	for _, reel := range s.gameConfig.Mystery.SakuraReels {
+	for _, reel := range s.gameConfig.SakuraReels {
 		if reel < 3 || reel > _colCount {
 			panic("invalid sakura reel")
 		}
 	}
-	for _, w := range s.gameConfig.Mystery.SakuraReelsWeight {
-		s.gameConfig.Mystery._sakuraReelsTotal += w
+	for _, w := range s.gameConfig.SakuraReelsWeight {
+		s.gameConfig._sakuraReelsTotal += w
 	}
-	if s.gameConfig.Mystery._sakuraReelsTotal <= 0 {
+	if s.gameConfig._sakuraReelsTotal <= 0 {
 		panic("invalid sakura_reels_weight total")
 	}
 }
@@ -194,26 +198,42 @@ func (s *betOrderService) getSymbolBaseMultiplier(symbol int64, starN int) int64
 	return table[starN-1]
 }
 
+// calcNewFreeGameNum 按 scatter 档位取免费次数：scatter_count 与 free_spins 升序一一对应，取满足 scatterCount>=scatter_count[i] 的最高档。
 func (s *betOrderService) calcNewFreeGameNum(scatterCount int64) int64 {
-	if s.isFreeRound || scatterCount < s.gameConfig.Free.ScatterMin {
+	if s.isFreeRound {
 		return 0
 	}
-	return s.gameConfig.Free.FreeTimes
+	if scatterCount < s.gameConfig.ScatterCount[0] {
+		return 0
+	}
+	if scatterCount >= s.gameConfig.ScatterCount[len(s.gameConfig.ScatterCount)-1] {
+		return s.gameConfig.FreeSpins[len(s.gameConfig.FreeSpins)-1]
+	}
+	sc := s.gameConfig.ScatterCount
+	fs := s.gameConfig.FreeSpins
+	for i := len(sc) - 1; i >= 0; i-- {
+		if scatterCount >= sc[i] {
+			return fs[i]
+		}
+	}
+	return 0
 }
 
 func (s *betOrderService) pickMMysterySymbol() int64 {
-	c := s.gameConfig.Mystery
 	if s.isFreeRound {
-		return c.SymbolId[pickWeightIndex(c.FreeOpenWeights, c._freeOpenWeightTotal)]
+		return s.gameConfig.ChangeSymbolId[pickWeightIndex(s.gameConfig.FreeOpenWeights, s.gameConfig._freeOpenWeightTotal)]
 	}
-	return c.SymbolId[pickWeightIndex(c.BaseOpenWeights, c._baseOpenWeightTotal)]
+	return s.gameConfig.ChangeSymbolId[pickWeightIndex(s.gameConfig.BaseOpenWeights, s.gameConfig._baseOpenWeightTotal)]
 }
 
 func (s *betOrderService) pickSakuraReels() int {
-	c := s.gameConfig.Mystery
-	return c.SakuraReels[pickWeightIndex(c.SakuraReelsWeight, c._sakuraReelsTotal)]
+	return s.gameConfig.SakuraReels[pickWeightIndex(s.gameConfig.SakuraReelsWeight, s.gameConfig._sakuraReelsTotal)]
 }
 
 func (s *betOrderService) isHitSakuraTriggerRate() bool {
-	return rand.Int64N(100) < int64(s.gameConfig.Mystery.SakuraTriggerRate)
+	r := s.gameConfig.SakuraTriggerRate
+	if r <= 0 {
+		return false
+	}
+	return rand.Int64N(10000)+1 <= r
 }
