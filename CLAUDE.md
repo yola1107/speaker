@@ -63,28 +63,9 @@ cmd/server → internal/server → internal/service → internal/biz → interna
 - **gnet** 高性能网络
 - **Protocol Buffers** API 定义
 
-## 编码规范
+## 项目特定错误处理
 
-### 命名约定
-
-| 类型 | 规范 | 示例 |
-|------|------|------|
-| 导出结构体/接口 | PascalCase | `SpeakerUsecase`, `SpeakerRepo` |
-| 私有结构体 | camelCase | `betOrderService` |
-| 导出函数/方法 | PascalCase | `CreateSpeaker` |
-| 私有函数/方法 | camelCase | `doBetOrder` |
-| 常量 | camelCase | `ErrUserNotFound` |
-
-### 注释规范
-
-- 导出函数必须有注释：`// FunctionName does something`
-- 接口需说明用途
-- 复杂逻辑添加行内注释
-
-### 错误处理
-
-- 使用 Kratos `errors` 包定义项目级别错误
-- 在 `internal/biz/` 层定义错误变量
+使用 Kratos `errors` 包定义项目级别错误，在 `internal/biz/` 层定义错误变量：
 
 ```go
 var (
@@ -92,56 +73,4 @@ var (
 )
 ```
 
-### 依赖注入
-
-- 构造函数命名：`NewXxx`
-- 每层定义 `ProviderSet` 供 Wire 使用
-- 依赖通过参数传入，避免全局变量
-
-### 日志规范
-
-- 使用 `log.Helper` 包装 logger
-- 关键操作记录日志
-
-```go
-log.Infof("CreateSpeaker: %v", g.Hello)
-```
-
-## Git 工作流
-
-### 分支策略
-
-| 分支类型 | 命名 | 用途 |
-|---------|------|------|
-| 主分支 | `main` | 生产代码，保持稳定 |
-| 功能分支 | `feature/xxx` | 新功能开发 |
-| 修复分支 | `fix/xxx` | Bug 修复 |
-| 重构分支 | `refactor/xxx` | 代码重构 |
-
-### 提交信息格式
-
-```
-<type>: <subject>
-```
-
-类型：`feat` | `fix` | `refactor` | `docs` | `test` | `chore`
-
-**示例：**
-- `feat: 添加用户登录功能`
-- `fix: 修复下注金额计算错误`
-- `refactor: 重构订单服务`
-
-### PR 流程
-
-1. 从 `main` 创建功能分支
-2. 完成开发并自测通过
-3. 提交 PR，描述变更内容
-4. Code Review 通过后合并
-
-## 规则
-1. 在编写任何代码前，先描述你的方法并等待批准
-2. 如果我给出的需求模糊，请在编写代码前提出澄清问题
-3. 完成任何代码编写后，列出边缘案例并建议覆盖它们的测试用例
-4. 如果任务需要修改超过 3 个文件，先停止并将其拆分成更小的任务
-5. 出现 bug 时，先编写能重现该 bug 的测试，再修复直到测试通过
-6. 每次我纠正你时，反思你做错了什么，并制定永不再犯的计划
+> 通用开发规范、Go 编码规范、Git 工作流等见 `~/.claude/CLAUDE.md`
