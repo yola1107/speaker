@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+option go_package = "egame-grpc/game/ys/pb";
+
+package ys;
+
+// 权能觉醒 (GameID: 19009)
+// 盘面: 5x6
+// 玩法: Ways 消除, 长符号, 收集玩法, 高倍率玩法
+
+message ys_BetOrderResponse {
+    optional string sn          = 1;   // 订单号
+    optional double balance     = 2;   // 当前余额
+    optional double betAmount   = 3;   // 本局下注金额
+    optional double curWin      = 4;   // 本步赢分
+    optional double freeWin     = 5;   // 免费模式累计赢分
+    optional double roundWin    = 7;   // 当前 round 累计赢分
+    optional bool isRoundOver   = 8;   // 当前 round 是否结束
+    optional bool isFree        = 10;  // 是否免费模式
+    optional int64 state        = 11;  // 当前阶段
+    optional int64 freeNum      = 12;  // 剩余免费次数
+    optional int64 freeTime     = 13;  // 已执行免费次数
+    optional int64 newFreeTimes = 14;  // 本步新增免费次数
+    optional int64 scatterCount = 15;  // 当前盘面夺宝数量
+    repeated int64 symGrid      = 16;  // 当前盘面
+    repeated int64 winGrid      = 17;  // 中奖展示网格
+    optional int64 stepMul      = 18;  // 本步最终倍数
+    optional bool limit         = 19;  // 是否触发最大可赢封顶
+    repeated ys_WinArr winArr   = 20;  // 本步中奖条目
+}
+
+message ys_WinArr {
+    optional int64 val     = 1;  // 中奖符号
+    optional int64 roadNum = 2;  // 中奖路数（线数积）
+    optional int64 starNum = 3;  // 连续命中列数
+    optional int64 odds    = 4;  // 赔率
+}
