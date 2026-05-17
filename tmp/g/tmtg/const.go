@@ -3,6 +3,8 @@ package tmtg
 const GameID = 18976 // 甜蜜糖果
 const _baseMultiplier = 20
 
+const _buyFreeMultiple = 100 // 购买免费：扣费 = betAmount × 本值
+
 const (
 	_rowCount = 5
 	_colCount = 6
@@ -25,6 +27,8 @@ const (
 )
 
 const _minMatchCount = 8
+
+const _scatterEntryMin = 4
 
 const (
 	_spinTypeBase        = 1  // 普通

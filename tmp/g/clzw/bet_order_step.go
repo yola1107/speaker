@@ -1,11 +1,11 @@
-package tmtg
+package clzw
 
 import (
 	"fmt"
 	"time"
 
+	"egame-grpc/game/clzw/pb"
 	"egame-grpc/game/common"
-	"egame-grpc/game/tmtg/pb"
 	"egame-grpc/gamelogic"
 	"egame-grpc/global"
 	"egame-grpc/model/game"
@@ -19,7 +19,7 @@ import (
 func (s *betOrderService) getRequestContext() error {
 	mer, mem, ga, err := common.GetRequestContext(s.req)
 	if err != nil {
-		global.GVA_LOG.Error("getRequestContext error.")
+		global.GVA_LOG.Error("getRequestContext", zap.Error(err))
 		return err
 	}
 	s.merchant, s.member, s.game = mer, mem, ga
@@ -91,7 +91,7 @@ func (s *betOrderService) updateBetAmount() bool {
 	return true
 }
 
-// checkPurchase 校验购买扣费额 = betAmount × _buyFreeMultiple，且仅基础首手（Steps==0）
+// checkPurchase 校验购买扣费须等于 betAmount×_buyFreeMultiple，且仅在基础首手发起。
 func (s *betOrderService) checkPurchase() error {
 	if s.req.Purchase <= 0 {
 		return nil
@@ -127,11 +127,11 @@ func (s *betOrderService) updateBonusAmount() {
 		Mul(decimal.NewFromInt(s.req.Multiple)).
 		Mul(decimal.NewFromInt(s.stepMultiplier))
 	if s.bonusAmount.GreaterThan(decimal.Zero) {
-		rounded := s.bonusAmount.Round(2).InexactFloat64()
-		s.scene.TotalWin += rounded
-		s.scene.RoundWin += rounded
+		rounded := s.bonusAmount.Round(2)
+		s.scene.TotalWin = decimal.NewFromFloat(s.scene.TotalWin).Add(rounded).Round(2).InexactFloat64()
+		s.scene.RoundWin = decimal.NewFromFloat(s.scene.RoundWin).Add(rounded).Round(2).InexactFloat64()
 		if s.isFreeRound {
-			s.scene.FreeWin += rounded
+			s.scene.FreeWin = decimal.NewFromFloat(s.scene.FreeWin).Add(rounded).Round(2).InexactFloat64()
 		}
 	}
 }
@@ -189,12 +189,13 @@ func (s *betOrderService) fillInGameOrderDetails() error {
 }
 
 func (s *betOrderService) getWinDetails() *WinDetails {
-	winArr := make([]*pb.Tmtg_WinArr, len(s.winInfos))
+	winArr := make([]*pb.Clzw_WinArr, len(s.winInfos))
 	for i, elem := range s.winInfos {
-		winArr[i] = &pb.Tmtg_WinArr{
+		winArr[i] = &pb.Clzw_WinArr{
 			Symbol:     proto.Int64(elem.Symbol),
 			SymbolNum:  proto.Int64(elem.SymbolCount),
-			Multiplier: proto.Int64(elem.Odds),
+			RoadNum:    proto.Int64(elem.LineCount),
+			Multiplier: proto.Int64(elem.Multiplier),
 		}
 	}
 
@@ -204,18 +205,19 @@ func (s *betOrderService) getWinDetails() *WinDetails {
 		RoundWin:     s.scene.RoundWin,
 		TotalWin:     s.scene.TotalWin,
 		FreeWin:      s.scene.FreeWin,
+		RoundStep:    s.roundStep,
 		NewFreeTimes: s.addFreeTime,
+		ScatterCount: s.scatterCount,
 		IsRoundOver:  s.isRoundOver,
 		IsSpinOver:   s.scene.NextStage == _spinTypeBase,
 		IsPurchase:   s.isPurchase,
 		StepMul:      s.stepMultiplier,
 		Limit:        s.limit,
-		Bomb:         s.scene.BombMulGrid,
 		WinArr:       winArr,
 	}
 }
 
-func gameOrderToResponse(gameOrder *game.GameOrder) (*pb.Tmtg_BetOrderResponse, error) {
+func gameOrderToResponse(gameOrder *game.GameOrder) (*pb.Clzw_BetOrderResponse, error) {
 	winDetail := WinDetails{}
 	if err := jsonx.UnmarshalString(gameOrder.WinDetails, &winDetail); err != nil {
 		return nil, err
@@ -231,7 +233,7 @@ func gameOrderToResponse(gameOrder *game.GameOrder) (*pb.Tmtg_BetOrderResponse, 
 	isFree := gameOrder.IsFree == 1
 	totalFreeTimes := winDetail.FreeNum + winDetail.FreeTimes
 	bet := decimal.NewFromFloat(gameOrder.BaseAmount * float64(gameOrder.BaseMultiple*gameOrder.Multiple)).Round(2).InexactFloat64()
-	return &pb.Tmtg_BetOrderResponse{
+	return &pb.Clzw_BetOrderResponse{
 		Sn:                 &gameOrder.OrderSn,
 		Balance:            &gameOrder.CurBalance,
 		BaseBet:            &gameOrder.BaseAmount,
@@ -252,8 +254,9 @@ func gameOrderToResponse(gameOrder *game.GameOrder) (*pb.Tmtg_BetOrderResponse, 
 		WinArr:             winDetail.WinArr,
 		StepMul:            &winDetail.StepMul,
 		Limit:              &winDetail.Limit,
+		ScatterCount:       &winDetail.ScatterCount,
 		IsPurchase:         &winDetail.IsPurchase,
-		Bomb:               int64GridToArray(winDetail.Bomb),
+		RoundStep:          &winDetail.RoundStep,
 	}, nil
 }
 

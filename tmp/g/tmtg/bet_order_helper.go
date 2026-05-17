@@ -15,11 +15,11 @@ func int64GridToArray(grid int64Grid) []int64 {
 	return elements
 }
 
-func symbolCount(symbolGrid int64Grid, symbol int64) int {
+func symbolCount(grid int64Grid, symbol int64) int {
 	var count int
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
-			if symbolGrid[r][c] == symbol {
+			if grid[r][c] == symbol {
 				count++
 			}
 		}
@@ -80,9 +80,10 @@ func (s *betOrderService) initSpinSymbol() {
 	}
 	rollers := cfg.getSceneSymbol(rollCfg)
 
-	// 购买首步：按 InitialScatter 权重注入 scatter
-	if isPurchase && !s.isFreeRound && mode._initialScatWT > 0 {
-		if n := pickWeightIndex(mode.InitialScatter, mode._initialScatWT); n > 0 {
+	// 购买首步：按 FreeTrigger.InitialScatter 权重注入 scatter
+	ft := &cfg.FreeTrigger
+	if isPurchase && !s.isFreeRound && ft._initialScatterByBuyWT > 0 {
+		if n := pickWeightIndex(ft.InitialScatterByBuy, ft._initialScatterByBuyWT); n > 0 {
 			if n > _colCount {
 				n = _colCount
 			}
@@ -94,62 +95,82 @@ func (s *betOrderService) initSpinSymbol() {
 		return
 	}
 
-	// 每列以 ProbPerCol 概率放置最多 1 个 bomb
-	s.bombMulSum = 0
+	// 按 InitialSpawn 权重决定 wild 数量，随机放置
+	currWild := 0
 	for col := 0; col < _colCount; col++ {
-		if mode.Multiplier.ProbPerCol <= 0 || rand.Float64() >= mode.Multiplier.ProbPerCol {
+		for r := 0; r < _rowCount; r++ {
+			if rollers[col].BoardSymbol[r] == _wild {
+				currWild++
+			}
+		}
+	}
+	if currWild < cfg.WildMaxLimit {
+		if n := pickWeightIndex(mode.WildGen.InitialSpawn, mode.WildGen._initialSpawnWT); n > 0 {
+			if remain := cfg.WildMaxLimit - currWild; n > remain {
+				n = remain
+			}
+			var candidates []int
+			for col := 0; col < _colCount; col++ {
+				for r := 0; r < _rowCount; r++ {
+					sym := rollers[col].BoardSymbol[r]
+					if sym != _wild && sym != _bomb && sym != _treasure {
+						candidates = append(candidates, col*_rowCount+r)
+					}
+				}
+			}
+			if n > len(candidates) {
+				n = len(candidates)
+			}
+			for _, idx := range Perm(len(candidates))[:n] {
+				rollers[candidates[idx]/_rowCount].BoardSymbol[candidates[idx]%_rowCount] = _wild
+			}
+		}
+	}
+
+	// 每列以 ProbPerCol 概率放置最多 1 个 bomb（候选格排除 scatter / wild）
+	for col := 0; col < _colCount; col++ {
+		if mode.BombGen.ProbPerCol <= 0 || rand.Float64() >= mode.BombGen.ProbPerCol {
 			continue
 		}
 		var candidates []int
 		for r := 0; r < _rowCount; r++ {
-			if rollers[col].BoardSymbol[r] != _treasure {
+			sym := rollers[col].BoardSymbol[r]
+			if sym != _treasure && sym != _wild {
 				candidates = append(candidates, r)
 			}
 		}
 		if len(candidates) == 0 {
 			continue
 		}
-		rollers[col].BoardSymbol[candidates[rand.IntN(len(candidates))]] = _bomb
-		s.bombMulSum += mode.Multiplier.Multiplier[pickWeightIndex(mode.Multiplier.Weight, mode.Multiplier.WTotal)]
-	}
-
-	// 按 InitialSpawn 权重决定 wild 数量，随机放置
-	if wildCount := pickWeightIndex(mode.WildGen.InitialSpawn, mode.WildGen._initialSpawnWT); wildCount > 0 {
-		if wildCount > cfg.WildMaxLimit {
-			wildCount = cfg.WildMaxLimit
-		}
-		var candidates []int
-		for col := 0; col < _colCount; col++ {
-			for r := 0; r < _rowCount; r++ {
-				sym := rollers[col].BoardSymbol[r]
-				if sym != _wild && sym != _bomb && sym != _treasure {
-					candidates = append(candidates, col*_rowCount+r)
-				}
-			}
-		}
-		if wildCount > len(candidates) {
-			wildCount = len(candidates)
-		}
-		for _, idx := range Perm(len(candidates))[:wildCount] {
-			rollers[candidates[idx]/_rowCount].BoardSymbol[candidates[idx]%_rowCount] = _wild
-		}
+		row := candidates[rand.IntN(len(candidates))]
+		mul := mode.BombGen.Multiplier[pickWeightIndex(mode.BombGen.Weight, mode.BombGen.WTotal)]
+		rollers[col].BoardSymbol[row] = _bomb
+		s.scene.BombMulGrid[row][col] = mul
 	}
 	s.scene.SymbolRoller = rollers
 }
 
-// eliBombSymbols 十字爆破 wild所在行列全消除，返回消除后下落的新盘面
+// eliBombSymbols 十字爆破：与 demo 一致，scatter / bomb 格保留，仅 wild 与普符被消
 func (s *betOrderService) eliBombSymbols() int64Grid {
 	nextSymbolGrid := s.symbolGrid
+	clearUnlessBombOrSC := func(rr, cc int) {
+		sym := s.symbolGrid[rr][cc]
+		if sym == _treasure || sym == _bomb {
+			return
+		}
+		nextSymbolGrid[rr][cc] = 0
+		s.scene.BombMulGrid[rr][cc] = 0
+	}
 	for r := 0; r < _rowCount; r++ {
 		for c := 0; c < _colCount; c++ {
 			if s.symbolGrid[r][c] != _wild {
 				continue
 			}
 			for cc := 0; cc < _colCount; cc++ {
-				nextSymbolGrid[r][cc] = 0
+				clearUnlessBombOrSC(r, cc)
 			}
 			for rr := 0; rr < _rowCount; rr++ {
-				nextSymbolGrid[rr][c] = 0
+				clearUnlessBombOrSC(rr, c)
 			}
 		}
 	}
@@ -167,6 +188,7 @@ func (s *betOrderService) moveSymbols(wildKeep bool) int64Grid {
 					continue
 				}
 				nextSymbolGrid[r][c] = 0
+				s.scene.BombMulGrid[r][c] = 0
 			}
 		}
 	}
@@ -174,8 +196,9 @@ func (s *betOrderService) moveSymbols(wildKeep bool) int64Grid {
 	return nextSymbolGrid
 }
 
-// dropSymbols 符号下落：0 视为空位，把非 0 符号压到底部
+// dropSymbols 符号下落：0 视为空位，把非 0 符号压到底部；BombMulGrid 与符号同列联动
 func (s *betOrderService) dropSymbols(grid *int64Grid) {
+	bg := &s.scene.BombMulGrid
 	for c := 0; c < _colCount; c++ {
 		writePos := _rowCount - 1
 		for r := _rowCount - 1; r >= 0; r-- {
@@ -183,6 +206,9 @@ func (s *betOrderService) dropSymbols(grid *int64Grid) {
 				if r != writePos {
 					(*grid)[writePos][c] = val
 					(*grid)[r][c] = 0
+					bv := (*bg)[r][c]
+					(*bg)[writePos][c] = bv
+					(*bg)[r][c] = 0
 				}
 				writePos--
 			}
@@ -190,9 +216,11 @@ func (s *betOrderService) dropSymbols(grid *int64Grid) {
 	}
 }
 
-func (s *betOrderService) fallingWinSymbols() {
-	s.fillBombs(&s.nextSymbolGrid)
-	s.fillWilds(&s.nextSymbolGrid)
+/*
+func (s *betOrderService) fallingWinSymbols2() {
+	mode := s.resolveMode()
+	s.fillBombs(&s.nextSymbolGrid, mode)
+	s.fillWilds(&s.nextSymbolGrid, mode)
 
 	for col := range s.scene.SymbolRoller {
 		roller := &s.scene.SymbolRoller[col]
@@ -206,9 +234,15 @@ func (s *betOrderService) fallingWinSymbols() {
 				}
 				if sym < 0 {
 					sym = -sym
+					if sym != _bomb {
+						s.scene.BombMulGrid[r][col] = 0
+					}
 				} else {
 					sym = data[roller.Start]
+					s.scene.BombMulGrid[r][col] = 0
 				}
+			} else if sym != _bomb {
+				s.scene.BombMulGrid[r][col] = 0
 			}
 			roller.BoardSymbol[r] = sym
 		}
@@ -216,9 +250,8 @@ func (s *betOrderService) fallingWinSymbols() {
 }
 
 // fillBombs 消除补位时，无 bomb 的列按概率注入 bomb，写入 -_bomb 标记
-func (s *betOrderService) fillBombs(grid *int64Grid) {
-	mode := s.resolveMode()
-	if mode.Multiplier.ProbPerCol <= 0 {
+func (s *betOrderService) fillBombs(grid *int64Grid, mode *ModeConfig) {
+	if mode.BombGen.ProbPerCol <= 0 {
 		return
 	}
 	for col := 0; col < _colCount; col++ {
@@ -232,17 +265,18 @@ func (s *betOrderService) fillBombs(grid *int64Grid) {
 				blanks = append(blanks, r)
 			}
 		}
-		if hasBomb || len(blanks) == 0 || rand.Float64() >= mode.Multiplier.ProbPerCol {
+		if hasBomb || len(blanks) == 0 || rand.Float64() >= mode.BombGen.ProbPerCol {
 			continue
 		}
-		(*grid)[blanks[rand.IntN(len(blanks))]][col] = -_bomb
-		s.bombMulSum += mode.Multiplier.Multiplier[pickWeightIndex(mode.Multiplier.Weight, mode.Multiplier.WTotal)]
+		br := blanks[rand.IntN(len(blanks))]
+		mul := mode.BombGen.Multiplier[pickWeightIndex(mode.BombGen.Weight, mode.BombGen.WTotal)]
+		(*grid)[br][col] = -_bomb
+		s.scene.BombMulGrid[br][col] = mul
 	}
 }
 
 // fillWilds 在空白位置中按权重选 wild 补位，写入 -_wild 标记
-func (s *betOrderService) fillWilds(grid *int64Grid) {
-	mode := s.resolveMode()
+func (s *betOrderService) fillWilds(grid *int64Grid, mode *ModeConfig) {
 	n := pickWeightIndex(mode.WildGen.TumbleRefill, mode.WildGen._tumbleRefillWT)
 	if n <= 0 {
 		return
@@ -263,7 +297,88 @@ func (s *betOrderService) fillWilds(grid *int64Grid) {
 		return
 	}
 	for _, idx := range Perm(len(blanks))[:n] {
-		(*grid)[blanks[idx]/_colCount][blanks[idx]%_colCount] = -_wild
+		br, bc := blanks[idx]/_colCount, blanks[idx]%_colCount
+		(*grid)[br][bc] = -_wild
+		s.scene.BombMulGrid[br][bc] = 0
+	}
+} */
+
+// fallingWinSymbols 连消补位：滚轴 → bomb → wild（仅作用于本列新补格）
+func (s *betOrderService) fallingWinSymbols() {
+	mode := s.resolveMode()
+
+	for col := 0; col < _colCount; col++ {
+		roller := &s.scene.SymbolRoller[col]
+		data := s.gameConfig.RealData[roller.Real][col]
+
+		var newRows []int
+		for r := 0; r < _rowCount; r++ {
+			if s.nextSymbolGrid[r][col] != 0 {
+				continue
+			}
+			roller.Start--
+			if roller.Start < 0 {
+				roller.Start = len(data) - 1
+			}
+			sym := data[roller.Start]
+			s.nextSymbolGrid[r][col] = sym
+			s.scene.BombMulGrid[r][col] = 0
+			newRows = append(newRows, r)
+		}
+
+		hasBomb := false
+		for r := 0; r < _rowCount; r++ {
+			if s.nextSymbolGrid[r][col] == _bomb {
+				hasBomb = true
+				break
+			}
+		}
+		if !hasBomb && mode.BombGen.ProbPerCol > 0 && len(newRows) > 0 &&
+			rand.Float64() < mode.BombGen.ProbPerCol {
+			var bombCand []int
+			for _, r := range newRows {
+				sym := s.nextSymbolGrid[r][col]
+				if sym != _treasure && sym != _wild {
+					bombCand = append(bombCand, r)
+				}
+			}
+			if len(bombCand) > 0 {
+				br := bombCand[rand.IntN(len(bombCand))]
+				mul := mode.BombGen.Multiplier[pickWeightIndex(mode.BombGen.Weight, mode.BombGen.WTotal)]
+				s.nextSymbolGrid[br][col] = _bomb
+				s.scene.BombMulGrid[br][col] = mul
+			}
+		}
+
+		// 每列补 wild 时用当前全盘 wild 计数，约束跨列累计不超过 wild_max（勿用单列前的快照否则会多塞 wild）
+		gridWildNow := symbolCount(s.nextSymbolGrid, _wild)
+		newWild := 0
+		tw := pickWeightIndex(mode.WildGen.TumbleRefill, mode.WildGen._tumbleRefillWT)
+		wildMax := s.gameConfig.WildMaxLimit
+		for i := 0; i < tw; i++ {
+			//gridWildNow := symbolCount(s.nextSymbolGrid, _wild) // 按列来gen_wild?
+			if wildMax-gridWildNow-newWild <= 0 {
+				break
+			}
+			var wildCand []int
+			for _, r := range newRows {
+				sym := s.nextSymbolGrid[r][col]
+				if sym != _treasure && sym != _bomb && sym != _wild {
+					wildCand = append(wildCand, r)
+				}
+			}
+			if len(wildCand) == 0 {
+				break
+			}
+			br := wildCand[rand.IntN(len(wildCand))]
+			s.nextSymbolGrid[br][col] = _wild
+			s.scene.BombMulGrid[br][col] = 0
+			newWild++
+		}
+
+		for r := 0; r < _rowCount; r++ {
+			roller.BoardSymbol[r] = s.nextSymbolGrid[r][col]
+		}
 	}
 }
 
@@ -282,19 +397,21 @@ func (s *betOrderService) findWinInfos() {
 	}
 
 	wildCount := counter[_wild]
-	for symbol := int64(1); symbol < _wild; symbol++ {
+	for symbol := int64(1); symbol < _treasure; symbol++ {
 		if counter[symbol] <= 0 {
 			continue
 		}
-		matchCount := counter[symbol]
-		if symbol != _treasure {
-			matchCount += wildCount
+		matchCount := counter[symbol] + wildCount
+		if matchCount < _minMatchCount {
+			continue
 		}
 		if odds := s.gameConfig.getSymbolBaseMultiplier(symbol, int(matchCount)); odds > 0 {
 			var symWinGrid int64Grid
+			// 与 demo mask[grid == s_id] 一致：只消除该符号格，wild 保留在盘上
 			for r := 0; r < _rowCount; r++ {
 				for c := 0; c < _colCount; c++ {
-					if s.symbolGrid[r][c] == symbol || s.symbolGrid[r][c] == _wild {
+					// if s.symbolGrid[r][c] == symbol || s.symbolGrid[r][c] == _wild {
+					if s.symbolGrid[r][c] == symbol {
 						winGrid[r][c] = symbol
 						symWinGrid[r][c] = symbol
 					}
@@ -342,7 +459,6 @@ func (s *betOrderService) applyMaxWinLimit() {
 	s.limit = true
 	s.addFreeTime = 0
 	s.scene.FreeNum = 0
+	s.scene.PurchaseAmount = 0
 	s.scene.NextStage = _spinTypeBase
-	//s.scene.Lock = [16]int64{}
-	//s.scene.PurchaseAmount = 0
 }

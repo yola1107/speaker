@@ -1,4 +1,4 @@
-package tmtg
+package clzw
 
 import (
 	"errors"
@@ -37,11 +37,11 @@ type betOrderService struct {
 	lineMultiplier int64                // 线赔率合计
 	stepMultiplier int64                // Step倍数
 	winInfos       []WinInfo            // 中奖信息
-	symbolGrid     int64Grid            // 符号网格
-	winGrid        int64Grid            // 中奖网格
+	symbolGrid     int64Grid            // 符号网格（3行5列）
+	winGrid        int64Grid            // 中奖网格（3行5列）
 	nextSymbolGrid int64Grid            // 消除+下落后的下一盘面
-	counter        [14]int64            // 盘面上符号数量计数
-	limit          bool                 // 封顶标识
+	roundStep      int64                // 消除步数 0开始
+	limit          bool                 // 是否触发最大可赢封顶
 	isPurchase     bool                 // 本步回包 isPurchase
 	debug          rtpDebugData         // 是否为RTP测试流程
 }

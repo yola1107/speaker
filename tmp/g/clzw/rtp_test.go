@@ -1,9 +1,8 @@
-package tmtg
+package clzw
 
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -75,11 +74,6 @@ func TestRtp(t *testing.T) {
 				// 基础模式回合结束时，如果触发了免费游戏
 				if s.addFreeTime > 0 {
 					freeTriggerCount++
-					//// 与 demo fg_tw 口径一致：触发局 scatter 计入免费贡献（总 RTP 不变）
-					//if sc := float64(s.gameConfig.scatterPayMultiplier(s.scatterCount)); sc > 0 {
-					//	baseWin -= sc
-					//	freeWin += sc
-					//}
 				}
 				if _enablePurchaseModeRtp && s.req.Purchase > 0 {
 					totalBet += float64(_purchaseAmountRtp)
@@ -135,10 +129,13 @@ func printBenchmarkSummary(buf *strings.Builder, baseRounds int64, totalBet, bas
 	elapsed := time.Since(start)
 	speed := safeDiv(baseRounds, int64(elapsed.Seconds()))
 	w("\n运行局数: %d，用时: %v，速度: %.0f 局/秒\n", baseRounds, elapsed.Round(time.Second), speed)
+	if _enablePurchaseModeRtp {
+		w("(购买模式: 每基础新局 autoPurchase，注入时计一次投注 %.0f 倍数)\n", float64(_purchaseAmountRtp))
+	}
 
 	baseRTP := baseWin * 100 / totalBet
 	freeRTP := freeWin * 100 / totalBet
-	totalRTP := totalWin * 100 / totalBet
+	totalRTP := (baseWin + freeWin) * 100 / totalBet
 	baseWinRate := safeDiv(baseWinTimes*100, baseRounds)
 	freeWinRate := safeDiv(freeWinTimes*100, freeRounds)
 	freeTriggerRate := safeDiv(freeTriggerCount*100, baseRounds)
@@ -229,48 +226,4 @@ func (s *betOrderService) autoPurchase(enable bool, purchaseAmount int64) {
 		return
 	}
 	s.req.Purchase = 0
-}
-
-// TestRtpVerify1M 快速校验：go test -run TestRtpVerify1M -count=1
-func TestRtpVerify1M(t *testing.T) {
-	if os.Getenv("TMTG_RTP_SMOKE") == "" {
-		t.Skip("set TMTG_RTP_SMOKE=1 to run")
-	}
-	const rounds int64 = 1e7
-	s := newRtpBetService()
-	s.initGameConfigs()
-	var baseRounds, freeRounds int64
-	var baseWin, freeWin, totalBet, totalWin float64
-	for baseRounds < rounds {
-		if err := s.baseSpin(); err != nil {
-			t.Fatal(err)
-		}
-		stepWin := float64(s.stepMultiplier)
-		totalWin += stepWin
-		if s.isFreeRound {
-			freeWin += stepWin
-		} else {
-			baseWin += stepWin
-		}
-		if s.isRoundOver {
-			if s.isFreeRound {
-				freeRounds++
-			} else {
-				baseRounds++
-				//// 与 demo fg_tw 口径一致：触发局 scatter 计入免费贡献（总 RTP 不变）
-				//if s.addFreeTime > 0 {
-				//	if sc := float64(s.gameConfig.scatterPayMultiplier(s.scatterCount)); sc > 0 {
-				//		baseWin -= sc
-				//		freeWin += sc
-				//	}
-				//}
-				totalBet += float64(_baseMultiplier)
-			}
-		}
-		if s.isRoundOver && s.scene.FreeNum <= 0 {
-			resetRtpBetCounters(s)
-		}
-	}
-	t.Logf("Runtime=%d baseRtp=%.4f%% freeRtp=%.4f%% Rtp=%.4f%% totalWin=%.0f totalBet=%.0f",
-		baseRounds, baseWin*100/totalBet, freeWin*100/totalBet, totalWin*100/totalBet, totalWin, totalBet)
 }

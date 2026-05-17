@@ -1,14 +1,14 @@
-package tmtg
+package clzw
 
 import (
 	"context"
 	"time"
 
+	"go.uber.org/zap"
+
 	"egame-grpc/game/common"
 	"egame-grpc/global"
 	"egame-grpc/utils/jsonx"
-
-	"go.uber.org/zap"
 )
 
 type SpinSceneData struct {
@@ -17,8 +17,6 @@ type SpinSceneData struct {
 	Stage        int8                    `json:"stage"`   // 运行阶段
 	NextStage    int8                    `json:"nStage"`  // 下一阶段
 	SymbolRoller [_colCount]SymbolRoller `json:"sRoller"` // 滚轮符号表
-	RoundMulAcc  int64                   `json:"acc"`     // 当前 Round 内累计step倍数和（局末一次结算）
-	BombMulGrid  int64Grid               `json:"bomb"`    // bomb 格存倍率数值，非 bomb 为 0
 }
 
 type SceneFreeGame struct {
@@ -27,11 +25,16 @@ type SceneFreeGame struct {
 	RoundWin       float64 `json:"rw"` // 回合奖金
 	FreeWin        float64 `json:"fw"` // 免费累计总金额
 	TotalWin       float64 `json:"tw"` // 中奖total
-	PurchaseAmount int64   `json:"pa"` // 购买扣费额，>0 表示购买模式
+	PurchaseAmount int64   `json:"pa"` // 本次购买扣费额，与 s.req.Purchase 一致
 }
 
 func (s *SceneFreeGame) Reset() {
-	*s = SceneFreeGame{}
+	s.FreeNum = 0
+	s.FreeTimes = 0
+	s.RoundWin = 0
+	s.FreeWin = 0
+	s.TotalWin = 0
+	s.PurchaseAmount = 0
 }
 
 func (s *betOrderService) sceneKey() string {
@@ -76,13 +79,9 @@ func (s *betOrderService) syncGameStage() error {
 		s.scene.Stage = s.scene.NextStage
 		s.scene.NextStage = 0
 	}
-	s.isFreeRound = s.scene.Stage == _spinTypeFree ||
-		s.scene.Stage == _spinTypeFreeEli || s.scene.Stage == _spinTypeFreeBombEli
-
+	s.isFreeRound = s.scene.Stage == _spinTypeFree || s.scene.Stage == _spinTypeFreeEli
 	if s.scene.Steps == 0 && (s.scene.Stage == _spinTypeBase || s.scene.Stage == _spinTypeFree) {
 		s.scene.RoundWin = 0
-		s.scene.RoundMulAcc = 0
-		s.scene.BombMulGrid = int64Grid{}
 	}
 	return nil
 }

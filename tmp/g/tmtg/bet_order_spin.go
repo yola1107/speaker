@@ -1,9 +1,6 @@
 package tmtg
 
 func (s *betOrderService) baseSpin() error {
-	if s.debug.open {
-		s.syncGameStage()
-	}
 	if err := s.initialize(); err != nil {
 		return err
 	}
@@ -23,35 +20,34 @@ func (s *betOrderService) baseSpin() error {
 func (s *betOrderService) processWinInfos() {
 	s.addFreeTime = 0
 	s.scatterCount = s.counter[_treasure]
-
-	var totalOdds int64
+	s.isPurchase = s.scene.PurchaseAmount > 0
+	s.lineMultiplier = 0
 	for _, w := range s.winInfos {
-		totalOdds += w.Odds
+		s.lineMultiplier += w.Odds
 	}
-	s.lineMultiplier = totalOdds
-	s.stepMultiplier = s.lineMultiplier
-	if s.bombMulSum > 0 && s.stepMultiplier > 0 {
-		s.stepMultiplier *= s.bombMulSum
-	}
+	s.scene.RoundMulAcc += s.lineMultiplier
+	s.stepMultiplier = 0
 
-	var haveEli, wildKeep bool
-	for _, w := range s.winInfos {
-		if w.Symbol < _treasure {
-			haveEli = true
-			if w.Count < _minMatchCount {
-				wildKeep = true // wild 不消除
-			}
-		}
-	}
+	var haveEli = len(s.winInfos) > 0
+	var wildKeep bool
+	//for _, w := range s.winInfos {
+	//	if w.Symbol < _treasure {
+	//
+	//		if w.Count < _minMatchCount {
+	//			wildKeep = true // wild 不消除
+	//			break
+	//		}
+	//	}
+	//}
 
 	if !s.isFreeRound {
 		s.processBase(haveEli, wildKeep)
 	} else {
 		s.processFree(haveEli, wildKeep)
 	}
-
-	s.updateBonusAmount()
+	s.calcWin()
 	s.applyMaxWinLimit()
+	s.updateBonusAmount()
 }
 
 func (s *betOrderService) processBase(haveEli, wildKeep bool) {
@@ -108,4 +104,31 @@ func (s *betOrderService) processFree(haveEli, wildKeep bool) {
 			s.scene.NextStage = _spinTypeBase
 		}
 	}
+}
+
+// calcWin 整转 tumble 内只累计线赔率，局末一次结算；免费局且盘面有 bomb 时 (spin_p+spin_w)*sum(m)。
+func (s *betOrderService) calcWin() {
+	if !s.isRoundOver {
+		return
+	}
+	mul := s.scene.RoundMulAcc
+	s.scene.RoundMulAcc = 0
+
+	if s.isFreeRound && mul > 0 {
+		// 统计盘面 bomb 格上的倍率
+		var sum int64
+		for r := 0; r < _rowCount; r++ {
+			for c := 0; c < _colCount; c++ {
+				if s.symbolGrid[r][c] == _bomb {
+					sum += s.scene.BombMulGrid[r][c]
+				}
+			}
+		}
+		if sum > 0 {
+			mul *= sum
+		}
+	} else if !s.isFreeRound && s.scatterCount >= _scatterEntryMin {
+		mul += s.gameConfig.scatterPayMultiplier(s.scatterCount)
+	}
+	s.stepMultiplier = mul
 }

@@ -9,28 +9,32 @@ import (
 )
 
 type gameConfigJson struct {
-	PayTable       [][]int64  `json:"pay_table"`
-	WildMaxLimit   int        `json:"wild_max_limit"`
-	MaxWinCap      int64      `json:"max_win_cap"`
-	BuyFeatureCost int64      `json:"buy_feature_cost"`
-	BaseGame       ModeConfig `json:"base_game"`
-	FreeGame       ModeConfig `json:"free_game"`
-	FreeBuy        ModeConfig `json:"free_buy"`
-	RollCfg        RollConf   `json:"roll_cfg"`
-	RealData       []Reel     `json:"real_data"`
+	PayTable        [][]int64   `json:"pay_table"`
+	PayTableScatter []int64     `json:"pay_table_scatter"`
+	WildMaxLimit    int         `json:"wild_max_limit"`
+	MaxWinCap       int64       `json:"max_win_cap"`
+	FreeTrigger     FreeTrigger `json:"free_trigger"`
+	BaseGame        ModeConfig  `json:"base_game"`
+	FreeGame        ModeConfig  `json:"free_game"`
+	FreeBuy         ModeConfig  `json:"free_buy"`
+	RollCfg         RollConf    `json:"roll_cfg"`
+	RealData        []Reel      `json:"real_data"`
+}
+
+type FreeTrigger struct {
+	InitialSpins           int   `json:"initial_spins"`
+	RetriggerCount         int   `json:"retrigger_count"`
+	RetriggerAdd           int   `json:"retrigger_add"`
+	InitialScatterByBuy    []int `json:"initial_scatter_by_buy"` // 初始化4-6个Scatter权重
+	_initialScatterByBuyWT int
 }
 
 type ModeConfig struct {
-	InitialSpins   int            `json:"initial_spins"`
-	RetriggerCount int            `json:"retrigger_count"`
-	RetriggerAdd   int            `json:"retrigger_add"`
-	InitialScatter []int          `json:"initial_scatter"`
-	Multiplier     MultiplierItem `json:"multiplier"`
-	WildGen        WildGenConfig  `json:"wild_gen"`
-	_initialScatWT int
+	BombGen BombGenConfig `json:"bomb_gen"`
+	WildGen WildGenConfig `json:"wild_gen"`
 }
 
-type MultiplierItem struct {
+type BombGenConfig struct {
 	ProbPerCol float64 `json:"prob_per_col"`
 	Multiplier []int64 `json:"multiplier"`
 	Weight     []int   `json:"weight"`
@@ -121,14 +125,14 @@ func (c *gameConfigJson) validate() error {
 		"free_game": &c.FreeGame,
 		"free_buy":  &c.FreeBuy,
 	} {
-		if len(mode.Multiplier.Weight) != len(mode.Multiplier.Multiplier) {
+		if len(mode.BombGen.Weight) != len(mode.BombGen.Multiplier) {
 			return fmt.Errorf("multipler/weight not match. %s", name)
 		}
-		mode.Multiplier.WTotal = 0
-		for _, w := range mode.Multiplier.Weight {
-			mode.Multiplier.WTotal += w
+		mode.BombGen.WTotal = 0
+		for _, w := range mode.BombGen.Weight {
+			mode.BombGen.WTotal += w
 		}
-		if mode.Multiplier.WTotal <= 0 {
+		if mode.BombGen.WTotal <= 0 {
 			return fmt.Errorf("multipler weight sum <= 0. %s", name)
 		}
 		mode.WildGen._initialSpawnWT = 0
@@ -145,9 +149,10 @@ func (c *gameConfigJson) validate() error {
 		if mode.WildGen._tumbleRefillWT <= 0 {
 			return fmt.Errorf("tumble_refill weight sum <= 0. %s", name)
 		}
-		for _, w := range mode.InitialScatter {
-			mode._initialScatWT += w
-		}
+	}
+	c.FreeTrigger._initialScatterByBuyWT = 0
+	for _, w := range c.FreeTrigger.InitialScatterByBuy {
+		c.FreeTrigger._initialScatterByBuyWT += w
 	}
 	return nil
 }
@@ -175,13 +180,25 @@ func (c *gameConfigJson) getSceneSymbol(rollCfg RollCfgType) [_colCount]SymbolRo
 	return symbols
 }
 
-// getSymbolBaseMultiplier pay_table 索引从 matchCount=4 开始（index = matchCount - 4）
+// getSymbolBaseMultiplier pay_table 索引从 matchCount=8 开始（index = matchCount - 8）
+// scatterPayMultiplier 夺宝赔付倍数（与 demo min(sc,6) 取档一致：4→[0], 5→[1], 6+→[2]）。
+func (c *gameConfigJson) scatterPayMultiplier(scatterCount int64) int64 {
+	if scatterCount < _scatterEntryMin || len(c.PayTableScatter) == 0 {
+		return 0
+	}
+	idx := int(scatterCount - _scatterEntryMin)
+	if idx >= len(c.PayTableScatter) {
+		idx = len(c.PayTableScatter) - 1
+	}
+	return c.PayTableScatter[idx]
+}
+
 func (c *gameConfigJson) getSymbolBaseMultiplier(symbol int64, starN int) int64 {
 	if symbol < 1 || int(symbol) > len(c.PayTable) {
 		return 0
 	}
 	table := c.PayTable[symbol-1]
-	idx := starN - 4
+	idx := starN - _minMatchCount
 	if idx < 0 {
 		return 0
 	}
@@ -192,13 +209,16 @@ func (c *gameConfigJson) getSymbolBaseMultiplier(symbol int64, starN int) int64 
 }
 
 func (c *gameConfigJson) calcNewFreeGameNum(isFree bool, scatterCount int64) int64 {
-	if scatterCount < int64(c.FreeGame.RetriggerCount) {
+	if isFree {
+		if scatterCount < int64(c.FreeTrigger.RetriggerCount) {
+			return 0
+		}
+		return int64(c.FreeTrigger.RetriggerAdd)
+	}
+	if scatterCount < _scatterEntryMin {
 		return 0
 	}
-	if isFree {
-		return int64(c.FreeGame.RetriggerAdd)
-	}
-	return int64(c.FreeGame.InitialSpins)
+	return int64(c.FreeTrigger.InitialSpins)
 }
 
 // pickWeightIndex 按权重随机选择索引

@@ -1,4 +1,4 @@
-package tmtg
+package clzw
 
 import (
 	"fmt"
@@ -154,7 +154,7 @@ func TestRtp2(t *testing.T) {
 				} else {
 					totalBet += float64(_baseMultiplier)
 				}
-				// 基础模式回合结束时，如果触发了免费游戏
+				// 基础模式回合结束时，如果触发了免费游戏（与 rtp_test.go / pjcd 一致）
 				if s.addFreeTime > 0 {
 					baseFreeTriggered++
 				}
@@ -250,15 +250,15 @@ func writeStepSummary(buf *strings.Builder, s *betOrderService, step int, isFree
 		return
 	}
 	for _, elem := range s.winInfos {
-		fprintf(buf, "\t符号:%2d, 命中: %d, 赔率: %4.2f, 奖金: %4.2f\n",
-			elem.Symbol, elem.SymbolCount, float64(elem.Odds), float64(elem.Odds))
+		fprintf(buf, "\t符号:%2d, 支付线:%2d, 命中: %d, 赔率: %4.2f, 奖金: %4.2f\n",
+			elem.Symbol, elem.LineCount, elem.SymbolCount, float64(elem.Odds), float64(elem.Odds))
 	}
 	isFreeMode := 0
 	if s.isFreeRound {
 		isFreeMode = 1
 	}
-	fprintf(buf, "\tMode=%d, Stage=%d, Steps=%d, stepMul=%d, lineMul=%d, 本回合累计 step 倍数: %.2f\n",
-		isFreeMode, s.scene.Stage, s.scene.Steps, s.stepMultiplier, s.lineMultiplier, roundWin)
+	fprintf(buf, "\tMode=%d, Stage=%d, Steps=%d, stepMul=%d, lineMul=%d, IsPurchase=%v, 本回合累计 step 倍数: %.2f\n",
+		isFreeMode, s.scene.Stage, s.scene.Steps, s.stepMultiplier, s.lineMultiplier, s.scene.PurchaseAmount > 0, roundWin)
 	if !s.isRoundOver {
 		fprintf(buf, "\t连消继续 → 下一请求 Step%d\n", step+1)
 		return

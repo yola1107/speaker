@@ -1,14 +1,15 @@
-package tmtg
+package clzw
 
-import "egame-grpc/game/tmtg/pb"
+import "egame-grpc/game/clzw/pb"
 
 type int64Grid [_rowCount][_colCount]int64
 
 type WinInfo struct {
 	Symbol      int64     `json:"symbol"`      // 符号值
-	SymbolCount int64     `json:"symbolCount"` // 连续命中符号个数(含wild)
-	Count       int64     `json:"count"`       // 数量
+	SymbolCount int64     `json:"symbolCount"` // 连续相同符号的个数
+	LineCount   int64     `json:"lineCount"`   // 路数
 	Odds        int64     `json:"odds"`        // 基础赔率
+	Multiplier  int64     `json:"mul"`         // 倍数
 	WinGrid     int64Grid `json:"loc"`         // 中奖位置网格
 }
 
@@ -18,14 +19,15 @@ type WinDetails struct {
 	RoundWin     float64           `json:"roundWin"`
 	TotalWin     float64           `json:"totalWin"`
 	FreeWin      float64           `json:"freeWin"`
+	RoundStep    int64             `json:"roundStep"`
 	NewFreeTimes int64             `json:"newFreeTimes"`
+	ScatterCount int64             `json:"scatterCount"`
 	IsRoundOver  bool              `json:"isRoundOver"`
 	IsSpinOver   bool              `json:"isSpinOver"`
 	IsPurchase   bool              `json:"isPurchase"`
 	StepMul      int64             `json:"stepMul"`
 	Limit        bool              `json:"limit"`
-	Bomb         int64Grid         `json:"bomb"`
-	WinArr       []*pb.Tmtg_WinArr `json:"winArr"`
+	WinArr       []*pb.Clzw_WinArr `json:"winArr"`
 }
 
 type rtpDebugData struct {

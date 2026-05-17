@@ -2,16 +2,17 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.34.1
-// source: tmtg.proto
+// source: ys.proto
 
 package pb
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -21,7 +22,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type Tmtg_BetOrderResponse struct {
+type Ys_BetOrderResponse struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Sn                 *string                `protobuf:"bytes,1,opt,name=sn,proto3,oneof" json:"sn,omitempty"`                                   // 订单号
 	Balance            *float64               `protobuf:"fixed64,2,opt,name=balance,proto3,oneof" json:"balance,omitempty"`                       // 当前余额
@@ -40,30 +41,32 @@ type Tmtg_BetOrderResponse struct {
 	TotalFreeTimes     *int64                 `protobuf:"varint,15,opt,name=totalFreeTimes,proto3,oneof" json:"totalFreeTimes,omitempty"`         // 总免费局数
 	SymGrid            []int64                `protobuf:"varint,16,rep,packed,name=symGrid,proto3" json:"symGrid,omitempty"`                      // 当前盘面
 	WinGrid            []int64                `protobuf:"varint,17,rep,packed,name=winGrid,proto3" json:"winGrid,omitempty"`                      // 中奖展示网格
-	WinArr             []*Tmtg_WinArr         `protobuf:"bytes,18,rep,name=winArr,proto3" json:"winArr,omitempty"`                                // 本步中奖条目
+	WinArr             []*Ys_WinArr           `protobuf:"bytes,18,rep,name=winArr,proto3" json:"winArr,omitempty"`                                // 本步中奖条目
 	StepMul            *int64                 `protobuf:"varint,19,opt,name=stepMul,proto3,oneof" json:"stepMul,omitempty"`                       // 本步最终倍数
 	Limit              *bool                  `protobuf:"varint,20,opt,name=limit,proto3,oneof" json:"limit,omitempty"`                           // 是否触发最大可赢封顶
-	IsPurchase         *bool                  `protobuf:"varint,21,opt,name=isPurchase,proto3,oneof" json:"isPurchase,omitempty"`                 // 是否处于购买
-	Bomb               []int64                `protobuf:"varint,22,rep,packed,name=bomb,proto3" json:"bomb,omitempty"`                            // 当前盘面炸弹倍数
+	ScatterCount       *int64                 `protobuf:"varint,21,opt,name=scatterCount,proto3,oneof" json:"scatterCount,omitempty"`             // 当前盘面夺宝数量
+	BonusState         *int64                 `protobuf:"varint,22,opt,name=bonusState,proto3,oneof" json:"bonusState,omitempty"`                 // 免费选档状态: 0无, 1待选, 2已选
+	BonusNum           *int64                 `protobuf:"varint,23,opt,name=bonusNum,proto3,oneof" json:"bonusNum,omitempty"`                     // 免费档位: 1=20次, 2=10次, 3=5次
+	RoundStep          *int64                 `protobuf:"varint,24,opt,name=roundStep,proto3,oneof" json:"roundStep,omitempty"`                   // 连续消除步数 0开始
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
-func (x *Tmtg_BetOrderResponse) Reset() {
-	*x = Tmtg_BetOrderResponse{}
-	mi := &file_tmtg_proto_msgTypes[0]
+func (x *Ys_BetOrderResponse) Reset() {
+	*x = Ys_BetOrderResponse{}
+	mi := &file_ys_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Tmtg_BetOrderResponse) String() string {
+func (x *Ys_BetOrderResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Tmtg_BetOrderResponse) ProtoMessage() {}
+func (*Ys_BetOrderResponse) ProtoMessage() {}
 
-func (x *Tmtg_BetOrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tmtg_proto_msgTypes[0]
+func (x *Ys_BetOrderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ys_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -74,189 +77,204 @@ func (x *Tmtg_BetOrderResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Tmtg_BetOrderResponse.ProtoReflect.Descriptor instead.
-func (*Tmtg_BetOrderResponse) Descriptor() ([]byte, []int) {
-	return file_tmtg_proto_rawDescGZIP(), []int{0}
+// Deprecated: Use Ys_BetOrderResponse.ProtoReflect.Descriptor instead.
+func (*Ys_BetOrderResponse) Descriptor() ([]byte, []int) {
+	return file_ys_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Tmtg_BetOrderResponse) GetSn() string {
+func (x *Ys_BetOrderResponse) GetSn() string {
 	if x != nil && x.Sn != nil {
 		return *x.Sn
 	}
 	return ""
 }
 
-func (x *Tmtg_BetOrderResponse) GetBalance() float64 {
+func (x *Ys_BetOrderResponse) GetBalance() float64 {
 	if x != nil && x.Balance != nil {
 		return *x.Balance
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetBaseBet() float64 {
+func (x *Ys_BetOrderResponse) GetBaseBet() float64 {
 	if x != nil && x.BaseBet != nil {
 		return *x.BaseBet
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetMultiplier() int64 {
+func (x *Ys_BetOrderResponse) GetMultiplier() int64 {
 	if x != nil && x.Multiplier != nil {
 		return *x.Multiplier
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetBetAmount() float64 {
+func (x *Ys_BetOrderResponse) GetBetAmount() float64 {
 	if x != nil && x.BetAmount != nil {
 		return *x.BetAmount
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetCurWin() float64 {
+func (x *Ys_BetOrderResponse) GetCurWin() float64 {
 	if x != nil && x.CurWin != nil {
 		return *x.CurWin
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetRoundWin() float64 {
+func (x *Ys_BetOrderResponse) GetRoundWin() float64 {
 	if x != nil && x.RoundWin != nil {
 		return *x.RoundWin
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetTotalWin() float64 {
+func (x *Ys_BetOrderResponse) GetTotalWin() float64 {
 	if x != nil && x.TotalWin != nil {
 		return *x.TotalWin
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetFreeTotalWin() float64 {
+func (x *Ys_BetOrderResponse) GetFreeTotalWin() float64 {
 	if x != nil && x.FreeTotalWin != nil {
 		return *x.FreeTotalWin
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetIsRoundOver() bool {
+func (x *Ys_BetOrderResponse) GetIsRoundOver() bool {
 	if x != nil && x.IsRoundOver != nil {
 		return *x.IsRoundOver
 	}
 	return false
 }
 
-func (x *Tmtg_BetOrderResponse) GetIsSpinOver() bool {
+func (x *Ys_BetOrderResponse) GetIsSpinOver() bool {
 	if x != nil && x.IsSpinOver != nil {
 		return *x.IsSpinOver
 	}
 	return false
 }
 
-func (x *Tmtg_BetOrderResponse) GetIsFree() bool {
+func (x *Ys_BetOrderResponse) GetIsFree() bool {
 	if x != nil && x.IsFree != nil {
 		return *x.IsFree
 	}
 	return false
 }
 
-func (x *Tmtg_BetOrderResponse) GetNewFreeTimes() int64 {
+func (x *Ys_BetOrderResponse) GetNewFreeTimes() int64 {
 	if x != nil && x.NewFreeTimes != nil {
 		return *x.NewFreeTimes
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetRemainingFreeTimes() int64 {
+func (x *Ys_BetOrderResponse) GetRemainingFreeTimes() int64 {
 	if x != nil && x.RemainingFreeTimes != nil {
 		return *x.RemainingFreeTimes
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetTotalFreeTimes() int64 {
+func (x *Ys_BetOrderResponse) GetTotalFreeTimes() int64 {
 	if x != nil && x.TotalFreeTimes != nil {
 		return *x.TotalFreeTimes
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetSymGrid() []int64 {
+func (x *Ys_BetOrderResponse) GetSymGrid() []int64 {
 	if x != nil {
 		return x.SymGrid
 	}
 	return nil
 }
 
-func (x *Tmtg_BetOrderResponse) GetWinGrid() []int64 {
+func (x *Ys_BetOrderResponse) GetWinGrid() []int64 {
 	if x != nil {
 		return x.WinGrid
 	}
 	return nil
 }
 
-func (x *Tmtg_BetOrderResponse) GetWinArr() []*Tmtg_WinArr {
+func (x *Ys_BetOrderResponse) GetWinArr() []*Ys_WinArr {
 	if x != nil {
 		return x.WinArr
 	}
 	return nil
 }
 
-func (x *Tmtg_BetOrderResponse) GetStepMul() int64 {
+func (x *Ys_BetOrderResponse) GetStepMul() int64 {
 	if x != nil && x.StepMul != nil {
 		return *x.StepMul
 	}
 	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetLimit() bool {
+func (x *Ys_BetOrderResponse) GetLimit() bool {
 	if x != nil && x.Limit != nil {
 		return *x.Limit
 	}
 	return false
 }
 
-func (x *Tmtg_BetOrderResponse) GetIsPurchase() bool {
-	if x != nil && x.IsPurchase != nil {
-		return *x.IsPurchase
+func (x *Ys_BetOrderResponse) GetScatterCount() int64 {
+	if x != nil && x.ScatterCount != nil {
+		return *x.ScatterCount
 	}
-	return false
+	return 0
 }
 
-func (x *Tmtg_BetOrderResponse) GetBomb() []int64 {
-	if x != nil {
-		return x.Bomb
+func (x *Ys_BetOrderResponse) GetBonusState() int64 {
+	if x != nil && x.BonusState != nil {
+		return *x.BonusState
 	}
-	return nil
+	return 0
 }
 
-type Tmtg_WinArr struct {
+func (x *Ys_BetOrderResponse) GetBonusNum() int64 {
+	if x != nil && x.BonusNum != nil {
+		return *x.BonusNum
+	}
+	return 0
+}
+
+func (x *Ys_BetOrderResponse) GetRoundStep() int64 {
+	if x != nil && x.RoundStep != nil {
+		return *x.RoundStep
+	}
+	return 0
+}
+
+type Ys_WinArr struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Symbol        *int64                 `protobuf:"varint,1,opt,name=symbol,proto3,oneof" json:"symbol,omitempty"`         // 符号
 	SymbolNum     *int64                 `protobuf:"varint,2,opt,name=symbolNum,proto3,oneof" json:"symbolNum,omitempty"`   // 数量
-	Multiplier    *int64                 `protobuf:"varint,3,opt,name=multiplier,proto3,oneof" json:"multiplier,omitempty"` // 倍率
+	LineNo        *int64                 `protobuf:"varint,3,opt,name=lineNo,proto3,oneof" json:"lineNo,omitempty"`         // 线序
+	Multiplier    *int64                 `protobuf:"varint,4,opt,name=multiplier,proto3,oneof" json:"multiplier,omitempty"` // 倍率
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Tmtg_WinArr) Reset() {
-	*x = Tmtg_WinArr{}
-	mi := &file_tmtg_proto_msgTypes[1]
+func (x *Ys_WinArr) Reset() {
+	*x = Ys_WinArr{}
+	mi := &file_ys_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Tmtg_WinArr) String() string {
+func (x *Ys_WinArr) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Tmtg_WinArr) ProtoMessage() {}
+func (*Ys_WinArr) ProtoMessage() {}
 
-func (x *Tmtg_WinArr) ProtoReflect() protoreflect.Message {
-	mi := &file_tmtg_proto_msgTypes[1]
+func (x *Ys_WinArr) ProtoReflect() protoreflect.Message {
+	mi := &file_ys_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -267,39 +285,45 @@ func (x *Tmtg_WinArr) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Tmtg_WinArr.ProtoReflect.Descriptor instead.
-func (*Tmtg_WinArr) Descriptor() ([]byte, []int) {
-	return file_tmtg_proto_rawDescGZIP(), []int{1}
+// Deprecated: Use Ys_WinArr.ProtoReflect.Descriptor instead.
+func (*Ys_WinArr) Descriptor() ([]byte, []int) {
+	return file_ys_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *Tmtg_WinArr) GetSymbol() int64 {
+func (x *Ys_WinArr) GetSymbol() int64 {
 	if x != nil && x.Symbol != nil {
 		return *x.Symbol
 	}
 	return 0
 }
 
-func (x *Tmtg_WinArr) GetSymbolNum() int64 {
+func (x *Ys_WinArr) GetSymbolNum() int64 {
 	if x != nil && x.SymbolNum != nil {
 		return *x.SymbolNum
 	}
 	return 0
 }
 
-func (x *Tmtg_WinArr) GetMultiplier() int64 {
+func (x *Ys_WinArr) GetLineNo() int64 {
+	if x != nil && x.LineNo != nil {
+		return *x.LineNo
+	}
+	return 0
+}
+
+func (x *Ys_WinArr) GetMultiplier() int64 {
 	if x != nil && x.Multiplier != nil {
 		return *x.Multiplier
 	}
 	return 0
 }
 
-var File_tmtg_proto protoreflect.FileDescriptor
+var File_ys_proto protoreflect.FileDescriptor
 
-const file_tmtg_proto_rawDesc = "" +
+const file_ys_proto_rawDesc = "" +
 	"\n" +
-	"\n" +
-	"tmtg.proto\x12\x04tmtg\"\xfc\a\n" +
-	"\x15tmtg_BetOrderResponse\x12\x13\n" +
+	"\bys.proto\x12\x02ys\"\xfb\b\n" +
+	"\x13ys_BetOrderResponse\x12\x13\n" +
 	"\x02sn\x18\x01 \x01(\tH\x00R\x02sn\x88\x01\x01\x12\x1d\n" +
 	"\abalance\x18\x02 \x01(\x01H\x01R\abalance\x88\x01\x01\x12\x1d\n" +
 	"\abaseBet\x18\x03 \x01(\x01H\x02R\abaseBet\x88\x01\x01\x12#\n" +
@@ -322,14 +346,16 @@ const file_tmtg_proto_rawDesc = "" +
 	"\x12remainingFreeTimes\x18\x0e \x01(\x03H\rR\x12remainingFreeTimes\x88\x01\x01\x12+\n" +
 	"\x0etotalFreeTimes\x18\x0f \x01(\x03H\x0eR\x0etotalFreeTimes\x88\x01\x01\x12\x18\n" +
 	"\asymGrid\x18\x10 \x03(\x03R\asymGrid\x12\x18\n" +
-	"\awinGrid\x18\x11 \x03(\x03R\awinGrid\x12)\n" +
-	"\x06winArr\x18\x12 \x03(\v2\x11.tmtg.tmtg_WinArrR\x06winArr\x12\x1d\n" +
+	"\awinGrid\x18\x11 \x03(\x03R\awinGrid\x12%\n" +
+	"\x06winArr\x18\x12 \x03(\v2\r.ys.ys_WinArrR\x06winArr\x12\x1d\n" +
 	"\astepMul\x18\x13 \x01(\x03H\x0fR\astepMul\x88\x01\x01\x12\x19\n" +
-	"\x05limit\x18\x14 \x01(\bH\x10R\x05limit\x88\x01\x01\x12#\n" +
+	"\x05limit\x18\x14 \x01(\bH\x10R\x05limit\x88\x01\x01\x12'\n" +
+	"\fscatterCount\x18\x15 \x01(\x03H\x11R\fscatterCount\x88\x01\x01\x12#\n" +
 	"\n" +
-	"isPurchase\x18\x15 \x01(\bH\x11R\n" +
-	"isPurchase\x88\x01\x01\x12\x12\n" +
-	"\x04bomb\x18\x16 \x03(\x03R\x04bombB\x05\n" +
+	"bonusState\x18\x16 \x01(\x03H\x12R\n" +
+	"bonusState\x88\x01\x01\x12\x1f\n" +
+	"\bbonusNum\x18\x17 \x01(\x03H\x13R\bbonusNum\x88\x01\x01\x12!\n" +
+	"\troundStep\x18\x18 \x01(\x03H\x14R\troundStep\x88\x01\x01B\x05\n" +
 	"\x03_snB\n" +
 	"\n" +
 	"\b_balanceB\n" +
@@ -350,38 +376,44 @@ const file_tmtg_proto_rawDesc = "" +
 	"\x0f_totalFreeTimesB\n" +
 	"\n" +
 	"\b_stepMulB\b\n" +
-	"\x06_limitB\r\n" +
-	"\v_isPurchase\"\x9a\x01\n" +
-	"\vtmtg_WinArr\x12\x1b\n" +
-	"\x06symbol\x18\x01 \x01(\x03H\x00R\x06symbol\x88\x01\x01\x12!\n" +
-	"\tsymbolNum\x18\x02 \x01(\x03H\x01R\tsymbolNum\x88\x01\x01\x12#\n" +
+	"\x06_limitB\x0f\n" +
+	"\r_scatterCountB\r\n" +
+	"\v_bonusStateB\v\n" +
+	"\t_bonusNumB\f\n" +
 	"\n" +
-	"multiplier\x18\x03 \x01(\x03H\x02R\n" +
+	"_roundStep\"\xc0\x01\n" +
+	"\tys_WinArr\x12\x1b\n" +
+	"\x06symbol\x18\x01 \x01(\x03H\x00R\x06symbol\x88\x01\x01\x12!\n" +
+	"\tsymbolNum\x18\x02 \x01(\x03H\x01R\tsymbolNum\x88\x01\x01\x12\x1b\n" +
+	"\x06lineNo\x18\x03 \x01(\x03H\x02R\x06lineNo\x88\x01\x01\x12#\n" +
+	"\n" +
+	"multiplier\x18\x04 \x01(\x03H\x03R\n" +
 	"multiplier\x88\x01\x01B\t\n" +
 	"\a_symbolB\f\n" +
 	"\n" +
-	"_symbolNumB\r\n" +
+	"_symbolNumB\t\n" +
+	"\a_lineNoB\r\n" +
 	"\v_multiplierB\x17Z\x15egame-grpc/game/ys/pbb\x06proto3"
 
 var (
-	file_tmtg_proto_rawDescOnce sync.Once
-	file_tmtg_proto_rawDescData []byte
+	file_ys_proto_rawDescOnce sync.Once
+	file_ys_proto_rawDescData []byte
 )
 
-func file_tmtg_proto_rawDescGZIP() []byte {
-	file_tmtg_proto_rawDescOnce.Do(func() {
-		file_tmtg_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_tmtg_proto_rawDesc), len(file_tmtg_proto_rawDesc)))
+func file_ys_proto_rawDescGZIP() []byte {
+	file_ys_proto_rawDescOnce.Do(func() {
+		file_ys_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_ys_proto_rawDesc), len(file_ys_proto_rawDesc)))
 	})
-	return file_tmtg_proto_rawDescData
+	return file_ys_proto_rawDescData
 }
 
-var file_tmtg_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_tmtg_proto_goTypes = []any{
-	(*Tmtg_BetOrderResponse)(nil), // 0: tmtg.tmtg_BetOrderResponse
-	(*Tmtg_WinArr)(nil),           // 1: tmtg.tmtg_WinArr
+var file_ys_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_ys_proto_goTypes = []any{
+	(*Ys_BetOrderResponse)(nil), // 0: ys.ys_BetOrderResponse
+	(*Ys_WinArr)(nil),           // 1: ys.ys_WinArr
 }
-var file_tmtg_proto_depIdxs = []int32{
-	1, // 0: tmtg.tmtg_BetOrderResponse.winArr:type_name -> tmtg.tmtg_WinArr
+var file_ys_proto_depIdxs = []int32{
+	1, // 0: ys.ys_BetOrderResponse.winArr:type_name -> ys.ys_WinArr
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -389,28 +421,28 @@ var file_tmtg_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_tmtg_proto_init() }
-func file_tmtg_proto_init() {
-	if File_tmtg_proto != nil {
+func init() { file_ys_proto_init() }
+func file_ys_proto_init() {
+	if File_ys_proto != nil {
 		return
 	}
-	file_tmtg_proto_msgTypes[0].OneofWrappers = []any{}
-	file_tmtg_proto_msgTypes[1].OneofWrappers = []any{}
+	file_ys_proto_msgTypes[0].OneofWrappers = []any{}
+	file_ys_proto_msgTypes[1].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tmtg_proto_rawDesc), len(file_tmtg_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ys_proto_rawDesc), len(file_ys_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_tmtg_proto_goTypes,
-		DependencyIndexes: file_tmtg_proto_depIdxs,
-		MessageInfos:      file_tmtg_proto_msgTypes,
+		GoTypes:           file_ys_proto_goTypes,
+		DependencyIndexes: file_ys_proto_depIdxs,
+		MessageInfos:      file_ys_proto_msgTypes,
 	}.Build()
-	File_tmtg_proto = out.File
-	file_tmtg_proto_goTypes = nil
-	file_tmtg_proto_depIdxs = nil
+	File_ys_proto = out.File
+	file_ys_proto_goTypes = nil
+	file_ys_proto_depIdxs = nil
 }
