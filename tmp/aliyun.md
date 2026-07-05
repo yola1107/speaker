@@ -424,35 +424,81 @@ cp -r everything-claude-code/rules/* ~/.claude/rules/
 
 source ~/.bashrc  # 或 source ~/.zshrc
 
-codex：
+
+
+# Codex 配置指南
+
+---
 sk-BDUdFnk3BalncWCa0WxQ2zTCmagdfbmY03kHYzMKxS5rJXTR
 https://ucn9uf8devd7.feishu.cn/wiki/XUrvw5RbCihuh4kEPrdcvFHNnhd?from=from_copylink
 https://www.yuque.com/gtasmhe/rqevgd/plygnrly4cury7nv?singleDoc#%20
-https://code.pumpkinai.vip 
+https://code.pumpkinai.vip
 这里可以查询使用情况哦~
 
+https://platform.openai.com/home
 
 vim ~/.codex/auth.json
-
+```
 {
 "OPENAI_API_KEY": "sk-BDUdFnk3BalncWCa0WxQ2zTCmagdfbmY03kHYzMKxS5rJXTR"
 }
 
+```
 
-vim ~/.codex/config.toml
+### `~/.codex/config.toml`
+```
+# ==========================================
+# 注释配置（当前未启用，备选方案）
+# ==========================================
+# model_provider = "codex"
+# model = "gpt-5.3-codex"
+# model_reasoning_effort = "high"
+# disable_response_storage = true
 
-model_provider = "codex"
-model = "gpt-5.3-codex"        # 可更改为model = "gpt-5.4"
-model_reasoning_effort = "low" #  "high" "medium"
+# [model_providers.codex]
+# name = "codex"
+# base_url = "https://code.ppchat.vip/v1"
+# wire_api = "responses"
+# requires_openai_auth = true
+
+# [projects.'\\?\D:\src\egame\egame-grpc03']
+# trust_level = "trusted"
+
+# [projects.'D:\src\pitaya\world']
+# trust_level = "trusted"
+
+# [notice.model_migrations]
+# "gpt-5.3-codex" = "gpt-5.4"
+
+# [windows]
+# sandbox = "elevated"
+
+# ==========================================
+# 当前激活配置
+# ==========================================
+model_provider = "openai-codex"
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
 disable_response_storage = true
 
-[model_providers.codex]
-name = "codex"
-base_url = "https://code.ppchat.vip/v1"
+[model_providers.openai-codex]
+name = "OpenAI"
+base_url = "https://api.openai.com/v1"
 wire_api = "responses"
-requires_openai_auth = true
 
+[windows]
+sandbox = "elevated"
 
+[projects.'d:\src\yola1107\speaker']
+trust_level = "trusted"
+
+[tui.model_availability_nux]
+"gpt-5.5" = 3
+
+[notice.model_migrations]
+"gpt-5.3-codex" = "gpt-5.4"
+
+```
 
 
 
